@@ -2,13 +2,16 @@
 import { z } from 'zod';
 
 export type ToolMode = 'tool-router';
+export type Provider = 'google' | 'anthropic' | 'openai';
 
 export interface Settings {
-  provider: 'google';
+  provider: Provider;
   apiKey: string;
   model: string;
   toolMode?: ToolMode;
   composioApiKey?: string;
+  customBaseUrl?: string; // Custom provider URL
+  customModelName?: string; // Custom model name when model is 'custom'
 }
 
 export interface ComposioSession {

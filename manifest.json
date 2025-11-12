@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Atlas Chat Sidebar",
+  "name": "GoDaddy ANS Chat Sidebar",
   "version": "1.0.0",
-  "description": "AI-powered sidebar chat with computer use capabilities",
+  "description": "GoDaddy ANS AI-powered sidebar chat with computer use capabilities",
   "permissions": [
     "sidePanel",
     "storage",
@@ -31,7 +31,7 @@
     "default_path": "sidepanel.html"
   },
   "action": {
-    "default_title": "Open Atlas Sidebar",
+    "default_title": "Open GoDaddy ANS Sidebar",
     "default_icon": "icons/icon.png"
   },
   "options_page": "settings.html",

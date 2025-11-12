@@ -13,16 +13,11 @@ const memory: BrowserMemory = {
   sessionData: {}
 };
 
+// Set side panel to open automatically on extension icon click
+// The side panel will be per-tab by default when using tabId
 chrome.sidePanel
   .setPanelBehavior({ openPanelOnActionClick: true })
   .catch((error: Error) => console.error(error));
-
-// Listen for extension icon clicks
-chrome.action.onClicked.addListener((tab) => {
-  if (tab.id) {
-    chrome.sidePanel.open({ tabId: tab.id });
-  }
-});
 
 // Track page visits for memory
 chrome.webNavigation.onCompleted.addListener((details) => {

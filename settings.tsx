@@ -8,6 +8,16 @@ const PROVIDER_MODELS = {
     { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', description: 'Fast and efficient' },
     { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash Lite', description: 'Optimized for speed' },
   ],
+  anthropic: [
+    { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', description: 'Most intelligent model' },
+    { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku', description: 'Fastest model' },
+    { id: 'claude-3-opus-20240229', name: 'Claude 3 Opus', description: 'Previous generation' },
+  ],
+  openai: [
+    { id: 'gpt-4o', name: 'GPT-4o', description: 'Most capable' },
+    { id: 'gpt-4o-mini', name: 'GPT-4o Mini', description: 'Fast and affordable' },
+    { id: 'gpt-4-turbo', name: 'GPT-4 Turbo', description: 'Previous generation' },
+  ],
 };
 
 function SettingsPage() {
@@ -55,9 +65,22 @@ function SettingsPage() {
       <div className="settings-content">
         <div className="setting-group">
           <label>AI Provider</label>
-          <div className="provider-info">
-            <p>Google Gemini</p>
-          </div>
+          <select
+            value={settings.provider}
+            onChange={(e) => {
+              const newProvider = e.target.value as Settings['provider'];
+              setSettings({
+                ...settings,
+                provider: newProvider,
+                model: PROVIDER_MODELS[newProvider][0].id
+              });
+            }}
+            className="model-select"
+          >
+            <option value="google">Google Gemini</option>
+            <option value="anthropic">Anthropic Claude</option>
+            <option value="openai">OpenAI</option>
+          </select>
         </div>
 
         <div className="setting-group">
@@ -72,8 +95,25 @@ function SettingsPage() {
                 {model.name} - {model.description}
               </option>
             ))}
+            <option value="custom">Custom Model</option>
           </select>
         </div>
+
+        {settings.model === 'custom' && (
+          <div className="setting-group">
+            <label>Custom Model Name</label>
+            <input
+              type="text"
+              value={settings.customModelName || ''}
+              onChange={(e) => setSettings({ ...settings, customModelName: e.target.value })}
+              placeholder="e.g., claude-sonnet-4-5-20250929"
+              className="api-key-input"
+            />
+            <p className="help-text">
+              Enter the exact model name/ID for your custom provider endpoint.
+            </p>
+          </div>
+        )}
 
         <div className="setting-group">
           <label>Composio API Key</label>
@@ -102,13 +142,35 @@ function SettingsPage() {
         </div>
 
         <div className="setting-group">
-          <label>Google API Key</label>
+          <label>Custom Base URL (Optional)</label>
+          <input
+            type="text"
+            value={settings.customBaseUrl || ''}
+            onChange={(e) => setSettings({ ...settings, customBaseUrl: e.target.value })}
+            placeholder="e.g., https://your-custom-endpoint.com"
+            className="api-key-input"
+          />
+          <p className="help-text">
+            Leave empty to use default Google AI endpoint. Enter a custom Gemini-compatible API endpoint to use your own provider.
+          </p>
+        </div>
+
+        <div className="setting-group">
+          <label>
+            {settings.provider === 'google' && 'Google API Key'}
+            {settings.provider === 'anthropic' && 'Anthropic API Key'}
+            {settings.provider === 'openai' && 'OpenAI API Key'}
+          </label>
           <div className="api-key-input-wrapper">
             <input
               type={showApiKey ? 'text' : 'password'}
               value={settings.apiKey}
               onChange={(e) => setSettings({ ...settings, apiKey: e.target.value })}
-              placeholder="Enter your Google API key"
+              placeholder={
+                settings.provider === 'google' ? 'Enter your Google API key' :
+                settings.provider === 'anthropic' ? 'Enter your Anthropic API key' :
+                'Enter your OpenAI API key'
+              }
               className="api-key-input"
             />
             <button
@@ -121,9 +183,21 @@ function SettingsPage() {
           </div>
           <p className="help-text">
             Get your API key from:{' '}
-            <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer">
-              Google AI Studio
-            </a>
+            {settings.provider === 'google' && (
+              <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer">
+                Google AI Studio
+              </a>
+            )}
+            {settings.provider === 'anthropic' && (
+              <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer">
+                Anthropic Console
+              </a>
+            )}
+            {settings.provider === 'openai' && (
+              <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer">
+                OpenAI Platform
+              </a>
+            )}
           </p>
         </div>
 

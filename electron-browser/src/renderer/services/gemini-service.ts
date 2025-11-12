@@ -91,7 +91,8 @@ export async function streamWithGemini(
     parts: [{ text: userInput }],
   });
 
-  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${settings.model}:generateContent`;
+  const baseUrl = settings.customBaseUrl || 'https://generativelanguage.googleapis.com';
+  const apiUrl = `${baseUrl}/v1beta/models/${settings.model}:generateContent`;
 
   const requestBody: Record<string, unknown> = {
     contents: geminiMessages,

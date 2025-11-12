@@ -12,6 +12,7 @@ const Settings = ({ settings, onSave, onClose }: SettingsProps) => {
   const [googleApiKey, setGoogleApiKey] = useState(settings?.googleApiKey || '');
   const [composioApiKey, setComposioApiKey] = useState(settings?.composioApiKey || '');
   const [model, setModel] = useState(settings?.model || 'gemini-2.0-flash-exp');
+  const [customBaseUrl, setCustomBaseUrl] = useState(settings?.customBaseUrl || '');
 
   const handleSave = async () => {
     // Initialize MCP if Composio key is provided
@@ -29,6 +30,7 @@ const Settings = ({ settings, onSave, onClose }: SettingsProps) => {
       googleApiKey,
       composioApiKey,
       model,
+      customBaseUrl,
     });
   };
 
@@ -109,6 +111,30 @@ const Settings = ({ settings, onSave, onClose }: SettingsProps) => {
               >
                 Google AI Studio
               </a>
+            </p>
+          </div>
+
+          {/* Custom Base URL */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <label style={{ fontSize: '14px', fontWeight: 600 }}>
+              Custom Base URL <span style={{ color: '#888', fontWeight: 400 }}>(Optional)</span>
+            </label>
+            <input
+              type="text"
+              value={customBaseUrl}
+              onChange={(e) => setCustomBaseUrl(e.target.value)}
+              placeholder="e.g., https://your-custom-endpoint.com"
+              style={{
+                padding: '10px 12px',
+                backgroundColor: '#f5f5f5',
+                color: '#1a1a1a',
+                border: '1px solid #e5e5e5',
+                borderRadius: '6px',
+                fontSize: '14px',
+              }}
+            />
+            <p style={{ fontSize: '12px', color: '#666', margin: 0 }}>
+              Leave empty to use default Google AI endpoint. Enter a custom Gemini-compatible API endpoint to use your own provider.
             </p>
           </div>
 

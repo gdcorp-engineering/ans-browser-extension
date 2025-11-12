@@ -21,6 +21,7 @@ export interface Settings {
   googleApiKey: string;
   composioApiKey?: string;
   model: string;
+  customBaseUrl?: string;
 }
 
 export interface BrowserAction {
@@ -59,4 +60,5 @@ export const SettingsSchema = z.object({
   googleApiKey: z.string(),
   composioApiKey: z.string().optional(),
   model: z.string(),
+  customBaseUrl: z.string().optional(),
 });

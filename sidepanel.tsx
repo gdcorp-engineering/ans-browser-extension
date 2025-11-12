@@ -5,6 +5,8 @@ import remarkGfm from 'remark-gfm';
 import type { Settings, MCPClient, Message } from './types';
 import { GeminiResponseSchema } from './types';
 import { experimental_createMCPClient, stepCountIs } from 'ai';
+import { streamAnthropic } from './anthropic-service';
+import { streamAnthropicWithBrowserTools } from './anthropic-browser-tools';
 
 // Custom component to handle link clicks - opens in new tab
 const LinkComponent = ({ href, children }: { href?: string; children?: React.ReactNode }) => {
@@ -79,6 +81,7 @@ function ChatSidebar() {
   const [browserToolsEnabled, setBrowserToolsEnabled] = useState(false);
   const [showBrowserToolsWarning, setShowBrowserToolsWarning] = useState(false);
   const [isUserScrolled, setIsUserScrolled] = useState(false);
+  const [currentTabId, setCurrentTabId] = useState<number | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const mcpClientRef = useRef<MCPClient | null>(null);
   const mcpToolsRef = useRef<Record<string, unknown> | null>(null);
@@ -86,6 +89,7 @@ function ChatSidebar() {
   const settingsHashRef = useRef('');
   const mcpInitPromiseRef = useRef<Promise<void> | null>(null);
   const composioSessionRef = useRef<{ expiresAt: number } | null>(null);
+  const tabMessagesRef = useRef<Record<number, Message[]>>({});
 
   const executeTool = async (toolName: string, parameters: any, retryCount = 0): Promise<any> => {
     const MAX_RETRIES = 3;
@@ -217,6 +221,58 @@ function ChatSidebar() {
     });
   };
 
+  // Get current tab ID and load its messages
+  useEffect(() => {
+    const getCurrentTab = async () => {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tab.id) {
+        console.log('📍 Current tab ID:', tab.id);
+        setCurrentTabId(tab.id);
+
+        // Load messages for this tab
+        if (tabMessagesRef.current[tab.id]) {
+          setMessages(tabMessagesRef.current[tab.id]);
+        } else {
+          setMessages([]);
+        }
+      }
+    };
+
+    getCurrentTab();
+
+    // Listen for tab switches
+    const handleTabChange = (activeInfo: chrome.tabs.TabActiveInfo) => {
+      console.log('📍 Tab switched to:', activeInfo.tabId);
+
+      // Save current tab's messages before switching
+      if (currentTabId !== null) {
+        tabMessagesRef.current[currentTabId] = messages;
+      }
+
+      // Load new tab's messages
+      setCurrentTabId(activeInfo.tabId);
+      if (tabMessagesRef.current[activeInfo.tabId]) {
+        setMessages(tabMessagesRef.current[activeInfo.tabId]);
+      } else {
+        setMessages([]);
+      }
+    };
+
+    chrome.tabs.onActivated.addListener(handleTabChange);
+
+    return () => {
+      chrome.tabs.onActivated.removeListener(handleTabChange);
+    };
+  }, [currentTabId, messages]);
+
+  // Save messages whenever they change
+  useEffect(() => {
+    if (currentTabId !== null && messages.length > 0) {
+      console.log(`💾 Saving ${messages.length} messages for tab ${currentTabId}`);
+      tabMessagesRef.current[currentTabId] = messages;
+    }
+  }, [messages, currentTabId]);
+
   useEffect(() => {
     // Load settings on mount
     loadSettings();
@@ -275,11 +331,23 @@ function ChatSidebar() {
         return;
       }
 
-      if (settings.provider !== 'google' || !settings.apiKey) {
+      if (!settings.apiKey) {
         const confirmed = window.confirm(
-          '🌐 Browser Tools requires a Google API key\n\n' +
-          'Browser Tools uses Gemini 2.5 Computer Use for browser automation.\n\n' +
-          'Would you like to open Settings to add your Google API key?'
+          '🌐 Browser Tools requires an API key\n\n' +
+          'Browser Tools provides browser automation capabilities.\n\n' +
+          'Would you like to open Settings to add your API key?'
+        );
+        if (confirmed) {
+          openSettings();
+        }
+        return;
+      }
+
+      if (settings.provider !== 'google' && settings.provider !== 'anthropic') {
+        const confirmed = window.confirm(
+          '🌐 Browser Tools not supported for ' + settings.provider + '\n\n' +
+          'Browser Tools currently works with Google Gemini and Anthropic Claude.\n\n' +
+          'Would you like to open Settings to change your provider?'
         );
         if (confirmed) {
           openSettings();
@@ -313,10 +381,15 @@ function ChatSidebar() {
   };
 
   const newChat = async () => {
-    // Clear messages
+    // Clear messages for current tab
     setMessages([]);
     setInput('');
     setShowBrowserToolsWarning(false);
+
+    // Clear messages storage for current tab
+    if (currentTabId !== null) {
+      tabMessagesRef.current[currentTabId] = [];
+    }
     
     // Force close and clear ALL cached state
     if (mcpClientRef.current) {
@@ -486,19 +559,30 @@ GUIDELINES:
         // Always use computer-use model for browser tools
         const computerUseModel = 'gemini-2.5-computer-use-preview-10-2025';
 
+        const baseUrl = settings?.customBaseUrl || 'https://generativelanguage.googleapis.com';
+        const isCustomProvider = !!settings?.customBaseUrl;
+
+        // For custom providers, use Authorization header; for Google, use query param
+        const url = isCustomProvider
+          ? `${baseUrl}/v1beta/models/${computerUseModel}:generateContent`
+          : `${baseUrl}/v1beta/models/${computerUseModel}:generateContent?key=${apiKey}`;
+
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+        };
+
+        if (isCustomProvider) {
+          headers['Authorization'] = `Bearer ${apiKey}`;
+        }
+
         let response;
         try {
-          response = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/${computerUseModel}:generateContent?key=${apiKey}`,
-            {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify(requestBody),
-              signal: abortController.signal,
-            }
-          );
+          response = await fetch(url, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(requestBody),
+            signal: abortController.signal,
+          });
         } finally {
           clearTimeout(timeoutId);
         }
@@ -1101,22 +1185,33 @@ GUIDELINES:
       throw new Error('No messages provided to stream');
     }
 
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          contents: messages.map(m => ({
-            role: m.role === 'user' ? 'user' : 'model',
-            parts: [{ text: m.content || '' }],
-          })),
-        }),
-        signal,
-      }
-    );
+    const baseUrl = settings?.customBaseUrl || 'https://generativelanguage.googleapis.com';
+    const isCustomProvider = !!settings?.customBaseUrl;
+
+    // For custom providers, use Authorization header; for Google, use query param
+    const url = isCustomProvider
+      ? `${baseUrl}/v1beta/models/${model}:streamGenerateContent`
+      : `${baseUrl}/v1beta/models/${model}:streamGenerateContent?key=${apiKey}`;
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+
+    if (isCustomProvider) {
+      headers['Authorization'] = `Bearer ${apiKey}`;
+    }
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        contents: messages.map(m => ({
+          role: m.role === 'user' ? 'user' : 'model',
+          parts: [{ text: m.content || '' }],
+        })),
+      }),
+      signal,
+    });
 
     if (!response.ok) {
       const error = await response.json();
@@ -1193,10 +1288,21 @@ GUIDELINES:
     e.preventDefault();
     if (!input.trim() || isLoading || !settings) return;
 
+    // Get page context to include with the message
+    let pageContext = '';
+    try {
+      const context: any = await executeTool('getPageContext', {});
+      if (context && context.url && context.title) {
+        pageContext = `\n\n[Current Page Context]\nURL: ${context.url}\nTitle: ${context.title}\nContent: ${context.textContent?.substring(0, 3000) || 'No content available'}`;
+      }
+    } catch (error) {
+      console.log('Could not get page context:', error);
+    }
+
     const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
-      content: input,
+      content: input + pageContext,
     };
 
     const newMessages = [...messages, userMessage];
@@ -1205,27 +1311,17 @@ GUIDELINES:
     setIsLoading(true);
     setIsUserScrolled(false); // Reset scroll state when user sends message
 
+    // Force immediate scroll to bottom
+    setTimeout(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+    }, 0);
+
     abortControllerRef.current = new AbortController();
 
     try {
-      // BROWSER TOOLS MODE - Use Gemini Computer Use API
+      // BROWSER TOOLS MODE
       if (browserToolsEnabled) {
-
-        // Safety check: Ensure we have Google API key
-        if (settings.provider !== 'google' || !settings.apiKey) {
-          setBrowserToolsEnabled(false);
-          setMessages(prev => {
-            const updated = [...prev];
-            const lastMsg = updated[updated.length - 1];
-            if (lastMsg && lastMsg.role === 'assistant') {
-              lastMsg.content = '⚠️ **Browser Tools requires a Google API key**\n\nBrowser Tools uses Gemini 2.5 Computer Use.\n\nPlease:\n1. Open Settings (⚙️)\n2. Select "Google" as provider\n3. Add your Google API key\n4. Try again';
-            }
-            return updated;
-          });
-          setIsLoading(false);
-          return;
-        }
-
+        // Close MCP client if active
         if (mcpClientRef.current) {
           try {
             await mcpClientRef.current.close();
@@ -1236,7 +1332,47 @@ GUIDELINES:
           mcpToolsRef.current = null;
         }
 
-        await streamWithGeminiComputerUse(newMessages);
+        // Route to provider-specific browser tools
+        if (settings.provider === 'google') {
+          await streamWithGeminiComputerUse(newMessages);
+        } else if (settings.provider === 'anthropic') {
+          const assistantMessage: Message = {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: '',
+          };
+          setMessages(prev => [...prev, assistantMessage]);
+
+          const modelToUse = settings.model === 'custom' && settings.customModelName
+            ? settings.customModelName
+            : settings.model;
+
+          await streamAnthropicWithBrowserTools(
+            newMessages,
+            settings.apiKey,
+            modelToUse,
+            settings.customBaseUrl,
+            (text: string) => {
+              setMessages(prev => {
+                const updated = [...prev];
+                const lastMsg = updated[updated.length - 1];
+                if (lastMsg && lastMsg.role === 'assistant') {
+                  lastMsg.content += text;
+                }
+                return updated;
+              });
+              // Force scroll on each chunk
+              messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+            },
+            () => {
+              // On complete
+            },
+            executeTool,
+            abortControllerRef.current.signal
+          );
+        } else {
+          throw new Error(`Browser Tools not supported for ${settings.provider}`);
+        }
       } else if (settings.composioApiKey) {
         if (isComposioSessionExpired()) {
           console.warn('Composio session expired, reinitializing...');
@@ -1302,9 +1438,43 @@ GUIDELINES:
           }
         }
       } else {
-        await streamGoogle(newMessages, abortControllerRef.current.signal);
+        // Route to appropriate provider
+        if (settings.provider === 'anthropic') {
+          const assistantMessage: Message = {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: '',
+          };
+          setMessages(prev => [...prev, assistantMessage]);
+
+          const modelToUse = settings.model === 'custom' && settings.customModelName
+            ? settings.customModelName
+            : settings.model;
+
+          await streamAnthropic(
+            newMessages,
+            settings.apiKey,
+            modelToUse,
+            settings.customBaseUrl,
+            (text: string) => {
+              setMessages(prev => {
+                const updated = [...prev];
+                const lastMsg = updated[updated.length - 1];
+                if (lastMsg && lastMsg.role === 'assistant') {
+                  lastMsg.content += text;
+                }
+                return updated;
+              });
+            },
+            abortControllerRef.current.signal
+          );
+        } else if (settings.provider === 'google') {
+          await streamGoogle(newMessages, abortControllerRef.current.signal);
+        } else {
+          throw new Error(`Provider ${settings.provider} not yet implemented`);
+        }
       }
-      
+
       setIsLoading(false);
     } catch (error: any) {
       console.error('❌ Chat error occurred:');
@@ -1348,10 +1518,11 @@ GUIDELINES:
 
   // Auto-scroll to bottom when messages change (unless user scrolled up)
   useEffect(() => {
-    if (!isUserScrolled) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (!isUserScrolled || isLoading) {
+      // Use instant scroll during loading for better UX
+      messagesEndRef.current?.scrollIntoView({ behavior: isLoading ? 'auto' : 'smooth' });
     }
-  }, [messages, isUserScrolled]);
+  }, [messages, isUserScrolled, isLoading]);
 
   // Attach scroll listener
   useEffect(() => {
@@ -1366,7 +1537,7 @@ GUIDELINES:
     return (
       <div className="chat-container">
         <div className="welcome-message" style={{ padding: '40px 20px' }}>
-          <h2>Welcome to Atlas</h2>
+          <h2>Welcome to GoDaddy ANS</h2>
           <p style={{ marginBottom: '20px' }}>Please configure your AI provider to get started.</p>
           <button
             onClick={openSettings}
@@ -1384,11 +1555,17 @@ GUIDELINES:
     <div className="chat-container dark-mode">
       <div className="chat-header">
         <div style={{ flex: 1 }}>
-          <h1>Atlas</h1>
+          <h1>GoDaddy ANS</h1>
           <p>
             {(settings?.provider
               ? settings.provider.charAt(0).toUpperCase() + settings.provider.slice(1)
-              : 'Unknown')} · {browserToolsEnabled ? 'gemini-2.5-computer-use-preview-10-2025' : (settings?.model || 'No model')}
+              : 'Unknown')} · {browserToolsEnabled
+                ? (settings?.provider === 'google'
+                  ? 'gemini-2.5-computer-use-preview-10-2025'
+                  : (settings?.model === 'custom' && settings?.customModelName
+                    ? settings.customModelName
+                    : settings?.model) + ' (Browser Tools)')
+                : (settings?.model || 'No model')}
           </p>
         </div>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
@@ -1437,7 +1614,7 @@ GUIDELINES:
         {messages.length === 0 ? (
           <div className="welcome-message">
             <h2>How can I help you today?</h2>
-            <p>I'm Atlas, your AI assistant. I can help you browse the web, analyze content, and perform various tasks.</p>
+            <p>I'm GoDaddy ANS, your AI assistant. I can help you browse the web, analyze content, and perform various tasks.</p>
           </div>
         ) : (
           messages.map((message) => (
@@ -1472,7 +1649,7 @@ GUIDELINES:
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Message Atlas..."
+          placeholder="Message GoDaddy ANS..."
           disabled={isLoading}
           className="chat-input"
         />
