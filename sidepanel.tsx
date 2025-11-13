@@ -7,6 +7,8 @@ import { GeminiResponseSchema } from './types';
 import { experimental_createMCPClient, stepCountIs } from 'ai';
 import { streamAnthropic } from './anthropic-service';
 import { streamAnthropicWithBrowserTools } from './anthropic-browser-tools';
+import { getMCPService, resetMCPService } from './mcp-service';
+import { getToolDescription, mergeToolDefinitions } from './mcp-tool-router';
 
 // Custom component to handle link clicks - opens in new tab
 const LinkComponent = ({ href, children }: { href?: string; children?: React.ReactNode }) => {
@@ -85,9 +87,11 @@ function ChatSidebar() {
   const abortControllerRef = useRef<AbortController | null>(null);
   const mcpClientRef = useRef<MCPClient | null>(null);
   const mcpToolsRef = useRef<Record<string, unknown> | null>(null);
+  const customMCPToolsRef = useRef<Record<string, unknown> | null>(null); // Custom MCP servers
   const listenerAttachedRef = useRef(false);
   const settingsHashRef = useRef('');
   const mcpInitPromiseRef = useRef<Promise<void> | null>(null);
+  const customMCPInitPromiseRef = useRef<Promise<void> | null>(null); // Custom MCP init
   const composioSessionRef = useRef<{ expiresAt: number } | null>(null);
   const tabMessagesRef = useRef<Record<number, Message[]>>({});
 
@@ -279,10 +283,26 @@ function ChatSidebar() {
 
     // Attach settings update listener only once to prevent duplicates
     if (!listenerAttachedRef.current) {
-      const handleMessage = (request: any) => {
+      const handleMessage = async (request: any) => {
         if (request.type === 'SETTINGS_UPDATED') {
-          console.log('Settings updated, refreshing...');
-          loadSettings();
+          console.log('📨 Settings updated message received, action:', request.action);
+
+          // If MCP settings changed, reset MCP connections
+          if (request.action === 'mcp_changed') {
+            console.log('🔄 MCP settings changed, resetting connections...');
+            console.log('  - Current customMCPToolsRef:', !!customMCPToolsRef.current);
+            console.log('  - Current customMCPInitPromiseRef:', !!customMCPInitPromiseRef.current);
+
+            const { resetMCPService } = await import('./mcp-service');
+            resetMCPService();
+            customMCPToolsRef.current = null;
+            customMCPInitPromiseRef.current = null;
+
+            console.log('✅ MCP refs cleared, will reinitialize on next message');
+          }
+
+          await loadSettings();
+          console.log('✅ Settings reloaded');
         }
       };
 
@@ -1347,6 +1367,84 @@ GUIDELINES:
             ? settings.customModelName
             : settings.model;
 
+          // Initialize custom MCP if not already initialized
+          if (!customMCPToolsRef.current && settings.mcpServers && settings.mcpServers.length > 0) {
+            console.log('🚀 Initializing custom MCP for browser tools...');
+            const enabledServers = settings.mcpServers.filter(s => s.enabled);
+
+            if (enabledServers.length > 0 && !customMCPInitPromiseRef.current) {
+              customMCPInitPromiseRef.current = (async () => {
+                try {
+                  const { getMCPService } = await import('./mcp-service');
+                  const mcpService = getMCPService();
+
+                  await mcpService.connectToServers(settings.mcpServers);
+
+                  if (mcpService.hasConnections()) {
+                    customMCPToolsRef.current = mcpService.getAggregatedTools();
+                    console.log(`✅ Custom MCP ready - ${mcpService.getTotalToolCount()} tool(s) available`);
+                    console.log(getToolDescription(mcpService.getToolsWithOrigin()));
+                  } else {
+                    console.warn('⚠️  No custom MCP servers connected');
+                    customMCPToolsRef.current = null;
+                  }
+                } catch (error) {
+                  console.error('❌ Custom MCP init failed:', error);
+                  customMCPToolsRef.current = null;
+                } finally {
+                  customMCPInitPromiseRef.current = null;
+                }
+              })();
+
+              await customMCPInitPromiseRef.current;
+            } else if (customMCPInitPromiseRef.current) {
+              await customMCPInitPromiseRef.current;
+            }
+          }
+
+          // Prepare custom MCP tools if available
+          let mcpTools: any[] | undefined;
+          if (customMCPToolsRef.current) {
+            const { formatToolsForAnthropic } = await import('./mcp-tool-router');
+            mcpTools = formatToolsForAnthropic(customMCPToolsRef.current);
+            console.log(`🔌 Adding ${mcpTools.length} custom MCP tools to Anthropic (with browser tools)`);
+
+            // Log tool names and descriptions for debugging
+            const toolNames = mcpTools.map(t => t.name).join(', ');
+            console.log(`📋 Available MCP tools: ${toolNames}`);
+
+            // Log detailed tool info
+            mcpTools.forEach(tool => {
+              console.log(`  🔧 ${tool.name}: ${tool.description || 'No description'}`);
+            });
+          }
+
+          // Create a wrapped executeTool that handles both browser and MCP tools
+          const wrappedExecuteTool = async (toolName: string, params: any) => {
+            console.log(`🔧 Tool call: ${toolName}`, params);
+
+            // Check if this is an MCP tool
+            if (mcpTools) {
+              const isMCPTool = mcpTools.some(t => t.name === toolName);
+
+              if (isMCPTool) {
+                // Execute MCP tool
+                try {
+                  const { getMCPService } = await import('./mcp-service');
+                  const mcpService = getMCPService();
+                  const result = await mcpService.executeToolCall(toolName, params);
+                  return result;
+                } catch (error: any) {
+                  console.error(`❌ MCP tool execution failed:`, error);
+                  return { error: error.message || 'MCP tool execution failed' };
+                }
+              }
+            }
+
+            // Execute browser tool
+            return await executeTool(toolName, params);
+          };
+
           await streamAnthropicWithBrowserTools(
             newMessages,
             settings.apiKey,
@@ -1367,8 +1465,9 @@ GUIDELINES:
             () => {
               // On complete
             },
-            executeTool,
-            abortControllerRef.current.signal
+            wrappedExecuteTool,
+            undefined, // Don't pass abort signal for now - causes issues
+            mcpTools
           );
         } else {
           throw new Error(`Browser Tools not supported for ${settings.provider}`);
@@ -1438,6 +1537,47 @@ GUIDELINES:
           }
         }
       } else {
+        // Initialize custom MCP servers if enabled
+        if (settings.mcpEnabled && settings.mcpServers && settings.mcpServers.length > 0) {
+          console.log(`🔍 MCP enabled with ${settings.mcpServers.length} configured server(s)`);
+          console.log(`🔍 customMCPInitPromiseRef.current exists: ${!!customMCPInitPromiseRef.current}`);
+
+          if (!customMCPInitPromiseRef.current) {
+            console.log('🚀 Starting MCP initialization...');
+            customMCPInitPromiseRef.current = (async () => {
+              try {
+                console.log('🔌 Initializing custom MCP servers...');
+                console.log('📋 Servers to connect:', settings.mcpServers.map(s => `${s.name} (${s.enabled ? 'enabled' : 'disabled'})`));
+
+                const mcpService = getMCPService();
+                await mcpService.connectToServers(settings.mcpServers);
+
+                if (mcpService.hasConnections()) {
+                  customMCPToolsRef.current = mcpService.getAggregatedTools();
+                  console.log(`✅ Custom MCP ready - ${mcpService.getTotalToolCount()} tool(s) available`);
+                  console.log(getToolDescription(mcpService.getToolsWithOrigin()));
+                } else {
+                  console.warn('⚠️  No custom MCP servers connected');
+                  customMCPToolsRef.current = null;
+                }
+              } catch (error) {
+                console.error('❌ Custom MCP init failed:', error);
+                customMCPToolsRef.current = null;
+              } finally {
+                customMCPInitPromiseRef.current = null;
+              }
+            })();
+          } else {
+            console.log('⏳ MCP initialization already in progress, waiting...');
+          }
+
+          await customMCPInitPromiseRef.current;
+        } else {
+          console.log('ℹ️  MCP not enabled or no servers configured');
+          console.log(`  - mcpEnabled: ${settings.mcpEnabled}`);
+          console.log(`  - mcpServers count: ${settings.mcpServers?.length || 0}`);
+        }
+
         // Route to appropriate provider
         if (settings.provider === 'anthropic') {
           const assistantMessage: Message = {
@@ -1451,23 +1591,85 @@ GUIDELINES:
             ? settings.customModelName
             : settings.model;
 
-          await streamAnthropic(
-            newMessages,
-            settings.apiKey,
-            modelToUse,
-            settings.customBaseUrl,
-            (text: string) => {
-              setMessages(prev => {
-                const updated = [...prev];
-                const lastMsg = updated[updated.length - 1];
-                if (lastMsg && lastMsg.role === 'assistant') {
-                  lastMsg.content += text;
+          // Check if we have custom MCP tools
+          if (customMCPToolsRef.current) {
+            const { formatToolsForAnthropic } = await import('./mcp-tool-router');
+            const mcpTools = formatToolsForAnthropic(customMCPToolsRef.current);
+            console.log(`🔌 Adding ${mcpTools.length} custom MCP tools to Anthropic`);
+
+            // Log tool names and descriptions for debugging
+            const toolNames = mcpTools.map(t => t.name).join(', ');
+            console.log(`📋 Available MCP tools: ${toolNames}`);
+
+            // Log detailed tool info
+            mcpTools.forEach(tool => {
+              console.log(`  🔧 ${tool.name}: ${tool.description || 'No description'}`);
+            });
+
+            await streamAnthropicWithBrowserTools(
+              newMessages,
+              settings.apiKey,
+              modelToUse,
+              settings.customBaseUrl,
+              (text: string) => {
+                setMessages(prev => {
+                  const updated = [...prev];
+                  const lastMsg = updated[updated.length - 1];
+                  if (lastMsg && lastMsg.role === 'assistant') {
+                    lastMsg.content += text;
+                  }
+                  return updated;
+                });
+              },
+              () => {
+                // On complete
+              },
+              async (toolName: string, params: any) => {
+                console.log(`🔧 Tool call: ${toolName}`, params);
+
+                // Check if this is an MCP tool
+                const mcpService = getMCPService();
+                const mcpTools = mcpService.getAggregatedTools();
+
+                if (toolName in mcpTools) {
+                  // Execute MCP tool
+                  try {
+                    const result = await mcpService.executeToolCall(toolName, params);
+                    return result;
+                  } catch (error: any) {
+                    console.error(`❌ MCP tool execution failed:`, error);
+                    return { error: error.message || 'MCP tool execution failed' };
+                  }
+                } else {
+                  // Browser tool requested but browser tools not enabled
+                  console.warn(`⚠️  Browser tool "${toolName}" requested but browser tools are not enabled`);
+                  return { error: 'Browser tools not enabled. Please enable browser tools in settings to use navigation, clicking, and screenshot features.' };
                 }
-                return updated;
-              });
-            },
-            abortControllerRef.current.signal
-          );
+              },
+              undefined, // Don't pass abort signal for now - causes issues
+              mcpTools  // Pass MCP tools
+            );
+          } else {
+            console.log('ℹ️  No custom MCP tools available');
+
+            await streamAnthropic(
+              newMessages,
+              settings.apiKey,
+              modelToUse,
+              settings.customBaseUrl,
+              (text: string) => {
+                setMessages(prev => {
+                  const updated = [...prev];
+                  const lastMsg = updated[updated.length - 1];
+                  if (lastMsg && lastMsg.role === 'assistant') {
+                    lastMsg.content += text;
+                  }
+                  return updated;
+                });
+              },
+              undefined // Don't pass abort signal for now - causes issues
+            );
+          }
         } else if (settings.provider === 'google') {
           await streamGoogle(newMessages, abortControllerRef.current.signal);
         } else {
@@ -1531,6 +1733,13 @@ GUIDELINES:
       container.addEventListener('scroll', handleScroll);
       return () => container.removeEventListener('scroll', handleScroll);
     }
+  }, []);
+
+  // Cleanup MCP connections on unmount
+  useEffect(() => {
+    return () => {
+      resetMCPService();
+    };
   }, []);
 
   if (showSettings && !settings) {

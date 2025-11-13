@@ -1,6 +1,15 @@
 import { useState, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
-import type { Settings } from './types';
+import type { Settings, MCPServerConfig } from './types';
+import {
+  fetchTrustedBusinesses,
+  searchBusinesses,
+  filterByCapability,
+  getCapabilities,
+  getFeaturedBusinesses,
+  sortBusinesses,
+  type ANSBusinessService,
+} from './trusted-business-service';
 
 const PROVIDER_MODELS = {
   google: [
@@ -27,10 +36,25 @@ function SettingsPage() {
     model: 'gemini-2.5-pro',
     toolMode: 'tool-router',
     composioApiKey: '',
+    mcpEnabled: false,
+    mcpServers: [],
   });
   const [saved, setSaved] = useState(false);
   const [showApiKey, setShowApiKey] = useState(false);
   const [showComposioKey, setShowComposioKey] = useState(false);
+  const [showAnsToken, setShowAnsToken] = useState(false);
+  const [newServer, setNewServer] = useState({ name: '', url: '', apiKey: '' });
+
+  // Business Marketplace state
+  const [trustedBusinesses, setTrustedBusinesses] = useState<ANSBusinessService[]>([]);
+  const [filteredBusinesses, setFilteredBusinesses] = useState<ANSBusinessService[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCapability, setSelectedCapability] = useState('all');
+  const [showMarketplace, setShowMarketplace] = useState(false);
+  const [marketplaceLoading, setMarketplaceLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState<'connected' | 'marketplace' | 'custom'>('connected');
+  const [fetchLogs, setFetchLogs] = useState<string[]>([]);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   useEffect(() => {
     // Load settings from chrome.storage
@@ -40,6 +64,205 @@ function SettingsPage() {
       }
     });
   }, []);
+
+  // Load trusted businesses from API
+  useEffect(() => {
+    const loadBusinesses = async () => {
+      setMarketplaceLoading(true);
+      setFetchLogs([]);
+      setFetchError(null);
+
+      const addLog = (msg: string) => {
+        console.log(msg);
+        setFetchLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`]);
+      };
+
+      try {
+        addLog('🔄 Starting fetch from ANS API...');
+        addLog(`📡 Endpoint: https://ra.int.dev-godaddy.com/v1/agents`);
+
+        if (settings.ansApiToken) {
+          addLog('🔑 Using ANS API token from settings');
+        } else {
+          addLog('🍪 Attempting auth with browser cookies');
+        }
+
+        const businesses = await fetchTrustedBusinesses(settings.ansApiToken);
+
+        addLog(`✅ Fetch completed: ${businesses.length} total agents`);
+        addLog(`📊 Capabilities: ${getCapabilities(businesses).join(', ') || 'None'}`);
+
+        setTrustedBusinesses(businesses);
+        setFilteredBusinesses(businesses);
+
+        if (businesses.length === 0) {
+          setFetchError('API returned 0 agents - check console for details');
+        }
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        addLog(`❌ Error: ${errorMsg}`);
+        setFetchError(errorMsg);
+        console.error('Failed to load trusted businesses:', error);
+      } finally {
+        setMarketplaceLoading(false);
+      }
+    };
+
+    if (settings.mcpEnabled) {
+      loadBusinesses();
+    }
+  }, [settings.mcpEnabled]);
+
+  // Update filtered businesses when search or capability changes
+  useEffect(() => {
+    let result = trustedBusinesses;
+
+    // Apply capability filter
+    if (selectedCapability !== 'all') {
+      result = filterByCapability(result, selectedCapability);
+    }
+
+    // Apply search
+    if (searchQuery) {
+      result = searchBusinesses(result, searchQuery);
+    }
+
+    setFilteredBusinesses(result);
+  }, [searchQuery, selectedCapability, trustedBusinesses]);
+
+  const handleAddServer = () => {
+    if (!newServer.name || !newServer.url) return;
+
+    const server: MCPServerConfig = {
+      id: Date.now().toString(),
+      name: newServer.name,
+      url: newServer.url,
+      apiKey: newServer.apiKey || undefined,
+      enabled: true,
+    };
+
+    setSettings({
+      ...settings,
+      mcpServers: [...(settings.mcpServers || []), server],
+    });
+
+    setNewServer({ name: '', url: '', apiKey: '' });
+  };
+
+  const handleRemoveServer = (id: string) => {
+    const newSettings = {
+      ...settings,
+      mcpServers: (settings.mcpServers || []).filter(s => s.id !== id),
+    };
+
+    setSettings(newSettings);
+
+    // Auto-save and notify sidebar
+    chrome.storage.local.set({ atlasSettings: newSettings }, () => {
+      chrome.runtime.sendMessage({ type: 'SETTINGS_UPDATED', action: 'mcp_changed' }, () => {
+        if (chrome.runtime.lastError) {
+          console.log('Sidebar not active, but settings saved');
+        }
+      });
+    });
+  };
+
+  const handleToggleServer = (id: string) => {
+    const newSettings = {
+      ...settings,
+      mcpServers: (settings.mcpServers || []).map(s =>
+        s.id === id ? { ...s, enabled: !s.enabled } : s
+      ),
+    };
+
+    setSettings(newSettings);
+
+    // Auto-save and notify sidebar
+    chrome.storage.local.set({ atlasSettings: newSettings }, () => {
+      chrome.runtime.sendMessage({ type: 'SETTINGS_UPDATED', action: 'mcp_changed' }, () => {
+        if (chrome.runtime.lastError) {
+          console.log('Sidebar not active, but settings saved');
+        }
+      });
+    });
+  };
+
+  // Connect to a trusted business from marketplace
+  const handleConnectBusiness = (business: ANSBusinessService) => {
+    const isAlreadyConnected = (settings.mcpServers || []).some(
+      s => s.url === business.url
+    );
+
+    if (isAlreadyConnected) {
+      console.log('Business already connected');
+      return;
+    }
+
+    const server: MCPServerConfig = {
+      id: business.id,
+      name: business.name,
+      url: business.url,
+      enabled: true,
+      isTrusted: true,
+      isCustom: false,
+      businessInfo: {
+        description: business.description,
+        category: business.capability, // Store capability as category in businessInfo
+        location: business.location,
+        website: business.website,
+        rating: business.rating,
+      },
+    };
+
+    const newSettings = {
+      ...settings,
+      mcpServers: [...(settings.mcpServers || []), server],
+    };
+
+    setSettings(newSettings);
+
+    // Auto-save and notify sidebar
+    console.log('💾 Auto-saving settings after connect...');
+    chrome.storage.local.set({ atlasSettings: newSettings }, () => {
+      console.log('✅ Settings saved to chrome.storage');
+      console.log('📤 Sending SETTINGS_UPDATED message with action: mcp_changed');
+      chrome.runtime.sendMessage({ type: 'SETTINGS_UPDATED', action: 'mcp_changed' }, () => {
+        if (chrome.runtime.lastError) {
+          console.log('⚠️  Sidebar not active, but settings saved');
+        } else {
+          console.log('✅ Message sent to sidebar successfully');
+        }
+      });
+    });
+
+    console.log(`✅ Connected to ${business.name}`);
+  };
+
+  // Disconnect from a business
+  const handleDisconnectBusiness = (id: string) => {
+    const newSettings = {
+      ...settings,
+      mcpServers: (settings.mcpServers || []).filter(s => s.id !== id),
+    };
+
+    setSettings(newSettings);
+
+    // Auto-save and notify sidebar
+    chrome.storage.local.set({ atlasSettings: newSettings }, () => {
+      chrome.runtime.sendMessage({ type: 'SETTINGS_UPDATED', action: 'mcp_changed' }, () => {
+        if (chrome.runtime.lastError) {
+          console.log('Sidebar not active, but settings saved');
+        }
+      });
+    });
+
+    console.log(`✅ Disconnected from service`);
+  };
+
+  // Check if business is connected
+  const isBusinessConnected = (businessUrl: string): boolean => {
+    return (settings.mcpServers || []).some(s => s.url === businessUrl);
+  };
 
   const handleSave = () => {
     chrome.storage.local.set({ atlasSettings: settings }, () => {
@@ -156,6 +379,422 @@ function SettingsPage() {
         </div>
 
         <div className="setting-group">
+          <label style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <input
+              type="checkbox"
+              checked={settings.mcpEnabled || false}
+              onChange={(e) => setSettings({ ...settings, mcpEnabled: e.target.checked })}
+            />
+            Enable Business Services
+          </label>
+          <p className="help-text">
+            🌐 Access 400+ verified GoDaddy customer services through AI chat. Book appointments, place orders, and interact with businesses naturally.
+          </p>
+        </div>
+
+        {settings.mcpEnabled && (
+          <div className="setting-group">
+            <label>ANS API Token</label>
+            <div className="api-key-wrapper">
+              <input
+                type={showAnsToken ? 'text' : 'password'}
+                value={settings.ansApiToken || ''}
+                onChange={(e) => setSettings({ ...settings, ansApiToken: e.target.value })}
+                placeholder="eyJraWQiOi... (paste your Bearer token)"
+                className="api-key-input"
+              />
+              <button
+                type="button"
+                className="toggle-visibility"
+                onClick={() => setShowAnsToken(!showAnsToken)}
+              >
+                {showAnsToken ? '👁️' : '👁️‍🗨️'}
+              </button>
+            </div>
+            <p className="help-text">
+              🔑 Required for ANS API access. Format: <code>Authorization: Bearer eyJraWQiOi...</code>
+              <br />
+              Paste just the token part (without "Bearer"). Token typically starts with "eyJ".
+            </p>
+            {settings.ansApiToken && settings.ansApiToken.startsWith('Bearer ') && (
+              <p style={{ color: '#dc3545', fontSize: '12px', marginTop: '5px' }}>
+                ⚠️ Remove "Bearer " prefix - paste only the token part
+              </p>
+            )}
+          </div>
+        )}
+
+        {settings.mcpEnabled && (
+          <>
+            {/* Tabs */}
+            <div className="setting-group">
+              <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', borderBottom: '2px solid #eee' }}>
+                <button
+                  onClick={() => setActiveTab('connected')}
+                  style={{
+                    padding: '10px 20px',
+                    background: 'none',
+                    border: 'none',
+                    borderBottom: activeTab === 'connected' ? '3px solid #007bff' : '3px solid transparent',
+                    cursor: 'pointer',
+                    fontWeight: activeTab === 'connected' ? 'bold' : 'normal',
+                    color: activeTab === 'connected' ? '#007bff' : '#666'
+                  }}
+                >
+                  My Services ({(settings.mcpServers || []).length})
+                </button>
+                <button
+                  onClick={() => setActiveTab('marketplace')}
+                  style={{
+                    padding: '10px 20px',
+                    background: 'none',
+                    border: 'none',
+                    borderBottom: activeTab === 'marketplace' ? '3px solid #007bff' : '3px solid transparent',
+                    cursor: 'pointer',
+                    fontWeight: activeTab === 'marketplace' ? 'bold' : 'normal',
+                    color: activeTab === 'marketplace' ? '#007bff' : '#666'
+                  }}
+                >
+                  🌐 Discover Services
+                </button>
+                <button
+                  onClick={() => setActiveTab('custom')}
+                  style={{
+                    padding: '10px 20px',
+                    background: 'none',
+                    border: 'none',
+                    borderBottom: activeTab === 'custom' ? '3px solid #007bff' : '3px solid transparent',
+                    cursor: 'pointer',
+                    fontWeight: activeTab === 'custom' ? 'bold' : 'normal',
+                    color: activeTab === 'custom' ? '#007bff' : '#666'
+                  }}
+                >
+                  🔧 Custom
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* My Services Tab */}
+        {settings.mcpEnabled && activeTab === 'connected' && (
+          <div className="setting-group">
+            <label>Connected Services</label>
+
+            {(settings.mcpServers || []).length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {(settings.mcpServers || []).map((server) => (
+                  <div
+                    key={server.id}
+                    style={{
+                      padding: '16px',
+                      border: server.isTrusted ? '2px solid #28a745' : '1px solid #ddd',
+                      borderRadius: '8px',
+                      background: '#f9f9f9'
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                          <div style={{ fontWeight: 'bold', fontSize: '16px' }}>{server.name}</div>
+                          {server.isTrusted && <span style={{ background: '#28a745', color: 'white', padding: '2px 8px', borderRadius: '12px', fontSize: '11px' }}>✓ Verified</span>}
+                          {server.isCustom && <span style={{ background: '#ffc107', color: '#333', padding: '2px 8px', borderRadius: '12px', fontSize: '11px' }}>⚠️  Custom</span>}
+                        </div>
+
+                        {server.businessInfo?.description && (
+                          <div style={{ fontSize: '13px', color: '#666', marginBottom: '6px' }}>
+                            {server.businessInfo.description}
+                          </div>
+                        )}
+
+                        <div style={{ fontSize: '12px', color: '#888', marginBottom: '4px' }}>
+                          {server.businessInfo?.location && `📍 ${server.businessInfo.location} • `}
+                          {server.businessInfo?.category && `${server.businessInfo.category}`}
+                        </div>
+
+                        <div style={{ fontSize: '11px', color: '#999' }}>{server.url}</div>
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '14px', cursor: 'pointer' }}>
+                          <input
+                            type="checkbox"
+                            checked={server.enabled}
+                            onChange={() => handleToggleServer(server.id)}
+                          />
+                          Active
+                        </label>
+                        <button
+                          onClick={() => handleDisconnectBusiness(server.id)}
+                          style={{
+                            padding: '6px 12px',
+                            background: '#dc3545',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontSize: '12px'
+                          }}
+                        >
+                          Disconnect
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ textAlign: 'center', padding: '40px 20px', color: '#666' }}>
+                <p style={{ fontSize: '16px', marginBottom: '10px' }}>No services connected yet</p>
+                <p style={{ fontSize: '14px', marginBottom: '20px' }}>Discover and connect to GoDaddy customer services</p>
+                <button
+                  onClick={() => setActiveTab('marketplace')}
+                  style={{
+                    padding: '10px 20px',
+                    background: '#007bff',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    fontSize: '14px'
+                  }}
+                >
+                  🌐 Browse Marketplace
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Marketplace Tab - Discover GoDaddy Customer Services */}
+        {settings.mcpEnabled && activeTab === 'marketplace' && (
+          <div className="setting-group">
+            <label>ANS Business Marketplace</label>
+
+            {/* Search and Filter */}
+            <div style={{ marginBottom: '20px' }}>
+              <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="🔍 Search by name, ID, or capability..."
+                  className="api-key-input"
+                  style={{ flex: 1, marginBottom: 0 }}
+                />
+                <button
+                  onClick={() => {
+                    // Force reload by toggling mcpEnabled
+                    const current = settings.mcpEnabled;
+                    setSettings({ ...settings, mcpEnabled: false });
+                    setTimeout(() => setSettings({ ...settings, mcpEnabled: current }), 10);
+                  }}
+                  disabled={marketplaceLoading}
+                  style={{
+                    padding: '8px 16px',
+                    background: marketplaceLoading ? '#6c757d' : '#007bff',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: marketplaceLoading ? 'not-allowed' : 'pointer',
+                    fontSize: '13px'
+                  }}
+                >
+                  {marketplaceLoading ? '⏳' : '🔄'} Refresh
+                </button>
+              </div>
+
+              <select
+                value={selectedCapability}
+                onChange={(e) => setSelectedCapability(e.target.value)}
+                className="model-select"
+              >
+                <option value="all">All Capabilities</option>
+                {getCapabilities(trustedBusinesses).map(cap => (
+                  <option key={cap} value={cap}>{cap}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Debug/Status Information */}
+            {(fetchLogs.length > 0 || fetchError) && (
+              <div style={{
+                marginBottom: '20px',
+                padding: '12px',
+                background: fetchError ? '#fff3cd' : '#e7f3ff',
+                border: `1px solid ${fetchError ? '#ffc107' : '#007bff'}`,
+                borderRadius: '6px',
+                fontSize: '12px',
+                fontFamily: 'monospace'
+              }}>
+                <div style={{ fontWeight: 'bold', marginBottom: '8px', fontFamily: 'sans-serif' }}>
+                  📋 Fetch Status
+                </div>
+                {fetchError && (
+                  <div style={{ color: '#856404', marginBottom: '8px', fontWeight: 'bold' }}>
+                    ⚠️ {fetchError}
+                  </div>
+                )}
+                {fetchLogs.map((log, idx) => (
+                  <div key={idx} style={{ marginBottom: '4px', color: '#333' }}>
+                    {log}
+                  </div>
+                ))}
+                <div style={{ marginTop: '8px', fontSize: '11px', color: '#666', fontFamily: 'sans-serif' }}>
+                  Total businesses loaded: {trustedBusinesses.length} |
+                  Filtered results: {filteredBusinesses.length}
+                  {searchQuery && ` | Search: "${searchQuery}"`}
+                  {selectedCapability !== 'all' && ` | Capability: ${selectedCapability}`}
+                </div>
+              </div>
+            )}
+
+            {marketplaceLoading ? (
+              <div style={{ textAlign: 'center', padding: '40px', color: '#666' }}>
+                Loading services...
+              </div>
+            ) : filteredBusinesses.length > 0 ? (
+              <>
+                <div style={{ marginBottom: '12px', fontSize: '13px', color: '#666' }}>
+                  Showing all {filteredBusinesses.length} services
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '500px', overflowY: 'auto' }}>
+                  {filteredBusinesses.map((business) => {
+                  const connected = isBusinessConnected(business.url);
+                  return (
+                    <div
+                      key={business.id}
+                      style={{
+                        padding: '16px',
+                        border: '1px solid #ddd',
+                        borderRadius: '8px',
+                        background: connected ? '#f0f8ff' : 'white'
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                            <div style={{ fontWeight: 'bold', fontSize: '16px' }}>{business.name}</div>
+                            <span style={{ background: '#28a745', color: 'white', padding: '2px 8px', borderRadius: '12px', fontSize: '11px' }}>✓ Verified</span>
+                          </div>
+
+                          {business.description && (
+                            <div style={{ fontSize: '13px', color: '#666', marginBottom: '8px' }}>
+                              {business.description}
+                            </div>
+                          )}
+
+                          <div style={{ fontSize: '12px', color: '#888', marginBottom: '4px' }}>
+                            {business.location && `📍 ${business.location}`}
+                            {business.capability && ` • Capability: ${business.capability}`}
+                            {business.rating && ` • ⭐ ${business.rating}/5`}
+                            {business.connectionCount && ` • ${business.connectionCount} connections`}
+                          </div>
+
+                          <div style={{ fontSize: '11px', color: '#999', fontFamily: 'monospace' }}>
+                            ID: {business.id}
+                          </div>
+                        </div>
+
+                        <button
+                          onClick={() => connected ? handleDisconnectBusiness(business.id) : handleConnectBusiness(business)}
+                          style={{
+                            padding: '8px 16px',
+                            background: connected ? '#dc3545' : '#28a745',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontSize: '13px'
+                          }}
+                        >
+                          {connected ? 'Disconnect' : 'Connect'}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+            ) : (
+              <div style={{ textAlign: 'center', padding: '40px', color: '#666' }}>
+                <p>No services found matching your search</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Custom Tab - Add Your Own MCP Server */}
+        {settings.mcpEnabled && activeTab === 'custom' && (
+          <div className="setting-group">
+            <label>Custom MCP Server</label>
+            <p style={{ fontSize: '13px', color: '#666', marginBottom: '15px' }}>
+              ⚠️  Custom servers are not verified by GoDaddy ANS. Only connect to services you trust.
+            </p>
+
+            <div style={{ marginBottom: '15px', padding: '15px', background: '#f5f5f5', borderRadius: '8px' }}>
+              <div style={{ marginBottom: '10px' }}>
+                <input
+                  type="text"
+                  value={newServer.name}
+                  onChange={(e) => setNewServer({ ...newServer, name: e.target.value })}
+                  placeholder="Server name (e.g., My Private Service)"
+                  className="api-key-input"
+                  style={{ marginBottom: '8px' }}
+                />
+                <input
+                  type="text"
+                  value={newServer.url}
+                  onChange={(e) => setNewServer({ ...newServer, url: e.target.value })}
+                  placeholder="Server URL (e.g., http://localhost:3000/mcp)"
+                  className="api-key-input"
+                  style={{ marginBottom: '8px' }}
+                />
+                <input
+                  type="text"
+                  value={newServer.apiKey}
+                  onChange={(e) => setNewServer({ ...newServer, apiKey: e.target.value })}
+                  placeholder="API Key (optional)"
+                  className="api-key-input"
+                />
+              </div>
+              <button
+                onClick={() => {
+                  if (!newServer.name || !newServer.url) return;
+                  const server: MCPServerConfig = {
+                    id: Date.now().toString(),
+                    name: newServer.name,
+                    url: newServer.url,
+                    apiKey: newServer.apiKey || undefined,
+                    enabled: true,
+                    isCustom: true,
+                    isTrusted: false,
+                  };
+                  setSettings({
+                    ...settings,
+                    mcpServers: [...(settings.mcpServers || []), server],
+                  });
+                  setNewServer({ name: '', url: '', apiKey: '' });
+                  setActiveTab('connected');
+                }}
+                disabled={!newServer.name || !newServer.url}
+                style={{
+                  padding: '10px 20px',
+                  background: '#007bff',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  opacity: (!newServer.name || !newServer.url) ? 0.5 : 1
+                }}
+              >
+                + Add Custom Server
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div className="setting-group">
           <label>
             {settings.provider === 'google' && 'Google API Key'}
             {settings.provider === 'anthropic' && 'Anthropic API Key'}
@@ -214,6 +853,11 @@ function SettingsPage() {
             <div className="feature-icon">◉</div>
             <h3>Browser Tools</h3>
             <p>Click the Browser Tools button (◉) to enable Gemini 2.5 Computer Use for direct browser automation with screenshots</p>
+          </div>
+          <div className="feature-card">
+            <div className="feature-icon">🌐</div>
+            <h3>Business Marketplace</h3>
+            <p>Discover and connect to 400+ verified GoDaddy customer services. Book appointments, order products, and interact with businesses through AI chat.</p>
           </div>
           <div className="feature-card">
             <div className="feature-icon">🔧</div>

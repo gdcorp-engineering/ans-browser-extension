@@ -10,7 +10,7 @@ export async function streamAnthropic(
 ): Promise<void> {
   const baseUrl = customBaseUrl || 'https://api.anthropic.com';
 
-  const response = await fetch(`${baseUrl}/v1/messages`, {
+  const fetchOptions: RequestInit = {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -26,8 +26,14 @@ export async function streamAnthropic(
       })),
       stream: true,
     }),
-    signal,
-  });
+  };
+
+  // Only add signal if it's a valid AbortSignal instance
+  if (signal && signal instanceof AbortSignal) {
+    fetchOptions.signal = signal;
+  }
+
+  const response = await fetch(`${baseUrl}/v1/messages`, fetchOptions);
 
   if (!response.ok) {
     const error = await response.json();

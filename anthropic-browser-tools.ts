@@ -82,11 +82,21 @@ export async function streamAnthropicWithBrowserTools(
   onTextChunk: (text: string) => void,
   onComplete: () => void,
   executeTool: (toolName: string, params: any) => Promise<any>,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  additionalTools?: any[] // Custom MCP tools
 ): Promise<void> {
   const baseUrl = customBaseUrl || 'https://api.anthropic.com';
   let conversationMessages = [...messages];
   let fullResponseText = '';
+
+  // Merge browser tools with additional tools (MCP)
+  console.log('🔧 Browser tools count:', BROWSER_TOOLS.length);
+  console.log('🔧 Additional tools (MCP) count:', additionalTools?.length || 0);
+
+  const allTools = additionalTools ? [...BROWSER_TOOLS, ...additionalTools] : BROWSER_TOOLS;
+
+  console.log('🔧 Total merged tools:', allTools.length);
+  console.log('🔧 All tool names:', allTools.map((t: any) => t.name).join(', '));
 
   const MAX_TURNS = 10; // Prevent infinite loops
   let turnCount = 0;
@@ -95,12 +105,12 @@ export async function streamAnthropicWithBrowserTools(
     turnCount++;
 
     console.log('🔧 Anthropic Browser Tools - Turn', turnCount);
-    console.log('📤 Sending request with tools:', BROWSER_TOOLS.map(t => t.name));
+    console.log('📤 Sending request with tools:', allTools.map((t: any) => t.name));
 
     const requestBody = {
       model,
       max_tokens: 4096,
-      tools: BROWSER_TOOLS,
+      tools: allTools,
       messages: conversationMessages.map(m => ({
         role: m.role,
         content: m.content,
@@ -110,7 +120,7 @@ export async function streamAnthropicWithBrowserTools(
 
     console.log('📤 Request body:', JSON.stringify(requestBody, null, 2));
 
-    const response = await fetch(`${baseUrl}/v1/messages`, {
+    const fetchOptions: RequestInit = {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -118,8 +128,14 @@ export async function streamAnthropicWithBrowserTools(
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify(requestBody),
-      signal,
-    });
+    };
+
+    // Only add signal if it's a valid AbortSignal instance
+    if (signal && signal instanceof AbortSignal) {
+      fetchOptions.signal = signal;
+    }
+
+    const response = await fetch(`${baseUrl}/v1/messages`, fetchOptions);
 
     if (!response.ok) {
       const error = await response.json();

@@ -4,6 +4,23 @@ import { z } from 'zod';
 export type ToolMode = 'tool-router';
 export type Provider = 'google' | 'anthropic' | 'openai';
 
+export interface MCPServerConfig {
+  id: string;
+  name: string;
+  url: string;
+  apiKey?: string;
+  enabled: boolean;
+  isTrusted?: boolean; // From ANS marketplace
+  isCustom?: boolean; // User-added custom server
+  businessInfo?: {
+    description?: string;
+    category?: string;
+    location?: string;
+    website?: string;
+    rating?: number;
+  };
+}
+
 export interface Settings {
   provider: Provider;
   apiKey: string;
@@ -12,6 +29,9 @@ export interface Settings {
   composioApiKey?: string;
   customBaseUrl?: string; // Custom provider URL
   customModelName?: string; // Custom model name when model is 'custom'
+  mcpEnabled?: boolean; // Enable custom MCP servers
+  mcpServers?: MCPServerConfig[]; // List of MCP servers to connect to
+  ansApiToken?: string; // ANS API authentication token (optional)
 }
 
 export interface ComposioSession {
@@ -103,6 +123,28 @@ export interface ToolResult {
 export interface MCPClient {
   tools(): Promise<Record<string, any>>;
   close(): Promise<void>;
+}
+
+/**
+ * MCP Connection tracking - maps server ID to client instance
+ */
+export interface MCPConnection {
+  serverId: string;
+  serverName: string;
+  serverUrl: string;
+  client: MCPClient;
+  tools: Record<string, any>;
+  connected: boolean;
+  error?: string;
+}
+
+/**
+ * MCP Tool metadata with origin tracking
+ */
+export interface MCPToolWithOrigin {
+  serverId: string;
+  serverName: string;
+  toolDefinition: any;
 }
 
 /**
