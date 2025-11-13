@@ -10,6 +10,29 @@ import { streamAnthropicWithBrowserTools } from './anthropic-browser-tools';
 import { getMCPService, resetMCPService } from './mcp-service';
 import { getToolDescription, mergeToolDefinitions } from './mcp-tool-router';
 
+// Model ID to display name mapping
+const MODEL_DISPLAY_NAMES: Record<string, string> = {
+  // Google Models
+  'gemini-2.5-pro': 'Gemini 2.5 Pro',
+  'gemini-2.5-flash': 'Gemini 2.5 Flash',
+  'gemini-2.5-flash-lite': 'Gemini 2.5 Flash Lite',
+  'gemini-2.5-computer-use-preview-10-2025': 'Gemini 2.5 Computer Use Preview',
+  // Anthropic Models
+  'claude-sonnet-4-5-20250929': 'Claude Sonnet 4.5',
+  'claude-3-5-sonnet-20241022': 'Claude 3.5 Sonnet',
+  'claude-3-5-haiku-20241022': 'Claude 3.5 Haiku',
+  'claude-3-opus-20240229': 'Claude 3 Opus',
+  // OpenAI Models
+  'gpt-4o': 'GPT-4o',
+  'gpt-4o-mini': 'GPT-4o Mini',
+  'gpt-4-turbo': 'GPT-4 Turbo',
+};
+
+const getModelDisplayName = (modelId: string | undefined): string => {
+  if (!modelId) return 'No model';
+  return MODEL_DISPLAY_NAMES[modelId] || modelId;
+};
+
 // Custom component to handle link clicks - opens in new tab
 const LinkComponent = ({ href, children }: { href?: string; children?: React.ReactNode }) => {
   const handleLinkClick = (e: React.MouseEvent) => {
@@ -1770,11 +1793,13 @@ GUIDELINES:
               ? settings.provider.charAt(0).toUpperCase() + settings.provider.slice(1)
               : 'Unknown')} · {browserToolsEnabled
                 ? (settings?.provider === 'google'
-                  ? 'gemini-2.5-computer-use-preview-10-2025'
+                  ? getModelDisplayName('gemini-2.5-computer-use-preview-10-2025')
                   : (settings?.model === 'custom' && settings?.customModelName
                     ? settings.customModelName
-                    : settings?.model) + ' (Browser Tools)')
-                : (settings?.model || 'No model')}
+                    : getModelDisplayName(settings?.model)) + ' (Browser Tools)')
+                : (settings?.model === 'custom' && settings?.customModelName
+                  ? settings.customModelName
+                  : getModelDisplayName(settings?.model))}
           </p>
         </div>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
@@ -1812,7 +1837,7 @@ GUIDELINES:
           fontSize: '13px',
           color: '#92400e',
         }}>
-          <strong>Browser Tools Enabled!</strong> Now using Gemini 2.5 Computer Use Preview (overrides your selected model).
+          <strong>Browser Tools Enabled!</strong> Now using {getModelDisplayName('gemini-2.5-computer-use-preview-10-2025')} (overrides your selected model).
           {!settings?.apiKey && (
             <span> Please <a href="#" onClick={(e) => { e.preventDefault(); openSettings(); }} style={{ color: '#2563eb', textDecoration: 'underline' }}>set your Google API key</a> in settings.</span>
           )}

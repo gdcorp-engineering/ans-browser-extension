@@ -18,6 +18,7 @@ const PROVIDER_MODELS = {
     { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash Lite', description: 'Optimized for speed' },
   ],
   anthropic: [
+    { id: 'claude-sonnet-4-5-20250929', name: 'Claude Sonnet 4.5', description: 'Latest and most capable' },
     { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', description: 'Most intelligent model' },
     { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku', description: 'Fastest model' },
     { id: 'claude-3-opus-20240229', name: 'Claude 3 Opus', description: 'Previous generation' },
@@ -338,6 +339,7 @@ function SettingsPage() {
           </div>
         )}
 
+        {/* Composio API Key - Hidden from UI
         <div className="setting-group">
           <label>Composio API Key</label>
           <div className="api-key-input-wrapper">
@@ -363,19 +365,42 @@ function SettingsPage() {
             </a>
           </p>
         </div>
+        */}
 
         <div className="setting-group">
-          <label>Custom Base URL (Optional)</label>
-          <input
-            type="text"
-            value={settings.customBaseUrl || ''}
-            onChange={(e) => setSettings({ ...settings, customBaseUrl: e.target.value })}
-            placeholder="e.g., https://your-custom-endpoint.com"
-            className="api-key-input"
-          />
+          <label>GoCode URL</label>
+          <div className="api-key-input-wrapper">
+            <input
+              type="text"
+              value={settings.customBaseUrl || ''}
+              onChange={(e) => setSettings({ ...settings, customBaseUrl: e.target.value })}
+              placeholder="e.g., https://your-custom-endpoint.com"
+              className="api-key-input"
+            />
+          </div>
           <p className="help-text">
-            Leave empty to use default Google AI endpoint. Enter a custom Gemini-compatible API endpoint to use your own provider.
+            Leave empty to use default provider endpoint. Enter a custom API endpoint to use your own provider.
           </p>
+        </div>
+
+        <div className="setting-group">
+          <label>GoCode Key</label>
+          <div className="api-key-input-wrapper">
+            <input
+              type={showApiKey ? 'text' : 'password'}
+              value={settings.apiKey}
+              onChange={(e) => setSettings({ ...settings, apiKey: e.target.value })}
+              placeholder="Enter your API key"
+              className="api-key-input"
+            />
+            <button
+              type="button"
+              className="toggle-visibility"
+              onClick={() => setShowApiKey(!showApiKey)}
+            >
+              {showApiKey ? '👁️' : '👁️‍🗨️'}
+            </button>
+          </div>
         </div>
 
         <div className="setting-group">
@@ -388,14 +413,14 @@ function SettingsPage() {
             Enable Business Services
           </label>
           <p className="help-text">
-            🌐 Access 400+ verified GoDaddy customer services through AI chat. Book appointments, place orders, and interact with businesses naturally.
+            🌐 Access 115 Million verified GoDaddy customer services through AI chat. Book appointments, place orders, and interact with businesses naturally.
           </p>
         </div>
 
         {settings.mcpEnabled && (
           <div className="setting-group">
             <label>ANS API Token</label>
-            <div className="api-key-wrapper">
+            <div className="api-key-input-wrapper">
               <input
                 type={showAnsToken ? 'text' : 'password'}
                 value={settings.ansApiToken || ''}
@@ -794,52 +819,6 @@ function SettingsPage() {
           </div>
         )}
 
-        <div className="setting-group">
-          <label>
-            {settings.provider === 'google' && 'Google API Key'}
-            {settings.provider === 'anthropic' && 'Anthropic API Key'}
-            {settings.provider === 'openai' && 'OpenAI API Key'}
-          </label>
-          <div className="api-key-input-wrapper">
-            <input
-              type={showApiKey ? 'text' : 'password'}
-              value={settings.apiKey}
-              onChange={(e) => setSettings({ ...settings, apiKey: e.target.value })}
-              placeholder={
-                settings.provider === 'google' ? 'Enter your Google API key' :
-                settings.provider === 'anthropic' ? 'Enter your Anthropic API key' :
-                'Enter your OpenAI API key'
-              }
-              className="api-key-input"
-            />
-            <button
-              type="button"
-              className="toggle-visibility"
-              onClick={() => setShowApiKey(!showApiKey)}
-            >
-              {showApiKey ? '👁️' : '👁️‍🗨️'}
-            </button>
-          </div>
-          <p className="help-text">
-            Get your API key from:{' '}
-            {settings.provider === 'google' && (
-              <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer">
-                Google AI Studio
-              </a>
-            )}
-            {settings.provider === 'anthropic' && (
-              <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer">
-                Anthropic Console
-              </a>
-            )}
-            {settings.provider === 'openai' && (
-              <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer">
-                OpenAI Platform
-              </a>
-            )}
-          </p>
-        </div>
-
         <button
           className={`save-button ${saved ? 'saved' : ''}`}
           onClick={handleSave}
@@ -857,7 +836,7 @@ function SettingsPage() {
           <div className="feature-card">
             <div className="feature-icon">🌐</div>
             <h3>Business Marketplace</h3>
-            <p>Discover and connect to 400+ verified GoDaddy customer services. Book appointments, order products, and interact with businesses through AI chat.</p>
+            <p>Discover and connect to 115 Million verified GoDaddy customer services. Book appointments, order products, and interact with businesses through AI chat.</p>
           </div>
           <div className="feature-card">
             <div className="feature-icon">🔧</div>
