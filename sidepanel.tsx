@@ -837,6 +837,15 @@ GUIDELINES:
         for (const part of parts) {
           if ('text' in part && typeof part.text === 'string') {
             responseText += part.text + '\n';
+            // Update message with current text
+            setMessages(prev => {
+              const updated = [...prev];
+              const lastMsg = updated[updated.length - 1];
+              if (lastMsg && lastMsg.role === 'assistant') {
+                lastMsg.content = responseText;
+              }
+              return updated;
+            });
           } else if ('functionCall' in part && part.functionCall) {
             // Check if user clicked stop button
             if (abortControllerRef.current?.signal.aborted) {
@@ -855,6 +864,16 @@ GUIDELINES:
             const funcArgs = part.functionCall.args || {};
 
             responseText += `\n[Executing: ${funcName}]\n`;
+
+            // Update message with current progress
+            setMessages(prev => {
+              const updated = [...prev];
+              const lastMsg = updated[updated.length - 1];
+              if (lastMsg && lastMsg.role === 'assistant') {
+                lastMsg.content = responseText;
+              }
+              return updated;
+            });
 
             // Show overlay before ANY browser action (ensures overlay is always visible)
             console.log(`🔵 Showing overlay for browser action: ${funcName}`);
@@ -1700,8 +1719,10 @@ GUIDELINES:
                 }
                 return updated;
               });
-              // Force scroll on each chunk
-              messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+              // Force scroll on each chunk - use setTimeout to ensure DOM updates first
+              setTimeout(() => {
+                messagesEndRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' });
+              }, 0);
             },
             () => {
               // On complete - hide browser automation overlay
@@ -2002,7 +2023,7 @@ GUIDELINES:
   const isAtBottom = () => {
     if (!messagesContainerRef.current) return true;
     const container = messagesContainerRef.current;
-    const threshold = 100; // pixels from bottom
+    const threshold = 200; // pixels from bottom - increased for more aggressive auto-scroll
     return container.scrollHeight - container.scrollTop - container.clientHeight < threshold;
   };
 
@@ -2011,11 +2032,13 @@ GUIDELINES:
     setIsUserScrolled(!isAtBottom());
   };
 
-  // Auto-scroll to bottom when messages change (unless user scrolled up)
+  // Auto-scroll to bottom when messages change
   useEffect(() => {
-    if (!isUserScrolled || isLoading) {
+    // Always auto-scroll during loading (includes browser automation)
+    // Also scroll if user is near bottom (within threshold)
+    if (isLoading || !isUserScrolled) {
       // Use instant scroll during loading for better UX
-      messagesEndRef.current?.scrollIntoView({ behavior: isLoading ? 'auto' : 'smooth' });
+      messagesEndRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' });
     }
   }, [messages, isUserScrolled, isLoading]);
 
@@ -2192,6 +2215,8 @@ GUIDELINES:
             </div>
           ))
         )}
+        {/* Scroll anchor - must be inside messages-container */}
+        <div ref={messagesEndRef} />
       </div>
 
       <form className="input-form" onSubmit={handleSubmit}>
@@ -2221,7 +2246,6 @@ GUIDELINES:
           </button>
         )}
       </form>
-      <div ref={messagesEndRef} />
     </div>
   );
 }

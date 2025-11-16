@@ -160,7 +160,44 @@ function executePageAction(
           return { success: false, message: `Element not found: ${selector || target}` };
         } else if (coordinates) {
 
-          const element = document.elementFromPoint(coordinates.x, coordinates.y);
+          let element = document.elementFromPoint(coordinates.x, coordinates.y) as HTMLElement;
+
+          // If element is an input or near an input, try to find the actual input field
+          // This improves accuracy for search boxes and text inputs
+          if (element) {
+            const tagName = element.tagName;
+
+            // If we clicked near but not on an input, try to find the nearest input
+            if (tagName !== 'INPUT' && tagName !== 'TEXTAREA' && element.getAttribute('contenteditable') !== 'true') {
+              // Check if clicked element contains an input
+              const inputInside = element.querySelector('input, textarea, [contenteditable="true"]') as HTMLElement;
+              if (inputInside) {
+                console.log(`💡 Found input field inside clicked element: ${inputInside.tagName}`);
+                element = inputInside;
+              } else {
+                // Try to find nearby visible input (within 100px)
+                const allInputs = Array.from(document.querySelectorAll('input[type="text"], input[type="search"], textarea')) as HTMLElement[];
+                const nearbyInput = allInputs.find(input => {
+                  const rect = input.getBoundingClientRect();
+                  const dx = Math.abs((rect.left + rect.width / 2) - coordinates.x);
+                  const dy = Math.abs((rect.top + rect.height / 2) - coordinates.y);
+                  const distance = Math.sqrt(dx * dx + dy * dy);
+                  return distance < 100 && rect.width > 0 && rect.height > 0; // Within 100px
+                });
+
+                if (nearbyInput) {
+                  console.log(`💡 Found nearby input field within 100px: ${nearbyInput.tagName}`);
+                  element = nearbyInput;
+                  // Update coordinates to center of input
+                  const rect = nearbyInput.getBoundingClientRect();
+                  coordinates = {
+                    x: rect.left + rect.width / 2,
+                    y: rect.top + rect.height / 2
+                  };
+                }
+              }
+            }
+          }
 
           if (element) {
             // Get element position for logging
@@ -177,6 +214,13 @@ function executePageAction(
               });
               element.dispatchEvent(event);
             });
+
+            // If it's an input field, explicitly focus it
+            if (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA' ||
+                element.getAttribute('contenteditable') === 'true') {
+              console.log(`💡 Focusing input field: ${element.tagName}`);
+              element.focus();
+            }
 
             // Visual feedback
             highlightElement(element, coordinates);
