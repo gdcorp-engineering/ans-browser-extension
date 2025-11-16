@@ -277,10 +277,19 @@ export class BrowserManager {
    */
   cleanup() {
     if (this.browserView) {
-      this.mainWindow.removeBrowserView(this.browserView);
-      // @ts-ignore - webContents has destroy method
-      this.browserView.webContents.destroy();
-      this.browserView = null;
+      try {
+        // Check if objects are still valid before destroying
+        if (!this.browserView.webContents.isDestroyed()) {
+          this.mainWindow.removeBrowserView(this.browserView);
+          // @ts-ignore - webContents has destroy method
+          this.browserView.webContents.destroy();
+        }
+      } catch (error) {
+        // Ignore errors during cleanup - objects may already be destroyed
+        console.log('[BrowserManager] Cleanup: objects already destroyed');
+      } finally {
+        this.browserView = null;
+      }
     }
   }
 }
