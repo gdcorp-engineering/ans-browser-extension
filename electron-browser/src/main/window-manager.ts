@@ -1,4 +1,4 @@
-import { BrowserWindow } from 'electron';
+import { BrowserWindow, app } from 'electron';
 import { join } from 'path';
 
 export class WindowManager {
@@ -19,7 +19,9 @@ export class WindowManager {
       trafficLightPosition: { x: 20, y: 20 },
       backgroundColor: '#1a1a1a',
       webPreferences: {
-        preload: join(__dirname, '../preload/index.js'),
+        preload: this.isDev
+          ? join(__dirname, '../preload/index.js')
+          : join(app.getAppPath(), 'dist/preload/index.js'),
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: false, // Disabled for native module support (ComputerUseService requires BrowserView access)

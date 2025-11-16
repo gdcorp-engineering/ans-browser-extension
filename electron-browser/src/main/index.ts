@@ -43,7 +43,12 @@ async function createApplication() {
     }
     mainWindow.webContents.openDevTools();
   } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'));
+    // Use app.getAppPath() for proper asar archive support
+    const indexPath = join(app.getAppPath(), 'dist/renderer/index.html');
+    console.log('Loading file from:', indexPath);
+    mainWindow.loadFile(indexPath);
+    // Open dev tools in production to debug
+    mainWindow.webContents.openDevTools();
   }
 
   // Debug: log what's being loaded

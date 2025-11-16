@@ -28,11 +28,13 @@ export default function NavBar({
         alignItems: 'center',
         justifyContent: 'space-between',
         padding: '12px 16px',
+        paddingLeft: '80px', // Space for macOS traffic lights
         borderBottom: '1px solid #e5e5e5',
         backgroundColor: '#fafafa',
         height: '52px',
         gap: '8px',
-      }}
+        WebkitAppRegion: 'drag', // Make navbar draggable
+      } as React.CSSProperties}
     >
       {/* Left side - Brand/Logo */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -41,7 +43,7 @@ export default function NavBar({
 
       {/* Center - Browser Controls (only show in chat mode when browser is visible) */}
       {currentMode === 'chat' && showBrowserSidebar && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
           <button
             onClick={onBrowserBack}
             disabled={!canGoBack}
@@ -88,7 +90,7 @@ export default function NavBar({
       )}
 
       {/* Right side - Action buttons */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: 'auto' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: 'auto', WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
         <button
           onClick={onNewChat}
           style={{

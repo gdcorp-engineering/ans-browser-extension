@@ -1,17 +1,6 @@
-<div align="center">
+# ANS Browser Extension
 
-![Banner](./assets/banner.png)
-
-# Open ChatGPT Atlas
-
-Open Source and Free Alternative to ChatGPT Atlas.
-
-![Atlas Demo](./atlas.gif)
-
-<a href="https://github.com/composiohq/open-chatgpt-atlas"><img alt="Star" src="https://img.shields.io/badge/⭐%20Star%20Us-GitHub-yellow?style=for-the-badge"></a>
-
-
-</div>
+AI-powered browser automation with GoDaddy Agent Naming System (ANS) integration.
 
 ## Features
 

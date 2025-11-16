@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "build:electron": "cd electron-browser && npm install && npm run build",
+    "electron": "cd electron-browser && npm start",
+    "electron:dev": "cd electron-browser && npm run dev"
   },
   "dependencies": {
     "@a2a-js/sdk": "^0.3.5",
