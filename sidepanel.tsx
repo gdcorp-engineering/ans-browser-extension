@@ -402,6 +402,9 @@ function ChatSidebar() {
 
           await loadSettings();
           console.log('✅ Settings reloaded');
+        } else if (request.type === 'ABORT_BROWSER_AUTOMATION') {
+          console.log('🛑 User requested to take over browser control');
+          stop();
         }
       };
 
@@ -496,6 +499,31 @@ function ChatSidebar() {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       setIsLoading(false);
+    }
+    // Hide browser automation overlay when stopped
+    hideBrowserAutomationOverlay();
+  };
+
+  // Show/hide browser automation overlay on current tab
+  const showBrowserAutomationOverlay = async () => {
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tab?.id) {
+        await chrome.tabs.sendMessage(tab.id, { type: 'SHOW_BROWSER_AUTOMATION_OVERLAY' });
+      }
+    } catch (error) {
+      console.warn('Failed to show browser automation overlay:', error);
+    }
+  };
+
+  const hideBrowserAutomationOverlay = async () => {
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tab?.id) {
+        await chrome.tabs.sendMessage(tab.id, { type: 'HIDE_BROWSER_AUTOMATION_OVERLAY' });
+      }
+    } catch (error) {
+      console.warn('Failed to hide browser automation overlay:', error);
     }
   };
 
@@ -828,16 +856,18 @@ GUIDELINES:
 
             responseText += `\n[Executing: ${funcName}]\n`;
 
+            // Show overlay before ANY browser action (ensures overlay is always visible)
+            console.log(`🔵 Showing overlay for browser action: ${funcName}`);
+            await showBrowserAutomationOverlay();
+
             // Execute the browser action
             const result = await executeBrowserAction(funcName, funcArgs);
-            
-            // Wait longer after navigation actions for page to load
-            const isNavigationAction = ['navigate', 'open_web_browser', 'navigate_to', 'go_to', 'click', 'click_at', 'mouse_click', 'go_back', 'back', 'go_forward', 'forward'].includes(funcName);
-            if (isNavigationAction) {
-              await new Promise(resolve => setTimeout(resolve, 2500)); // Wait 2.5 seconds for page to load
-            } else {
-              await new Promise(resolve => setTimeout(resolve, 500)); // Normal wait
-            }
+
+            // Wait after action for any changes to settle
+            await new Promise(resolve => setTimeout(resolve, 500));
+
+            // Re-show overlay after action (in case page navigation removed it)
+            await showBrowserAutomationOverlay();
             
             screenshot = await executeTool('screenshot', {});
             
@@ -1485,6 +1515,9 @@ GUIDELINES:
 
       // BROWSER TOOLS MODE
       if (browserToolsEnabled) {
+        // Show browser automation overlay
+        await showBrowserAutomationOverlay();
+
         // Close MCP client if active
         if (mcpClientRef.current) {
           try {
@@ -1636,8 +1669,21 @@ GUIDELINES:
               }
             }
 
+            // Show overlay before ANY browser tool execution
+            // (ensures overlay is always visible during automation)
+            console.log(`🔵 Showing overlay for browser tool: ${toolName}`);
+            await showBrowserAutomationOverlay();
+
             // Execute browser tool
-            return await executeTool(toolName, params);
+            const result = await executeTool(toolName, params);
+
+            // Re-show overlay after tool execution (in case page navigation removed it)
+            // Small delay to let any page changes settle
+            setTimeout(async () => {
+              await showBrowserAutomationOverlay();
+            }, 500);
+
+            return result;
           };
 
           await streamAnthropicWithBrowserTools(
@@ -1658,7 +1704,8 @@ GUIDELINES:
               messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
             },
             () => {
-              // On complete
+              // On complete - hide browser automation overlay
+              hideBrowserAutomationOverlay();
             },
             wrappedExecuteTool,
             undefined, // Don't pass abort signal for now - causes issues
@@ -1919,6 +1966,8 @@ GUIDELINES:
         }
       }
 
+      // Hide browser automation overlay on completion
+      await hideBrowserAutomationOverlay();
       setIsLoading(false);
     } catch (error: any) {
       console.error('❌ Chat error occurred:');
@@ -1943,6 +1992,8 @@ GUIDELINES:
           ];
         });
       }
+      // Hide browser automation overlay on error
+      await hideBrowserAutomationOverlay();
       setIsLoading(false);
     }
   };

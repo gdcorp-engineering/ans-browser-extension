@@ -711,7 +711,119 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
     sendResponse({ text: selectedText });
     return true;
   }
+
+  // Show/hide browser automation overlay
+  if (request.type === 'SHOW_BROWSER_AUTOMATION_OVERLAY') {
+    showBrowserAutomationOverlay();
+    sendResponse({ success: true });
+    return true;
+  }
+
+  if (request.type === 'HIDE_BROWSER_AUTOMATION_OVERLAY') {
+    hideBrowserAutomationOverlay();
+    sendResponse({ success: true });
+    return true;
+  }
 });
+
+/**
+ * Browser automation visual overlay
+ * Shows blue border and "Take Over Control" button when AI is controlling the browser
+ */
+let automationOverlay: HTMLDivElement | null = null;
+let automationButton: HTMLDivElement | null = null;
+
+function showBrowserAutomationOverlay() {
+  // Don't create duplicate overlay
+  if (automationOverlay) return;
+
+  // Ensure document.body exists before appending
+  if (!document.body) {
+    console.warn('⚠️  Cannot show overlay - document.body not ready yet');
+    // Retry when body is ready
+    const observer = new MutationObserver(() => {
+      if (document.body) {
+        observer.disconnect();
+        showBrowserAutomationOverlay();
+      }
+    });
+    observer.observe(document.documentElement, { childList: true });
+    return;
+  }
+
+  console.log('🔵 Showing browser automation overlay');
+
+  // Create blue border overlay
+  automationOverlay = document.createElement('div');
+  automationOverlay.id = 'atlas-automation-overlay';
+  automationOverlay.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    border: 4px solid #007AFF;
+    pointer-events: none;
+    z-index: 999998;
+    box-shadow: inset 0 0 20px rgba(0, 122, 255, 0.3);
+  `;
+
+  // Create "Take Over Control" button
+  automationButton = document.createElement('div');
+  automationButton.id = 'atlas-takeover-button';
+  automationButton.innerHTML = `
+    <button style="
+      background: linear-gradient(135deg, #007AFF 0%, #0051D5 100%);
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      font-size: 14px;
+      font-weight: 600;
+      border-radius: 24px;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(0, 122, 255, 0.4);
+      transition: all 0.2s ease;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    " onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 16px rgba(0, 122, 255, 0.5)';"
+       onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 12px rgba(0, 122, 255, 0.4)';">
+      🛑 Take Over Control
+    </button>
+  `;
+  automationButton.style.cssText = `
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 999999;
+    pointer-events: auto;
+  `;
+
+  // Handle button click
+  const button = automationButton.querySelector('button');
+  if (button) {
+    button.addEventListener('click', () => {
+      // Send message to sidepanel to abort automation
+      chrome.runtime.sendMessage({ type: 'ABORT_BROWSER_AUTOMATION' });
+      hideBrowserAutomationOverlay();
+    });
+  }
+
+  document.body.appendChild(automationOverlay);
+  document.body.appendChild(automationButton);
+}
+
+function hideBrowserAutomationOverlay() {
+  console.log('🔵 Hiding browser automation overlay');
+
+  if (automationOverlay) {
+    automationOverlay.remove();
+    automationOverlay = null;
+  }
+  if (automationButton) {
+    automationButton.remove();
+    automationButton = null;
+  }
+}
 
 /**
  * Send page load event to background when DOM is fully ready
