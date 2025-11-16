@@ -1,14 +1,76 @@
 // Content script that runs on all pages to extract context and interact with the DOM
 
-// Visual feedback for clicks
+// Visual feedback for clicks with magical overlay effect
 function highlightElement(element: Element, coordinates: { x: number; y: number }) {
   const originalOutline = (element as HTMLElement).style.outline;
   const originalBg = (element as HTMLElement).style.backgroundColor;
-  
+
   (element as HTMLElement).style.outline = '3px solid #007AFF';
   (element as HTMLElement).style.backgroundColor = 'rgba(0, 122, 255, 0.1)';
-  
-  // Create a visual click indicator at the coordinates
+
+  // Create magical overlay with blue tint
+  const overlay = document.createElement('div');
+  overlay.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 122, 255, 0.50);
+    pointer-events: none;
+    z-index: 999997;
+    animation: atlasMagicOverlay 1.2s ease-out forwards;
+  `;
+
+  // Create magic wand with sparkle trail
+  const wand = document.createElement('div');
+  wand.innerHTML = '✨';
+  wand.style.cssText = `
+    position: fixed;
+    left: ${coordinates.x}px;
+    top: ${coordinates.y}px;
+    font-size: 32px;
+    pointer-events: none;
+    z-index: 999999;
+    animation: atlasMagicWand 0.8s ease-out;
+    text-shadow: 0 0 10px rgba(255, 255, 255, 0.8),
+                 0 0 20px rgba(138, 43, 226, 0.6);
+  `;
+
+  // Create sparkle particles
+  const sparkleCount = 12;
+  const sparkles: HTMLDivElement[] = [];
+
+  for (let i = 0; i < sparkleCount; i++) {
+    const sparkle = document.createElement('div');
+    const angle = (i / sparkleCount) * Math.PI * 2;
+    const distance = 60 + Math.random() * 40;
+    const offsetX = Math.cos(angle) * distance;
+    const offsetY = Math.sin(angle) * distance;
+    const delay = i * 0.05;
+    const size = 4 + Math.random() * 6;
+
+    sparkle.style.cssText = `
+      position: fixed;
+      left: ${coordinates.x}px;
+      top: ${coordinates.y}px;
+      width: ${size}px;
+      height: ${size}px;
+      background: linear-gradient(45deg, #FFD700, #FFA500, #FF69B4);
+      border-radius: 50%;
+      pointer-events: none;
+      z-index: 999998;
+      box-shadow: 0 0 ${size * 2}px rgba(255, 215, 0, 0.8);
+      animation: atlasSparkle 0.8s ease-out ${delay}s forwards;
+      --offset-x: ${offsetX}px;
+      --offset-y: ${offsetY}px;
+    `;
+
+    sparkles.push(sparkle);
+    document.body.appendChild(sparkle);
+  }
+
+  // Create main click indicator
   const indicator = document.createElement('div');
   indicator.style.cssText = `
     position: fixed;
@@ -19,33 +81,85 @@ function highlightElement(element: Element, coordinates: { x: number; y: number 
     margin-left: -10px;
     margin-top: -10px;
     border-radius: 50%;
-    background: rgba(0, 122, 255, 0.5);
-    border: 2px solid #007AFF;
+    background: rgba(138, 43, 226, 0.5);
+    border: 2px solid #8A2BE2;
     pointer-events: none;
     z-index: 999999;
-    animation: atlasClickPulse 0.6s ease-out;
+    animation: atlasMagicPulse 0.8s ease-out;
+    box-shadow: 0 0 20px rgba(138, 43, 226, 0.8),
+                0 0 40px rgba(138, 43, 226, 0.4);
   `;
-  
+
   // Add animation keyframes if not already present
-  if (!document.getElementById('atlas-click-animation')) {
+  if (!document.getElementById('atlas-magic-animation')) {
     const style = document.createElement('style');
-    style.id = 'atlas-click-animation';
+    style.id = 'atlas-magic-animation';
     style.textContent = `
-      @keyframes atlasClickPulse {
-        0% { transform: scale(1); opacity: 1; }
-        100% { transform: scale(2.5); opacity: 0; }
+      @keyframes atlasMagicOverlay {
+        0% { opacity: 1; }
+        100% { opacity: 0; }
+      }
+
+      @keyframes atlasMagicPulse {
+        0% {
+          transform: scale(1) rotate(0deg);
+          opacity: 1;
+        }
+        50% {
+          transform: scale(1.5) rotate(180deg);
+        }
+        100% {
+          transform: scale(3) rotate(360deg);
+          opacity: 0;
+        }
+      }
+
+      @keyframes atlasMagicWand {
+        0% {
+          transform: translate(-50%, -50%) scale(0) rotate(0deg);
+          opacity: 0;
+        }
+        30% {
+          opacity: 1;
+        }
+        50% {
+          transform: translate(-50%, -50%) scale(1.5) rotate(180deg);
+        }
+        100% {
+          transform: translate(-50%, -50%) scale(0.5) rotate(360deg);
+          opacity: 0;
+        }
+      }
+
+      @keyframes atlasSparkle {
+        0% {
+          transform: translate(-50%, -50%) scale(1);
+          opacity: 1;
+        }
+        70% {
+          opacity: 0.8;
+        }
+        100% {
+          transform: translate(calc(-50% + var(--offset-x)), calc(-50% + var(--offset-y))) scale(0);
+          opacity: 0;
+        }
       }
     `;
     document.head.appendChild(style);
   }
-  
+
+  document.body.appendChild(overlay);
+  document.body.appendChild(wand);
   document.body.appendChild(indicator);
-  
+
   setTimeout(() => {
     (element as HTMLElement).style.outline = originalOutline;
     (element as HTMLElement).style.backgroundColor = originalBg;
+    overlay.remove();
+    wand.remove();
     indicator.remove();
-  }, 600);
+    sparkles.forEach(s => s.remove());
+  }, 1200);
 }
 
 interface PageContext {

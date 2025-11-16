@@ -58,41 +58,110 @@ const LinkComponent = ({ href, children }: { href?: string; children?: React.Rea
   );
 };
 
-// Component to parse and display assistant messages with better formatting
-const MessageParser = ({ content }: { content: string }) => {
-  // Split message into logical sections - only on strong breaks (double newlines or numbered/bulleted lists)
-  const sections = content
-    .split(/\n+/)
-    .map((section) => section.trim())
-    .filter((section) => section.length > 0);
+// Component to parse and display user messages with page context styling
+const UserMessageParser = ({ content }: { content: string }) => {
+  // Check if message contains page context
+  const contextIndex = content.indexOf('[Current Page Context]');
 
-  // If only one section or very short content, just return as-is
-  if (sections.length <= 1 || content.length < 150) {
-    return (
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: LinkComponent as any }}>
-        {content}
-      </ReactMarkdown>
-    );
+  if (contextIndex === -1) {
+    // No page context, display normally
+    return <div>{content}</div>;
   }
 
-  // Display each section separately
+  // Split into user input and page context
+  const userInput = content.substring(0, contextIndex).trim();
+  const pageContext = content.substring(contextIndex);
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-      {sections.map((section, idx) => (
-        <div
-          key={idx}
-          style={{
-            padding: '10px 12px',
-            backgroundColor: '#2d2d2d',
-            borderLeft: '3px solid #4d4d4d',
-            borderRadius: '4px',
-          }}
-        >
-          <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: LinkComponent as any }}>
-            {section}
-          </ReactMarkdown>
-        </div>
-      ))}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+      {/* User's actual input */}
+      <div>{userInput}</div>
+
+      {/* Page context - styled differently and compact */}
+      <div
+        style={{
+          padding: '6px 8px',
+          backgroundColor: '#1a2332',
+          borderLeft: '3px solid #4a7ba7',
+          borderRadius: '4px',
+          fontSize: '0.75em',
+          color: '#88aacc',
+          fontFamily: 'monospace',
+          whiteSpace: 'pre-wrap',
+          opacity: 0.7,
+          maxHeight: '80px',
+          overflowY: 'auto',
+          lineHeight: '1.3',
+        }}
+      >
+        {pageContext}
+      </div>
+    </div>
+  );
+};
+
+// Component to parse and display assistant messages with better formatting
+const MessageParser = ({ content }: { content: string }) => {
+  // Helper function to detect if a line is a tool execution line
+  const isToolExecution = (text: string) => {
+    return text.startsWith('[Executing:') ||
+           (text.startsWith('{') && text.endsWith('}') && text.includes(':')) ||
+           (text.startsWith('{"') && text.includes('":'));
+  };
+
+  // Split by lines and group tool execution lines separately from regular text
+  const lines = content.split('\n');
+  const groups: Array<{ type: 'tool' | 'text', content: string }> = [];
+  let currentTextGroup: string[] = [];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    if (trimmed && isToolExecution(trimmed)) {
+      // Flush any accumulated text
+      if (currentTextGroup.length > 0) {
+        groups.push({ type: 'text', content: currentTextGroup.join('\n') });
+        currentTextGroup = [];
+      }
+      // Add tool execution line
+      groups.push({ type: 'tool', content: trimmed });
+    } else {
+      // Accumulate regular text
+      currentTextGroup.push(line);
+    }
+  }
+
+  // Flush remaining text
+  if (currentTextGroup.length > 0) {
+    groups.push({ type: 'text', content: currentTextGroup.join('\n') });
+  }
+
+  // Render groups
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+      {groups.map((group, idx) => {
+        const isTool = group.type === 'tool';
+        return (
+          <div
+            key={idx}
+            style={{
+              padding: isTool ? '4px 8px' : undefined,
+              backgroundColor: isTool ? '#1a1a1a' : undefined,
+              borderLeft: isTool ? '2px solid #555555' : undefined,
+              borderRadius: isTool ? '3px' : undefined,
+              opacity: isTool ? 0.6 : 1,
+              fontFamily: isTool ? 'monospace' : 'inherit',
+              fontSize: isTool ? '0.7em' : 'inherit',
+              color: isTool ? '#888888' : 'inherit',
+              lineHeight: isTool ? '1.2' : 'inherit',
+            }}
+          >
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: LinkComponent as any }}>
+              {group.content}
+            </ReactMarkdown>
+          </div>
+        );
+      })}
     </div>
   );
 };
@@ -2200,7 +2269,7 @@ GUIDELINES:
                   message.role === 'assistant' ? (
                     <MessageParser content={message.content} />
                   ) : (
-                    message.content
+                    <UserMessageParser content={message.content} />
                   )
                 ) : (
                   isLoading && message.role === 'assistant' && (

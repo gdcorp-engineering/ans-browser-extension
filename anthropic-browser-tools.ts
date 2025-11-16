@@ -177,7 +177,7 @@ export async function streamAnthropicWithBrowserTools(
     for (const toolUse of toolUses) {
       console.log(`🔧 Executing tool: ${toolUse.name}`, toolUse.input);
       onTextChunk(`\n[Executing: ${toolUse.name}]\n`);
-      onTextChunk(`\n${JSON.stringify(toolUse.input, null, 2)}\n`);
+      onTextChunk(`${JSON.stringify(toolUse.input)}\n`);
 
       try {
         console.log('🔧 Calling executeTool with:', toolUse.name, toolUse.input);
