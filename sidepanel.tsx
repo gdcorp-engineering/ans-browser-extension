@@ -1413,7 +1413,7 @@ GUIDELINES:
       const context: any = await executeTool('getPageContext', {});
       if (context && context.url && context.title) {
         // Reduce page context size in browser tools mode to avoid hitting context limits
-        const maxContentLength = browserToolsEnabled ? 800 : 3000;
+        const maxContentLength = browserToolsEnabled ? 300 : 3000; // Further reduced from 500 to 300
         pageContext = `\n\n[Current Page Context]\nURL: ${context.url}\nTitle: ${context.title}\nContent: ${context.textContent?.substring(0, maxContentLength) || 'No content available'}`;
       }
     } catch (error) {

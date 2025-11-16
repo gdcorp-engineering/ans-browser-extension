@@ -57,14 +57,6 @@ const BROWSER_TOOLS = [
     },
   },
   {
-    name: 'screenshot',
-    description: 'Take a screenshot of the current page',
-    input_schema: {
-      type: 'object',
-      properties: {},
-    },
-  },
-  {
     name: 'getPageContext',
     description: 'Get information about the current page (URL, title, content)',
     input_schema: {
@@ -72,6 +64,8 @@ const BROWSER_TOOLS = [
       properties: {},
     },
   },
+  // NOTE: screenshot tool removed - not needed for text-based Anthropic browser tools
+  // Only Gemini Computer Use needs screenshots for vision-based navigation
 ];
 
 export async function streamAnthropicWithBrowserTools(
@@ -88,8 +82,9 @@ export async function streamAnthropicWithBrowserTools(
   const baseUrl = customBaseUrl || 'https://api.anthropic.com';
 
   // Keep only the most recent messages to avoid context length issues
-  // Page context can be 3000+ chars, so limit to recent history
-  const MAX_HISTORY_MESSAGES = 6;
+  // Page context can be large, and tool use adds more messages during the loop
+  // So we need to be very aggressive with history trimming
+  const MAX_HISTORY_MESSAGES = 2; // Reduced from 4 to 2 - only keep last user message
   let conversationMessages = messages.length > MAX_HISTORY_MESSAGES
     ? messages.slice(-MAX_HISTORY_MESSAGES)
     : [...messages];
@@ -148,7 +143,14 @@ export async function streamAnthropicWithBrowserTools(
     if (!response.ok) {
       const error = await response.json();
       console.error('❌ API Error:', error);
-      throw new Error(error.error?.message || 'Anthropic API request failed');
+
+      // Check if it's a context length error
+      const errorMsg = error.error?.message || '';
+      if (errorMsg.includes('too long') || errorMsg.includes('Input is too long')) {
+        throw new Error('Context limit exceeded. Please start a new chat to continue.');
+      }
+
+      throw new Error(errorMsg || 'Anthropic API request failed');
     }
 
     const data = await response.json();
@@ -214,6 +216,14 @@ export async function streamAnthropicWithBrowserTools(
       role: 'user',
       content: toolResults, // Keep as array, don't stringify
     } as any);
+
+    // Trim conversation to prevent context overflow during the loop
+    // Keep only the most recent messages to avoid hitting limits
+    const MAX_LOOP_MESSAGES = 6; // Reduced from 8 to 6 - tool use/results are verbose
+    if (conversationMessages.length > MAX_LOOP_MESSAGES) {
+      console.log(`⚠️  Trimming conversation from ${conversationMessages.length} to ${MAX_LOOP_MESSAGES} messages`);
+      conversationMessages = conversationMessages.slice(-MAX_LOOP_MESSAGES);
+    }
 
     // If the response has a stop_reason of 'end_turn', we're done
     if (data.stop_reason === 'end_turn') {
