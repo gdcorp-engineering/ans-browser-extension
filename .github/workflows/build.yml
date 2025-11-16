@@ -51,13 +51,21 @@ jobs:
               ;;
           esac
 
+          # Check if artifacts directory exists
+          if [ ! -d "$ARTIFACTS_DIR" ]; then
+            echo "❌ Error: $ARTIFACTS_DIR not found"
+            echo "Available directories:"
+            ls -la artifacts/ || echo "No artifacts directory found"
+            exit 1
+          fi
+
           # Create a clean distribution directory
           mkdir -p dist
 
           # Create ZIP file for easy distribution
           cd "$ARTIFACTS_DIR"
-          zip -r "../../../dist/extension-${{ github.event.inputs.environment }}.zip" .
-          cd ../../..
+          zip -r "../../dist/extension-${{ github.event.inputs.environment }}.zip" .
+          cd ../..
 
           # Copy unzipped files as well
           cp -r "$ARTIFACTS_DIR" "dist/extension-${{ github.event.inputs.environment }}"
