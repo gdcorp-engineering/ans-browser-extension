@@ -6,21 +6,35 @@ import { copyFileSync, mkdirSync, existsSync, readdirSync } from 'node:fs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+// Read BUILD_ENV from environment variable (default to 'dev')
+const BUILD_ENV = process.env.BUILD_ENV || 'dev';
+
+// Map environment to folder name (capitalize first letter)
+const envFolder = BUILD_ENV.charAt(0).toUpperCase() + BUILD_ENV.slice(1);
+const outDir = `artifacts/${envFolder}`;
+
+console.log(`🏗️  Building for environment: ${BUILD_ENV}`);
+console.log(`📁 Output directory: ${outDir}`);
+
 export default defineConfig({
+  define: {
+    // Make BUILD_ENV available in the extension code
+    'import.meta.env.BUILD_ENV': JSON.stringify(BUILD_ENV),
+  },
   plugins: [
     react(),
     {
       name: 'copy-manifest',
       closeBundle() {
-        // Copy manifest.json to dist
+        // Copy manifest.json to output directory
         copyFileSync(
           resolve(__dirname, 'manifest.json'),
-          resolve(__dirname, 'dist/manifest.json')
+          resolve(__dirname, outDir, 'manifest.json')
         );
 
         // Copy icons folder
         const iconsDir = resolve(__dirname, 'icons');
-        const distIconsDir = resolve(__dirname, 'dist/icons');
+        const distIconsDir = resolve(__dirname, outDir, 'icons');
 
         if (existsSync(iconsDir)) {
           if (!existsSync(distIconsDir)) {
@@ -37,9 +51,9 @@ export default defineConfig({
             );
           });
 
-          console.log('✓ Copied manifest.json and icons to dist/');
+          console.log(`✓ Copied manifest.json and icons to ${outDir}/`);
         } else {
-          console.log('✓ Copied manifest.json to dist/');
+          console.log(`✓ Copied manifest.json to ${outDir}/`);
         }
       }
     }
@@ -61,7 +75,7 @@ export default defineConfig({
         assetFileNames: '[name].[ext]',
       },
     },
-    outDir: 'dist',
+    outDir,
     emptyOutDir: true,
     minify: false, // Don't minify to avoid single-line issues with Chrome
   },
