@@ -24,10 +24,30 @@ export interface PageContext {
 export class ComputerUseService {
   private browserView: BrowserView | null = null;
   private apiKey: string = '';
+  private provider: string = 'google';
+  private model: string = 'gemini-2.5-computer-use-preview-10-2025';
+  private baseUrl?: string;
 
-  constructor(browserView: BrowserView, apiKey: string) {
+  constructor(
+    browserView: BrowserView,
+    apiKey: string,
+    provider: string = 'google',
+    model?: string,
+    baseUrl?: string
+  ) {
     this.browserView = browserView;
     this.apiKey = apiKey;
+    this.provider = provider;
+    this.baseUrl = baseUrl;
+
+    // Set model based on provider if not specified
+    if (model) {
+      this.model = model;
+    } else if (provider === 'anthropic') {
+      this.model = 'claude-sonnet-4-5-20250929';
+    } else {
+      this.model = 'gemini-2.5-computer-use-preview-10-2025';
+    }
   }
 
   /**
@@ -270,7 +290,7 @@ export class ComputerUseService {
   }
 
   /**
-   * Stream chat with Gemini Computer Use model
+   * Stream chat with Computer Use (routes to appropriate provider)
    */
   async *streamWithComputerUse(
     userMessage: string,
@@ -280,6 +300,21 @@ export class ComputerUseService {
       throw new Error('API key not configured');
     }
 
+    // Route to the appropriate provider implementation
+    if (this.provider === 'anthropic') {
+      yield* this.streamWithAnthropic(userMessage, messageHistory);
+    } else {
+      yield* this.streamWithGemini(userMessage, messageHistory);
+    }
+  }
+
+  /**
+   * Stream chat with Gemini Computer Use model
+   */
+  private async *streamWithGemini(
+    userMessage: string,
+    messageHistory: Array<{ role: string; content: string }>
+  ): AsyncGenerator<any> {
     // Capture initial screenshot
     let screenshot = await this.captureScreenshot();
     let pageContext = await this.getPageContext();
@@ -335,9 +370,8 @@ export class ComputerUseService {
         ]
       };
 
-      const model = 'gemini-2.5-computer-use-preview-10-2025';
       const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${this.apiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -456,6 +490,242 @@ export class ComputerUseService {
         contents.push({
           role: 'user',
           parts: userParts
+        });
+      }
+    }
+
+    yield { type: 'complete', content: responseText };
+  }
+
+  /**
+   * Stream chat with Anthropic Computer Use
+   */
+  private async *streamWithAnthropic(
+    userMessage: string,
+    messageHistory: Array<{ role: string; content: string }>
+  ): AsyncGenerator<any> {
+    // Capture initial screenshot
+    let screenshot = await this.captureScreenshot();
+    let pageContext = await this.getPageContext();
+
+    const systemInstruction = SYSTEM_PROMPTS.WEB;
+
+    // Build messages array for Anthropic
+    const messages: any[] = [];
+
+    // Add conversation history
+    for (const msg of messageHistory) {
+      messages.push({
+        role: msg.role === 'assistant' ? 'assistant' : 'user',
+        content: msg.content
+      });
+    }
+
+    // Add current message with screenshot
+    if (!screenshot.data) {
+      throw new Error('Screenshot data is empty - cannot proceed with computer use');
+    }
+
+    messages.push({
+      role: 'user',
+      content: [
+        {
+          type: 'image',
+          source: {
+            type: 'base64',
+            media_type: 'image/png',
+            data: screenshot.data
+          }
+        },
+        {
+          type: 'text',
+          text: userMessage
+        }
+      ]
+    });
+
+    const maxTurns = 30;
+    let responseText = '';
+
+    // Anthropic computer use tool definition
+    const tools = [
+      {
+        type: 'computer_20241022',
+        name: 'computer',
+        display_width_px: screenshot.width,
+        display_height_px: screenshot.height,
+        display_number: 1
+      }
+    ];
+
+    for (let turn = 0; turn < maxTurns; turn++) {
+      const requestBody: any = {
+        model: this.model,
+        max_tokens: 4096,
+        messages,
+        tools,
+        system: systemInstruction
+      };
+
+      // Determine API URL
+      let apiUrl = 'https://api.anthropic.com/v1/messages';
+      if (this.baseUrl) {
+        apiUrl = this.baseUrl.endsWith('/') ? `${this.baseUrl}v1/messages` : `${this.baseUrl}/v1/messages`;
+      }
+
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': this.apiKey,
+          'anthropic-version': '2023-06-01',
+          'anthropic-beta': 'computer-use-2024-10-22'
+        },
+        body: JSON.stringify(requestBody)
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Anthropic API error: ${response.statusText} - ${errorText}`);
+      }
+
+      const data = await response.json();
+      if (data.error) throw new Error(`Anthropic error: ${data.error.message}`);
+
+      // Add assistant response to conversation
+      messages.push({
+        role: 'assistant',
+        content: data.content
+      });
+
+      // Process content blocks
+      const hasToolUse = data.content.some((block: any) => block.type === 'tool_use');
+
+      if (!hasToolUse) {
+        // No more actions - task complete
+        for (const block of data.content) {
+          if (block.type === 'text') {
+            responseText += block.text;
+            yield { type: 'text', content: block.text };
+          }
+        }
+        break;
+      }
+
+      // Stream any text responses immediately
+      for (const block of data.content) {
+        if (block.type === 'text') {
+          responseText += block.text + '\n';
+          yield { type: 'text', content: block.text };
+        }
+      }
+
+      // Execute tool use blocks
+      const toolResults: any[] = [];
+
+      for (const block of data.content) {
+        if (block.type === 'tool_use') {
+          const toolName = block.name;
+          const toolInput = block.input || {};
+
+          // Emit function call as text
+          const actionText = `\n**[Executing: ${toolInput.action}]**\n`;
+          yield { type: 'text', content: actionText };
+          yield { type: 'action', action: { name: toolInput.action, args: toolInput } };
+
+          // Map Anthropic computer tool actions to our browser actions
+          let result;
+          switch (toolInput.action) {
+            case 'mouse_move':
+            case 'left_click':
+            case 'right_click':
+            case 'middle_click':
+            case 'double_click':
+              result = await this.executeBrowserAction('click_at', {
+                x: toolInput.coordinate?.[0] || 0,
+                y: toolInput.coordinate?.[1] || 0
+              });
+              break;
+
+            case 'type':
+              result = await this.executeBrowserAction('type_text', {
+                text: toolInput.text
+              });
+              break;
+
+            case 'key':
+              // Handle key presses (Enter, etc.)
+              if (toolInput.text === 'Return' || toolInput.text === 'Enter') {
+                result = await this.executeBrowserAction('type_text', { text: '\n' });
+              } else {
+                result = { success: true, message: `Key ${toolInput.text} pressed` };
+              }
+              break;
+
+            case 'screenshot':
+              screenshot = await this.captureScreenshot();
+              result = { success: true, screenshot: screenshot.data };
+              break;
+
+            case 'cursor_position':
+              result = { success: true, message: 'Cursor position noted' };
+              break;
+
+            default:
+              result = { success: false, error: `Unknown action: ${toolInput.action}` };
+          }
+
+          // Wait after actions
+          const isNavigationAction = ['left_click', 'right_click', 'double_click'].includes(toolInput.action);
+          if (isNavigationAction) {
+            await new Promise(resolve => setTimeout(resolve, 2500));
+          } else {
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
+
+          // Capture new screenshot
+          screenshot = await this.captureScreenshot();
+          pageContext = await this.getPageContext();
+
+          // Add tool result
+          toolResults.push({
+            type: 'tool_result',
+            tool_use_id: block.id,
+            content: result.success ? 'Action completed successfully' : (result.error || 'Action failed')
+          });
+
+          // Emit result message
+          if (result.success) {
+            const resultText = `${result.message || 'Action completed successfully'}`;
+            yield { type: 'text', content: resultText };
+          } else {
+            const resultText = ` ${result.error || result.message || 'Action failed'}`;
+            yield { type: 'text', content: resultText };
+          }
+
+          yield { type: 'result', result };
+        }
+      }
+
+      // Add tool results with new screenshot to conversation
+      if (toolResults.length > 0) {
+        const userContent: any[] = [...toolResults];
+
+        // Add new screenshot
+        if (screenshot && screenshot.data) {
+          userContent.push({
+            type: 'image',
+            source: {
+              type: 'base64',
+              media_type: 'image/png',
+              data: screenshot.data
+            }
+          });
+        }
+
+        messages.push({
+          role: 'user',
+          content: userContent
         });
       }
     }

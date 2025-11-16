@@ -119,6 +119,8 @@ const ChatInterface = ({
             messages,
             settings.model,
             settings.googleApiKey,
+            settings.provider || 'google',
+            settings.customBaseUrl,
             (chunk) => {
               try {
                 const chunkObj = JSON.parse(chunk);

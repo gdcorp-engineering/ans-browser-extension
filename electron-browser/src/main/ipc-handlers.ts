@@ -4,6 +4,8 @@ import type Store from 'electron-store';
 import { experimental_createMCPClient } from '@ai-sdk/mcp';
 import { stepCountIs, streamText, ToolSet } from 'ai';
 import { google } from '@ai-sdk/google';
+import { createAnthropic } from '@ai-sdk/anthropic';
+import { createOpenAI } from '@ai-sdk/openai';
 import { ComputerUseService } from './computer-use-service';
 import { randomUUID } from 'crypto';
 
@@ -17,21 +19,20 @@ interface MCPState {
 const mcpState: MCPState = {};
 
 /**
- * Stream chat with Gemini and Composio tools
+ * Stream chat with AI providers (Google, Anthropic, OpenAI) and Composio tools
  * Runs in main process with Composio MCP tools integration
  * WARNING: Never store API keys in process.env - they can leak to child processes
  */
 async function streamChatWithToolsIpc(
   userInput: string,
   conversationHistory: Array<{ role: string; content: string }>,
-  model: string,
-  googleApiKey: string,
+  modelName: string,
+  apiKey: string,
+  provider: string = 'google',
+  baseUrl: string | undefined,
   tools: ToolSet | undefined,
   onChunk: (chunk: string) => void
 ): Promise<void> {
-  // SECURITY: Pass API key directly to google() instead of storing in process.env
-  // This prevents accidental leakage to child processes or subprocess access
-
   // Build messages - filter out empty content
   const validHistory = conversationHistory.filter(msg => msg.content && msg.content.trim());
   const messages = [
@@ -42,14 +43,71 @@ async function streamChatWithToolsIpc(
     },
   ];
 
-  // Stream with AI SDK
-  // SECURITY: Temporarily set API key in process.env with strict cleanup to prevent leakage
-  const originalApiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
-  process.env.GOOGLE_GENERATIVE_AI_API_KEY = googleApiKey;
+  // Select appropriate model based on provider
+  let model: any;
+  let originalApiKey: string | undefined;
+  let envVarName: string;
+
+  switch (provider) {
+    case 'anthropic':
+      envVarName = 'ANTHROPIC_API_KEY';
+      originalApiKey = process.env.ANTHROPIC_API_KEY;
+
+      // Set API key
+      process.env.ANTHROPIC_API_KEY = apiKey;
+
+      // Create Anthropic provider with custom baseURL
+      if (baseUrl) {
+        // GoCode implements Anthropic API at /v1/messages, but AI SDK expects /messages
+        // So we need to append /v1 to the base URL
+        const anthropicBaseUrl = baseUrl.endsWith('/') ? `${baseUrl}v1` : `${baseUrl}/v1`;
+        const anthropicProvider = createAnthropic({
+          apiKey: apiKey,
+          baseURL: anthropicBaseUrl
+        });
+        model = anthropicProvider(modelName);
+      } else {
+        const anthropicProvider = createAnthropic({ apiKey: apiKey });
+        model = anthropicProvider(modelName);
+      }
+      break;
+
+    case 'openai':
+      envVarName = 'OPENAI_API_KEY';
+      originalApiKey = process.env.OPENAI_API_KEY;
+
+      // Set API key
+      process.env.OPENAI_API_KEY = apiKey;
+
+      // Create OpenAI provider with custom baseURL
+      if (baseUrl) {
+        const openaiProvider = createOpenAI({
+          apiKey: apiKey,
+          baseURL: baseUrl
+        });
+        model = openaiProvider(modelName);
+      } else {
+        const openaiProvider = createOpenAI({ apiKey: apiKey });
+        model = openaiProvider(modelName);
+      }
+      break;
+
+    case 'google':
+    default:
+      envVarName = 'GOOGLE_GENERATIVE_AI_API_KEY';
+      originalApiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+
+      // Set API key
+      process.env.GOOGLE_GENERATIVE_AI_API_KEY = apiKey;
+
+      // Google SDK uses baseURL parameter directly
+      model = google(modelName, baseUrl ? { baseURL: baseUrl } : undefined);
+      break;
+  }
 
   try {
     const result = streamText({
-      model: google(model),
+      model,
       messages: messages as any,
       tools: tools,
       stopWhen: stepCountIs(20),
@@ -99,11 +157,11 @@ async function streamChatWithToolsIpc(
       }
     }
   } finally {
-    // SECURITY: Always restore original API key to prevent leakage
+    // SECURITY: Always restore original API key env var to prevent leakage
     if (originalApiKey) {
-      process.env.GOOGLE_GENERATIVE_AI_API_KEY = originalApiKey;
+      process.env[envVarName] = originalApiKey;
     } else {
-      delete process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+      delete process.env[envVarName];
     }
   }
 }
@@ -340,7 +398,7 @@ export function setupIpcHandlers(browserManager: BrowserManager, store: Store) {
   // Stream chat with tools (using events for true streaming)
   ipcMain.on(
     'stream-chat-with-tools',
-    async (event, userInput: string, conversationHistory: Array<{ role: string; content: string }>, model: string, googleApiKey: string) => {
+    async (event, userInput: string, conversationHistory: Array<{ role: string; content: string }>, model: string, apiKey: string, provider: string = 'google', baseUrl?: string) => {
       const streamId = event.sender.id;
       const streamState = { active: true };
       activeStreams.set(streamId, streamState);
@@ -353,7 +411,9 @@ export function setupIpcHandlers(browserManager: BrowserManager, store: Store) {
           userInput,
           conversationHistory,
           model,
-          googleApiKey,
+          apiKey,
+          provider,
+          baseUrl,
           tools,
           (chunk) => {
             // Check if stream was aborted
@@ -408,14 +468,17 @@ export function setupIpcHandlers(browserManager: BrowserManager, store: Store) {
   // Store active streams (both computer use and chat) so we can abort them
   const activeStreams = new Map<number, { active: boolean }>();
 
-  // Stream with Gemini Computer Use
+  // Stream with Computer Use (Gemini or Anthropic)
   ipcMain.on(
     'stream-computer-use',
     async (
       event,
       userMessage: string,
       messageHistory: Array<{ role: string; content: string }>,
-      googleApiKey: string
+      apiKey: string,
+      provider: string = 'google',
+      model: string = 'gemini-2.5-computer-use-preview-10-2025',
+      baseUrl?: string
     ) => {
       const streamId = event.sender.id;
       const streamState = { active: true };
@@ -428,7 +491,7 @@ export function setupIpcHandlers(browserManager: BrowserManager, store: Store) {
           return;
         }
 
-        const computerUseService = new ComputerUseService(browserView, googleApiKey);
+        const computerUseService = new ComputerUseService(browserView, apiKey, provider, model, baseUrl);
 
         for await (const chunk of computerUseService.streamWithComputerUse(
           userMessage,

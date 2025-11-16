@@ -8,11 +8,33 @@ interface SettingsProps {
   onClose: () => void;
 }
 
+const PROVIDER_MODELS = {
+  google: [
+    { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', description: '1M token context' },
+    { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', description: 'Fast and efficient' },
+    { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash Lite', description: 'Optimized for speed' },
+  ],
+  anthropic: [
+    { id: 'claude-sonnet-4-5-20250929', name: 'Claude Sonnet 4.5', description: 'Latest and most capable' },
+    { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', description: 'Most intelligent model' },
+    { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku', description: 'Fastest model' },
+  ],
+  openai: [
+    { id: 'gpt-4o', name: 'GPT-4o', description: 'Most capable' },
+    { id: 'gpt-4o-mini', name: 'GPT-4o Mini', description: 'Fast and affordable' },
+    { id: 'gpt-4-turbo', name: 'GPT-4 Turbo', description: 'Previous generation' },
+  ],
+};
+
 const Settings = ({ settings, onSave, onClose }: SettingsProps) => {
-  const [googleApiKey, setGoogleApiKey] = useState(settings?.googleApiKey || '');
-  const [composioApiKey, setComposioApiKey] = useState(settings?.composioApiKey || '');
-  const [model, setModel] = useState(settings?.model || 'gemini-2.0-flash-exp');
+  const [provider, setProvider] = useState<'google' | 'anthropic' | 'openai'>(
+    (settings?.provider as 'google' | 'anthropic' | 'openai') || 'google'
+  );
+  const [apiKey, setApiKey] = useState(settings?.googleApiKey || '');
+  const [model, setModel] = useState(settings?.model || 'gemini-2.5-pro');
   const [customBaseUrl, setCustomBaseUrl] = useState(settings?.customBaseUrl || '');
+  const [composioApiKey, setComposioApiKey] = useState(settings?.composioApiKey || '');
+  const [showApiKey, setShowApiKey] = useState(false);
 
   const handleSave = async () => {
     // Initialize MCP if Composio key is provided
@@ -27,7 +49,8 @@ const Settings = ({ settings, onSave, onClose }: SettingsProps) => {
     }
 
     onSave({
-      googleApiKey,
+      provider,
+      googleApiKey: apiKey, // Still store as googleApiKey for compatibility
       composioApiKey,
       model,
       customBaseUrl,
@@ -82,16 +105,16 @@ const Settings = ({ settings, onSave, onClose }: SettingsProps) => {
         }}
       >
         <div style={{ width: '100%', maxWidth: '600px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
-          {/* Google API Key */}
+          {/* AI Provider */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <label style={{ fontSize: '14px', fontWeight: 600 }}>
-              Google API Key <span style={{ color: '#dc2626' }}>*</span>
-            </label>
-            <input
-              type="password"
-              value={googleApiKey}
-              onChange={(e) => setGoogleApiKey(e.target.value)}
-              placeholder="Enter your Google API key"
+            <label style={{ fontSize: '14px', fontWeight: 600 }}>AI Provider</label>
+            <select
+              value={provider}
+              onChange={(e) => {
+                const newProvider = e.target.value as 'google' | 'anthropic' | 'openai';
+                setProvider(newProvider);
+                setModel(PROVIDER_MODELS[newProvider][0].id);
+              }}
               style={{
                 padding: '10px 12px',
                 backgroundColor: '#f5f5f5',
@@ -100,25 +123,39 @@ const Settings = ({ settings, onSave, onClose }: SettingsProps) => {
                 borderRadius: '6px',
                 fontSize: '14px',
               }}
-            />
-            <p style={{ fontSize: '12px', color: '#666', margin: 0 }}>
-              Required for Gemini models. Get your key from{' '}
-              <a
-                href="https://aistudio.google.com/app/apikey"
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{ color: '#2563eb' }}
-              >
-                Google AI Studio
-              </a>
-            </p>
+            >
+              <option value="google">Google Gemini</option>
+              <option value="anthropic">Anthropic Claude</option>
+              <option value="openai">OpenAI</option>
+            </select>
           </div>
 
-          {/* Custom Base URL */}
+          {/* Model Selection */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <label style={{ fontSize: '14px', fontWeight: 600 }}>
-              Custom Base URL <span style={{ color: '#888', fontWeight: 400 }}>(Optional)</span>
-            </label>
+            <label style={{ fontSize: '14px', fontWeight: 600 }}>Model</label>
+            <select
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              style={{
+                padding: '10px 12px',
+                backgroundColor: '#f5f5f5',
+                color: '#1a1a1a',
+                border: '1px solid #e5e5e5',
+                borderRadius: '6px',
+                fontSize: '14px',
+              }}
+            >
+              {PROVIDER_MODELS[provider].map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name} - {m.description}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* GoCode URL */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <label style={{ fontSize: '14px', fontWeight: 600 }}>GoCode URL</label>
             <input
               type="text"
               value={customBaseUrl}
@@ -134,90 +171,48 @@ const Settings = ({ settings, onSave, onClose }: SettingsProps) => {
               }}
             />
             <p style={{ fontSize: '12px', color: '#666', margin: 0 }}>
-              Leave empty to use default Google AI endpoint. Enter a custom Gemini-compatible API endpoint to use your own provider.
+              Leave empty to use default provider endpoint. Enter a custom API endpoint to use your own provider.
             </p>
           </div>
 
-          {/* Composio API Key */}
+          {/* GoCode Key */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             <label style={{ fontSize: '14px', fontWeight: 600 }}>
-              Composio API Key <span style={{ color: '#888', fontWeight: 400 }}>(Optional)</span>
+              GoCode Key <span style={{ color: '#dc2626' }}>*</span>
             </label>
-            <input
-              type="password"
-              value={composioApiKey}
-              onChange={(e) => setComposioApiKey(e.target.value)}
-              placeholder="Enter your Composio API key"
-              style={{
-                padding: '10px 12px',
-                backgroundColor: '#f5f5f5',
-                color: '#1a1a1a',
-                border: '1px solid #e5e5e5',
-                borderRadius: '6px',
-                fontSize: '14px',
-              }}
-            />
-            <p style={{ fontSize: '12px', color: '#666', margin: 0 }}>
-              Required for Tool Router mode (Chat mode with 500+ app integrations). Get your key
-              from{' '}
-              <a
-                href="https://app.composio.dev/settings"
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{ color: '#2563eb' }}
+            <div style={{ position: 'relative' }}>
+              <input
+                type={showApiKey ? 'text' : 'password'}
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder="Enter your API key"
+                style={{
+                  width: '100%',
+                  padding: '10px 40px 10px 12px',
+                  backgroundColor: '#f5f5f5',
+                  color: '#1a1a1a',
+                  border: '1px solid #e5e5e5',
+                  borderRadius: '6px',
+                  fontSize: '14px',
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => setShowApiKey(!showApiKey)}
+                style={{
+                  position: 'absolute',
+                  right: '8px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontSize: '16px',
+                }}
               >
-                Composio Dashboard
-              </a>
-            </p>
-          </div>
-
-          {/* Model Selection */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <label style={{ fontSize: '14px', fontWeight: 600 }}>Gemini Model</label>
-            <select
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-              style={{
-                padding: '10px 12px',
-                backgroundColor: '#f5f5f5',
-                color: '#1a1a1a',
-                border: '1px solid #e5e5e5',
-                borderRadius: '6px',
-                fontSize: '14px',
-              }}
-            >
-              <option value="gemini-2.5-flash">Gemini 2.5 Flash (Experimental)</option>
-              <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
-              <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash Lite</option>
-            </select>
-            <p style={{ fontSize: '12px', color: '#666', margin: 0 }}>
-              Recommended: Gemini 2.0 Flash for best performance
-            </p>
-          </div>
-
-          {/* Info Section */}
-          <div
-            style={{
-              padding: '16px',
-              backgroundColor: '#f9f9f9',
-              borderRadius: '8px',
-              borderLeft: '3px solid #2563eb',
-            }}
-          >
-            <h3 style={{ fontSize: '14px', fontWeight: 600, marginBottom: '8px' }}>
-              About Atlas Browser
-            </h3>
-            <p style={{ fontSize: '13px', color: '#666', lineHeight: '1.6', margin: 0 }}>
-              Atlas Browser provides two modes:
-              <br />
-              <br />
-              <strong>Chat Mode:</strong> AI assistant with Composio Tool Router integration for
-              accessing 500+ apps (Gmail, Slack, GitHub, etc.)
-              <br />
-              <br />
-              <strong>Web Mode:</strong> Browser automation powered by Gemini Computer Use for
-              visual web interaction (screenshots, clicks, typing, navigation)
-            </p>
+                {showApiKey ? '👁️' : '👁️‍🗨️'}
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -235,16 +230,17 @@ const Settings = ({ settings, onSave, onClose }: SettingsProps) => {
         <div style={{ width: '100%', maxWidth: '600px' }}>
           <button
             onClick={handleSave}
-            disabled={!googleApiKey}
+            disabled={!apiKey}
             style={{
               width: '100%',
               padding: '12px',
-              backgroundColor: googleApiKey ? '#1a1a1a' : '#f5f5f5',
-              color: googleApiKey ? '#ffffff' : '#999',
+              backgroundColor: apiKey ? '#1a1a1a' : '#f5f5f5',
+              color: apiKey ? '#ffffff' : '#999',
               border: 'none',
               borderRadius: '8px',
               fontSize: '14px',
               fontWeight: 600,
+              cursor: apiKey ? 'pointer' : 'not-allowed',
             }}
           >
             Save Settings

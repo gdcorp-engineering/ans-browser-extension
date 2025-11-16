@@ -12,8 +12,10 @@
     "package": "vite build && electron-builder --mac"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^2.0.44",
     "@ai-sdk/google": "^2.0.23",
     "@ai-sdk/mcp": "^0.0.5",
+    "@ai-sdk/openai": "^2.0.67",
     "@composio/vercel": "^0.2.14",
     "@modelcontextprotocol/sdk": "^1.0.4",
     "ai": "^5.0.76",

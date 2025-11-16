@@ -37,7 +37,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     userInput: string,
     conversationHistory: Array<{ role: string; content: string }>,
     model: string,
-    googleApiKey: string,
+    apiKey: string,
+    provider: string,
+    baseUrl: string | undefined,
     onChunk: (chunk: string) => void,
     onComplete: () => void,
     onError: (error: string) => void
@@ -64,14 +66,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.once('stream-error', errorListener);
 
     // NOW send the request after listeners are registered
-    ipcRenderer.send('stream-chat-with-tools', userInput, conversationHistory, model, googleApiKey);
+    ipcRenderer.send('stream-chat-with-tools', userInput, conversationHistory, model, apiKey, provider, baseUrl);
   },
 
-  // Computer Use with Gemini
+  // Computer Use with Gemini or Anthropic
   streamComputerUse: (
     userMessage: string,
     conversationHistory: Array<{ role: string; content: string }>,
-    googleApiKey: string,
+    apiKey: string,
+    provider: string,
+    model: string,
+    baseUrl: string | undefined,
     onChunk: (chunk: string) => void,
     onComplete: () => void,
     onError: (error: string) => void
@@ -104,7 +109,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.once('stream-error', errorListener);
 
     // NOW send the request after listeners are registered
-    ipcRenderer.send('stream-computer-use', userMessage, conversationHistory, googleApiKey);
+    ipcRenderer.send('stream-computer-use', userMessage, conversationHistory, apiKey, provider, model, baseUrl);
   },
 
   // Stop computer use stream
@@ -175,7 +180,9 @@ export interface ElectronAPI {
     userInput: string,
     conversationHistory: Array<{ role: string; content: string }>,
     model: string,
-    googleApiKey: string,
+    apiKey: string,
+    provider: string,
+    baseUrl: string | undefined,
     onChunk: (chunk: string) => void,
     onComplete: () => void,
     onError: (error: string) => void
@@ -183,7 +190,10 @@ export interface ElectronAPI {
   streamComputerUse: (
     userMessage: string,
     conversationHistory: Array<{ role: string; content: string }>,
-    googleApiKey: string,
+    apiKey: string,
+    provider: string,
+    model: string,
+    baseUrl: string | undefined,
     onChunk: (chunk: string) => void,
     onComplete: () => void,
     onError: (error: string) => void

@@ -10,7 +10,8 @@ let browserManager: BrowserManager;
 let store: Store<Record<string, unknown>>;
 
 async function createApplication() {
-  const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
+  // Check if vite dev server is running to determine dev mode
+  const isDev = process.env.VITE_DEV_SERVER_URL !== undefined;
   // Initialize store on first app ready (to handle ESM import)
   if (!store) {
     const StoreModule = await import('electron-store');

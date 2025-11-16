@@ -45,6 +45,9 @@ export async function streamWithGemini(
         userInput,
         filteredHistory,
         settings.googleApiKey,
+        settings.provider || 'google',
+        settings.model,
+        settings.customBaseUrl,
         (chunk: any) => {
           // Don't process chunks if aborted
           if (isAborted) return;
