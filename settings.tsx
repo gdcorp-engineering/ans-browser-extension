@@ -203,6 +203,7 @@ function SettingsPage() {
       id: business.id,
       name: business.name,
       url: business.url,
+      protocol: business.protocol || 'mcp', // Use protocol from business, default to 'mcp'
       enabled: true,
       isTrusted: true,
       isCustom: false,

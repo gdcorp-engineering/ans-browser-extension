@@ -4,12 +4,15 @@ import { z } from 'zod';
 export type ToolMode = 'tool-router';
 export type Provider = 'google' | 'anthropic' | 'openai';
 
+export type ProtocolType = 'mcp' | 'a2a';
+
 export interface MCPServerConfig {
   id: string;
   name: string;
   url: string;
   apiKey?: string;
   enabled: boolean;
+  protocol?: ProtocolType; // Protocol type: 'mcp' or 'a2a'
   isTrusted?: boolean; // From ANS marketplace
   isCustom?: boolean; // User-added custom server
   businessInfo?: {

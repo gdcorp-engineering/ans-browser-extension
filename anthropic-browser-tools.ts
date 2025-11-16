@@ -86,7 +86,14 @@ export async function streamAnthropicWithBrowserTools(
   additionalTools?: any[] // Custom MCP tools
 ): Promise<void> {
   const baseUrl = customBaseUrl || 'https://api.anthropic.com';
-  let conversationMessages = [...messages];
+
+  // Keep only the most recent messages to avoid context length issues
+  // Page context can be 3000+ chars, so limit to recent history
+  const MAX_HISTORY_MESSAGES = 6;
+  let conversationMessages = messages.length > MAX_HISTORY_MESSAGES
+    ? messages.slice(-MAX_HISTORY_MESSAGES)
+    : [...messages];
+
   let fullResponseText = '';
 
   // Merge browser tools with additional tools (MCP)
@@ -97,6 +104,7 @@ export async function streamAnthropicWithBrowserTools(
 
   console.log('🔧 Total merged tools:', allTools.length);
   console.log('🔧 All tool names:', allTools.map((t: any) => t.name).join(', '));
+  console.log('🔧 Starting with', conversationMessages.length, 'messages (limited from', messages.length, ')');
 
   const MAX_TURNS = 10; // Prevent infinite loops
   let turnCount = 0;
@@ -197,15 +205,15 @@ export async function streamAnthropicWithBrowserTools(
     conversationMessages.push({
       id: Date.now().toString(),
       role: 'assistant',
-      content: JSON.stringify(data.content),
-    });
+      content: data.content, // Keep as array, don't stringify
+    } as any);
 
     // Add user message with tool results
     conversationMessages.push({
       id: (Date.now() + 1).toString(),
       role: 'user',
-      content: JSON.stringify(toolResults),
-    });
+      content: toolResults, // Keep as array, don't stringify
+    } as any);
 
     // If the response has a stop_reason of 'end_turn', we're done
     if (data.stop_reason === 'end_turn') {

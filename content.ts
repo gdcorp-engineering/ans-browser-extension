@@ -215,6 +215,37 @@ function executePageAction(
             element = document.activeElement as HTMLElement;
           }
 
+          // If element is BODY (nothing focused), try to find a visible search/text input
+          if (element && element.tagName === 'BODY') {
+            console.log('💡 Nothing focused, searching for visible input field...');
+
+            // Try to find common search input selectors
+            const searchSelectors = [
+              'input[type="search"]',
+              'input[name*="search" i]',
+              'input[id*="search" i]',
+              'input[placeholder*="search" i]',
+              'input[aria-label*="search" i]',
+              'input[type="text"][name="q"]', // Common search param
+              'input[type="text"]:not([type="hidden"])', // Any visible text input
+            ];
+
+            for (const selector of searchSelectors) {
+              const inputs = Array.from(document.querySelectorAll(selector)) as HTMLElement[];
+              // Find first visible input
+              const visibleInput = inputs.find(input => {
+                const rect = input.getBoundingClientRect();
+                return rect.width > 0 && rect.height > 0 && rect.top >= 0;
+              });
+
+              if (visibleInput) {
+                console.log(`✅ Found visible input with selector: ${selector}`);
+                element = visibleInput;
+                break;
+              }
+            }
+          }
+
           if (element && (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA' ||
                          element.getAttribute('contenteditable') === 'true')) {
 

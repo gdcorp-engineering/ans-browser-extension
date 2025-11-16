@@ -11,7 +11,8 @@ export interface ANSBusinessService {
   description?: string;
   capability?: string; // Agent capability from API (e.g., "Customer Service", "Booking")
   location?: string;
-  url: string; // MCP endpoint URL
+  url: string; // MCP or A2A endpoint URL
+  protocol?: 'mcp' | 'a2a'; // Protocol type
   website?: string;
   phone?: string;
   logo?: string;
@@ -106,30 +107,53 @@ function parseAPIResponse(data: any): ANSBusinessService[] {
   }
 
   return data.agents.map((agent: any) => {
-    // Extract the MCP URL from protocolExtensions.mcp.remotes[0].url
-    let mcpUrl = '';
+    // Extract URL and protocol type from protocolExtensions
+    let url = '';
+    let protocol: 'mcp' | 'a2a' | undefined;
 
     try {
-      // Check the correct path: protocolExtensions.mcp.remotes[0].url
+      console.log(`🔍 Extracting URL for agent "${agent.agentName}":`, {
+        hasMcpRemotes: !!agent.protocolExtensions?.mcp?.remotes?.[0]?.url,
+        hasA2aRemotes: !!agent.protocolExtensions?.a2a?.remotes?.[0]?.url,
+        hasA2aUrl: !!agent.protocolExtensions?.a2a?.url,
+        a2aRemotesUrl: agent.protocolExtensions?.a2a?.remotes?.[0]?.url,
+        a2aUrl: agent.protocolExtensions?.a2a?.url,
+        protocolExtensions: JSON.stringify(agent.protocolExtensions, null, 2),
+      });
+
+      // Check for MCP protocol: protocolExtensions.mcp.remotes[0].url
       if (agent.protocolExtensions?.mcp?.remotes?.[0]?.url) {
-        mcpUrl = agent.protocolExtensions.mcp.remotes[0].url;
+        url = agent.protocolExtensions.mcp.remotes[0].url;
+        protocol = 'mcp';
+        console.log(`   ✓ Using MCP remote URL: ${url}`);
+      }
+      // Check for A2A protocol: protocolExtensions.a2a.remotes[0].url
+      else if (agent.protocolExtensions?.a2a?.remotes?.[0]?.url) {
+        url = agent.protocolExtensions.a2a.remotes[0].url;
+        protocol = 'a2a';
+        console.log(`   ✓ Using A2A remote URL: ${url}`);
       }
       // Fallback to old path for backwards compatibility
       else if (agent.protocolExtensions?.acp?.url) {
-        mcpUrl = agent.protocolExtensions.acp.url;
+        url = agent.protocolExtensions.acp.url;
+        protocol = 'mcp'; // Assume old format is MCP
+        console.log(`   ✓ Using legacy ACP URL: ${url}`);
       }
       // Last resort fallback
       else if (agent.endpoint) {
-        mcpUrl = agent.endpoint;
+        url = agent.endpoint;
+        protocol = 'mcp'; // Default to MCP
+        console.log(`   ✓ Using endpoint fallback: ${url}`);
+      } else {
+        console.warn(`   ⚠️  No URL found for agent`);
       }
     } catch (error) {
       console.warn(`⚠️  Error extracting URL for ${agent.agentName}:`, error);
-      mcpUrl = '';
+      url = '';
     }
 
-    // The URL should already be in the correct format: https://xxx.agenthost.club/mcp
-    // But log it for debugging
-    console.log(`📍 MCP URL for ${agent.agentName || 'unknown'}: ${mcpUrl}`);
+    // Log the extracted URL and protocol
+    console.log(`📍 ${protocol?.toUpperCase()} URL for ${agent.agentName || 'unknown'}: ${url}`);
 
     const agentId = agent.ansName || agent.agentName || '';
     const agentCapability = agent.agentCapability || 'Other';
@@ -145,7 +169,8 @@ function parseAPIResponse(data: any): ANSBusinessService[] {
       description: `${agentCapability} service provided by ${agent.provider || 'provider'}`,
       capability: agentCapability, // Map agentCapability to capability field
       location: '', // Not provided in API
-      url: mcpUrl, // Now using https:// scheme
+      url: url, // MCP or A2A URL
+      protocol: protocol, // Protocol type: 'mcp' or 'a2a'
       website: '', // Not provided in API
       phone: '', // Not provided in API
       logo: '', // Not provided in API

@@ -236,3 +236,31 @@ export function mergeToolDefinitions(
   const formattedMCPTools = formatToolsForProvider(mcpTools, provider);
   return [...browserTools, ...formattedMCPTools];
 }
+
+/**
+ * Format A2A agents as Anthropic tools
+ * Each A2A agent becomes a tool that accepts a "task" parameter
+ */
+export function formatA2AToolsForAnthropic(
+  a2aConnections: Array<{ serverId: string; serverName: string; connected: boolean }>
+): any[] {
+  return a2aConnections.map((conn) => {
+    // Create a tool name based on the agent name (sanitized)
+    const toolName = `a2a_${conn.serverName.toLowerCase().replace(/[^a-z0-9_]/g, '_')}`;
+
+    return {
+      name: toolName,
+      description: `Execute a task on the ${conn.serverName} agent (A2A protocol). Provide a natural language task description.`,
+      input_schema: {
+        type: 'object',
+        properties: {
+          task: {
+            type: 'string',
+            description: 'The task to execute on the agent in natural language',
+          },
+        },
+        required: ['task'],
+      },
+    };
+  });
+}

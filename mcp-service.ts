@@ -22,7 +22,8 @@ export class MCPService {
    * Connect to all enabled MCP servers
    */
   async connectToServers(servers: MCPServerConfig[]): Promise<void> {
-    const enabledServers = servers.filter(s => s.enabled);
+    // Filter to only MCP servers (exclude A2A servers)
+    const enabledServers = servers.filter(s => s.enabled && (!s.protocol || s.protocol === 'mcp'));
 
     console.log(`🔌 Connecting to ${enabledServers.length} MCP server(s)...`);
 
