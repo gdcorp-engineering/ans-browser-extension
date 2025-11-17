@@ -259,7 +259,16 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
           quality: 80
         });
 
-        sendResponse({ success: true, screenshot: dataUrl });
+        // Get viewport dimensions from the tab
+        const viewport = await chrome.tabs.sendMessage(activeTab.id!, {
+          type: 'GET_VIEWPORT_SIZE'
+        }).catch(() => ({ width: 1280, height: 800 })); // Fallback dimensions
+
+        sendResponse({
+          success: true,
+          screenshot: dataUrl,
+          viewport: viewport
+        });
       } catch (error) {
         console.error('❌ Screenshot capture error:', error);
 

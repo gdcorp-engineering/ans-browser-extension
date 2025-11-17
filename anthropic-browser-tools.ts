@@ -194,10 +194,15 @@ export async function streamAnthropicWithBrowserTools(
         if (toolUse.name === 'screenshot' && result.success && result.screenshot) {
           // Extract base64 data from data URL
           const base64Data = result.screenshot.split(',')[1];
+          const viewport = result.viewport || { width: 1280, height: 800 };
           toolResults.push({
             type: 'tool_result',
             tool_use_id: toolUse.id,
             content: [
+              {
+                type: 'text',
+                text: `Screenshot captured. Viewport size: ${viewport.width}x${viewport.height}. When clicking, use coordinates within this viewport size. The top-left corner is (0,0) and bottom-right is (${viewport.width},${viewport.height}).`,
+              },
               {
                 type: 'image',
                 source: {

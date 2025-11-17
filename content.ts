@@ -879,6 +879,15 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
     return true;
   }
 
+  if (request.type === 'GET_VIEWPORT_SIZE') {
+    sendResponse({
+      width: window.innerWidth,
+      height: window.innerHeight,
+      devicePixelRatio: window.devicePixelRatio
+    });
+    return true;
+  }
+
   if (request.type === 'EXECUTE_ACTION') {
     const result = executePageAction(
       request.action,
