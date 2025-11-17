@@ -565,12 +565,27 @@ function ChatSidebar() {
   };
 
   const stop = () => {
+    console.log('🛑 Stop called - aborting all browser operations');
+
+    // Abort the AI API call
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       setIsLoading(false);
     }
+
+    // Send message to background script to cancel any pending browser operations
+    chrome.runtime.sendMessage({
+      type: 'ABORT_ALL_BROWSER_OPERATIONS'
+    }, () => {
+      if (chrome.runtime.lastError) {
+        console.log('Background script not responding (this is OK)');
+      }
+    });
+
     // Hide browser automation overlay when stopped
     hideBrowserAutomationOverlay();
+
+    console.log('✅ All browser operations aborted');
   };
 
   // Show/hide browser automation overlay on current tab

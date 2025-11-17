@@ -13,6 +13,9 @@ const memory: BrowserMemory = {
   sessionData: {}
 };
 
+// Track if browser operations should be aborted
+let shouldAbortOperations = false;
+
 // Set side panel to open automatically on extension icon click
 // The side panel will be per-tab by default when using tabId
 chrome.sidePanel
@@ -128,10 +131,30 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
     return true;
   }
 
+  // Abort all browser operations
+  if (request.type === 'ABORT_ALL_BROWSER_OPERATIONS') {
+    console.log('🛑 ABORT_ALL_BROWSER_OPERATIONS received');
+    shouldAbortOperations = true;
+    // Reset the abort flag after a short delay to allow for new operations
+    setTimeout(() => {
+      shouldAbortOperations = false;
+      console.log('✅ Abort flag cleared - ready for new operations');
+    }, 1000);
+    sendResponse({ success: true });
+    return true;
+  }
+
   // Execute action on page
   if (request.type === 'EXECUTE_ACTION') {
     (async () => {
       try {
+        // Check if operations should be aborted
+        if (shouldAbortOperations) {
+          console.log('⚠️ Operation aborted by user');
+          sendResponse({ success: false, error: 'Operation aborted by user', aborted: true });
+          return;
+        }
+
         const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
         if (tabs[0]?.id) {
           await ensureContentScript(tabs[0].id);
@@ -259,6 +282,13 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
   if (request.type === 'NAVIGATE') {
     (async () => {
       try {
+        // Check if operations should be aborted
+        if (shouldAbortOperations) {
+          console.log('⚠️ Navigation aborted by user');
+          sendResponse({ success: false, error: 'Navigation aborted by user', aborted: true });
+          return;
+        }
+
         const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
         if (tabs[0]?.id) {
           await chrome.tabs.update(tabs[0].id, { url: request.url });
