@@ -17,8 +17,25 @@ const BROWSER_TOOLS = [
     },
   },
   {
+    name: 'clickElement',
+    description: 'Click an element using a CSS selector or text content. This is the PREFERRED method - use this instead of coordinate-based clicking whenever possible.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        selector: {
+          type: 'string',
+          description: 'CSS selector for the element to click (e.g., "button.submit", "#search-btn", "input[type=submit]")',
+        },
+        text: {
+          type: 'string',
+          description: 'Alternative: text content to search for (e.g., "Search", "Sign In"). Will click the first matching element.',
+        },
+      },
+    },
+  },
+  {
     name: 'click',
-    description: 'Click at specific coordinates on the page',
+    description: 'Click at specific coordinates on the page. ONLY use this as a last resort when clickElement cannot find the element.',
     input_schema: {
       type: 'object',
       properties: {
@@ -30,12 +47,12 @@ const BROWSER_TOOLS = [
   },
   {
     name: 'type',
-    description: 'Type text into a focused input field',
+    description: 'Type text into an input field. If selector is provided, will focus that element first.',
     input_schema: {
       type: 'object',
       properties: {
         text: { type: 'string', description: 'Text to type' },
-        selector: { type: 'string', description: 'CSS selector for the input (optional)' },
+        selector: { type: 'string', description: 'CSS selector for the input (e.g., "input[name=search]", "#email")' },
       },
       required: ['text'],
     },
@@ -58,7 +75,7 @@ const BROWSER_TOOLS = [
   },
   {
     name: 'getPageContext',
-    description: 'Get information about the current page (URL, title, content)',
+    description: 'Get information about the current page including URL, title, content, and interactive elements. ALWAYS call this first to understand what elements are available.',
     input_schema: {
       type: 'object',
       properties: {},
@@ -66,7 +83,7 @@ const BROWSER_TOOLS = [
   },
   {
     name: 'screenshot',
-    description: 'Take a screenshot of the current page to see what is visible',
+    description: 'Take a screenshot of the current page. Only use this if DOM-based methods fail or you need to see visual layout.',
     input_schema: {
       type: 'object',
       properties: {},
@@ -126,30 +143,34 @@ export async function streamAnthropicWithBrowserTools(
       })),
       system: `You are a helpful AI assistant with browser automation capabilities. You can navigate to websites, click elements, type text, scroll pages, and take screenshots.
 
-CRITICAL COORDINATE INSTRUCTIONS:
-1. ALWAYS take a screenshot BEFORE clicking to see the page
-2. When you receive a screenshot, you'll also get the viewport dimensions (e.g., "1280x800")
-3. The screenshot image shows the EXACT pixels you need to click
-4. Measure coordinates carefully in the screenshot:
-   - Top-left corner of the image = (0, 0)
-   - If viewport is 1280x800, bottom-right = (1280, 800)
-   - A button in the center would be around (640, 400)
-5. Look at WHERE elements appear in the screenshot and estimate their center coordinates
-6. For small buttons/icons, click their CENTER point, not edges
+CRITICAL: ALWAYS PREFER DOM-BASED METHODS OVER SCREENSHOTS
 
-WORKFLOW:
-1. Take screenshot
-2. Carefully examine the screenshot to find the target element
-3. Estimate the CENTER coordinates of that element in the image
-4. Click those coordinates
-5. If clicking fails, take another screenshot and try again with adjusted coordinates
+INTERACTION WORKFLOW (Follow this order):
 
-COORDINATE EXAMPLES:
-- Search button in top-right corner of 1280x800 screen → around (1200, 50)
-- Input field in center of screen → around (640, 400)
-- "Sign in" button in header → measure its position in the screenshot
+1. **First, get page context**: Call getPageContext to see the page structure, interactive elements, and their selectors
 
-When the user asks you to interact with a page, follow this workflow carefully.`,
+2. **Use DOM methods (PREFERRED)**:
+   - Use clickElement with CSS selectors or text content (e.g., clickElement with selector="#search-btn" or text="Search")
+   - Use type with selectors to focus and type into inputs (e.g., type with selector="input[name=q]" and text="pants")
+   - These methods are more reliable and efficient than coordinates
+
+3. **Only use screenshots as LAST RESORT**:
+   - If clickElement cannot find the element by selector or text
+   - If you need to understand visual layout
+   - Then take screenshot and use coordinate-based click
+
+DOM METHOD EXAMPLES:
+- Search button: clickElement with selector="button[type=submit]" or text="Search"
+- Input field: type with selector="input[name=search]" or selector="#search-input"
+- Sign in link: clickElement with text="Sign In" or selector="a[href*=signin]"
+
+COORDINATE CLICKING (last resort only):
+- If DOM methods fail, take a screenshot first
+- Measure coordinates from top-left (0,0)
+- Click the CENTER of elements
+- Viewport dimensions tell you the bounds
+
+When the user asks you to interact with a page, follow this workflow carefully. Always try DOM methods first!`,
     };
 
     console.log('📤 Request body:', JSON.stringify(requestBody, null, 2));

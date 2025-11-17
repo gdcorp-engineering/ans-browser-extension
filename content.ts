@@ -169,6 +169,15 @@ interface PageContext {
   links: Array<{ text: string; href: string }>;
   images: Array<{ alt: string; src: string }>;
   forms: Array<{ id: string; action: string; inputs: Array<{ name: string; type: string }> }>;
+  interactiveElements?: Array<{
+    tag: string;
+    text: string;
+    value?: string;
+    selector: string;
+    type?: string;
+    ariaLabel?: string;
+    visible: boolean;
+  }>;
   metadata: {
     description?: string;
     keywords?: string;
@@ -204,6 +213,37 @@ function extractPageContext(): PageContext {
     }))
   }));
 
+  // Extract interactive elements with their selectors for easy DOM-based clicking
+  const getElementSelector = (el: Element): string => {
+    if (el.id) return `#${el.id}`;
+    if (el.className) {
+      const classes = el.className.split(' ').filter(c => c.trim());
+      if (classes.length > 0) return `${el.tagName.toLowerCase()}.${classes[0]}`;
+    }
+    const name = el.getAttribute('name');
+    if (name) return `${el.tagName.toLowerCase()}[name="${name}"]`;
+    return el.tagName.toLowerCase();
+  };
+
+  // Find all interactive/clickable elements
+  const interactiveElements = Array.from(
+    document.querySelectorAll('button, input[type="button"], input[type="submit"], a[href], [role="button"], [onclick]')
+  )
+    .slice(0, 30)
+    .map(el => {
+      const rect = el.getBoundingClientRect();
+      return {
+        tag: el.tagName.toLowerCase(),
+        text: el.textContent?.trim().slice(0, 50) || '',
+        value: (el as HTMLInputElement).value || undefined,
+        selector: getElementSelector(el),
+        type: (el as HTMLInputElement).type || undefined,
+        ariaLabel: el.getAttribute('aria-label') || undefined,
+        visible: rect.width > 0 && rect.height > 0 && rect.top >= 0 && rect.bottom <= window.innerHeight
+      };
+    })
+    .filter(el => el.visible); // Only return visible elements
+
   const getMetaContent = (name: string): string | undefined => {
     const meta = document.querySelector(`meta[name="${name}"], meta[property="${name}"]`);
     return meta?.getAttribute('content') || undefined;
@@ -216,6 +256,7 @@ function extractPageContext(): PageContext {
     links,
     images,
     forms,
+    interactiveElements, // NEW: List of clickable elements with selectors
     metadata: {
       description: getMetaContent('description') || getMetaContent('og:description'),
       keywords: getMetaContent('keywords'),
@@ -247,32 +288,93 @@ function executePageAction(
   try {
     switch (action) {
       case 'click':
-        // Support both selector and coordinate-based clicking
-        if (selector || target) {
-          const element = document.querySelector(selector || target!);
+        // Support selector, text-based, and coordinate-based clicking
+        let element: Element | null = null;
+
+        // 1. Try CSS selector first (most reliable)
+        if (selector) {
+          element = document.querySelector(selector);
           if (element) {
-            const rect = element.getBoundingClientRect();
-            const clickX = rect.left + rect.width / 2;
-            const clickY = rect.top + rect.height / 2;
-            
-            ['mousedown', 'mouseup', 'click'].forEach(eventType => {
-              const event = new MouseEvent(eventType, {
-                bubbles: true,
-                cancelable: true,
-                view: window,
-                clientX: clickX,
-                clientY: clickY
-              });
-              element.dispatchEvent(event);
-            });
-            
-            // Visual feedback
-            highlightElement(element, coordinates || { x: clickX, y: clickY });
-            
-            return { success: true, message: `Clicked element: ${selector || target}`, element: element.tagName };
+            console.log(`✅ Found element by selector: ${selector}`);
           }
-          return { success: false, message: `Element not found: ${selector || target}` };
-        } else if (coordinates) {
+        }
+
+        // 2. Try finding by text content if selector failed or target is provided
+        if (!element && target) {
+          console.log(`🔍 Searching for element by text: "${target}"`);
+
+          // Search through common clickable elements
+          const clickableSelectors = [
+            'button',
+            'a',
+            'input[type="button"]',
+            'input[type="submit"]',
+            '[role="button"]',
+            '[onclick]'
+          ];
+
+          for (const sel of clickableSelectors) {
+            const elements = Array.from(document.querySelectorAll(sel));
+            element = elements.find(el => {
+              const text = el.textContent?.trim().toLowerCase() || '';
+              const value = (el as HTMLInputElement).value?.toLowerCase() || '';
+              const targetLower = target.toLowerCase();
+              return text.includes(targetLower) || value.includes(targetLower);
+            }) as Element | undefined || null;
+
+            if (element) {
+              console.log(`✅ Found element by text in ${sel}: "${target}"`);
+              break;
+            }
+          }
+
+          // If still not found, try aria-label
+          if (!element) {
+            const elementsWithLabel = Array.from(document.querySelectorAll('[aria-label]'));
+            element = elementsWithLabel.find(el => {
+              const label = el.getAttribute('aria-label')?.toLowerCase() || '';
+              return label.includes(target.toLowerCase());
+            }) as Element | undefined || null;
+
+            if (element) {
+              console.log(`✅ Found element by aria-label: "${target}"`);
+            }
+          }
+        }
+
+        // 3. If we found an element (by selector or text), click it
+        if (element) {
+          const rect = element.getBoundingClientRect();
+          const clickX = rect.left + rect.width / 2;
+          const clickY = rect.top + rect.height / 2;
+
+          ['mousedown', 'mouseup', 'click'].forEach(eventType => {
+            const event = new MouseEvent(eventType, {
+              bubbles: true,
+              cancelable: true,
+              view: window,
+              clientX: clickX,
+              clientY: clickY
+            });
+            element!.dispatchEvent(event);
+          });
+
+          // Visual feedback
+          highlightElement(element, coordinates || { x: clickX, y: clickY });
+
+          return { success: true, message: `Clicked element: ${selector || target}`, element: element.tagName };
+        }
+
+        // 4. If element was searched but not found, return error
+        if (!element && (selector || target)) {
+          return {
+            success: false,
+            message: `Element not found: ${selector || `text="${target}"`}. Try using coordinates as fallback.`
+          };
+        }
+
+        // 5. If no element found but we have coordinates, use coordinate-based clicking
+        if (!element && !selector && !target && coordinates) {
           console.log(`🎯 Click coordinates received: x=${coordinates.x}, y=${coordinates.y}`);
           console.log(`📏 Viewport size: ${window.innerWidth}x${window.innerHeight}`);
           console.log(`📏 Device pixel ratio: ${window.devicePixelRatio}`);

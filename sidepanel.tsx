@@ -221,9 +221,16 @@ function ChatSidebar() {
       
       if (toolName === 'screenshot') {
         chrome.runtime.sendMessage({ type: 'TAKE_SCREENSHOT' }, handleResponse);
+      } else if (toolName === 'clickElement') {
+        chrome.runtime.sendMessage({
+          type: 'EXECUTE_ACTION',
+          action: 'click',
+          selector: parameters.selector,
+          target: parameters.text // For text-based search
+        }, handleResponse);
       } else if (toolName === 'click') {
-        chrome.runtime.sendMessage({ 
-          type: 'EXECUTE_ACTION', 
+        chrome.runtime.sendMessage({
+          type: 'EXECUTE_ACTION',
           action: 'click',
           selector: parameters.selector,
           coordinates: parameters.x !== undefined ? { x: parameters.x, y: parameters.y } : undefined
@@ -1142,6 +1149,12 @@ GUIDELINES:
     }
 
     switch (functionName) {
+      case 'clickElement':
+        return await executeTool('clickElement', {
+          selector: args.selector,
+          text: args.text
+        });
+
       case 'click':
       case 'click_at':
       case 'mouse_click':
