@@ -13,6 +13,8 @@ on:
           - test
           - prod
 
+run-name: Build Extension - ${{ github.event.inputs.environment }}
+
 jobs:
   build:
     name: Build Extension - ${{ github.event.inputs.environment }}
