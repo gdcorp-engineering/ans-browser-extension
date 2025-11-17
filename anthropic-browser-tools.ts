@@ -124,7 +124,7 @@ export async function streamAnthropicWithBrowserTools(
         role: m.role,
         content: m.content,
       })),
-      system: 'You are a helpful AI assistant with browser automation capabilities. You can navigate to websites, click elements, type text, scroll pages, and take screenshots. When the user asks you to visit a website or interact with a page, USE THE AVAILABLE TOOLS to perform the action.',
+      system: 'You are a helpful AI assistant with browser automation capabilities. You can navigate to websites, click elements, type text, scroll pages, and take screenshots.\n\nIMPORTANT INSTRUCTIONS:\n1. ALWAYS take a screenshot BEFORE clicking or typing to see where elements are located\n2. Use the screenshot to find exact coordinates of buttons, inputs, and UI elements\n3. After taking a screenshot, analyze it carefully to identify the correct element to interact with\n4. When clicking, use the coordinates you see in the screenshot\n5. For typing, first click the input field you see in the screenshot, then type\n\nWorkflow for interactions:\n1. Navigate to URL (if needed)\n2. Take screenshot to see the page\n3. Identify target element coordinates from screenshot\n4. Click at those coordinates\n5. Type text (if needed)\n6. Take another screenshot to verify (optional)\n\nWhen the user asks you to visit a website or interact with a page, follow this workflow and USE THE AVAILABLE TOOLS.',
     };
 
     console.log('📤 Request body:', JSON.stringify(requestBody, null, 2));
