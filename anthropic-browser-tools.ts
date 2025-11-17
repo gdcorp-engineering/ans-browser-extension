@@ -64,8 +64,14 @@ const BROWSER_TOOLS = [
       properties: {},
     },
   },
-  // NOTE: screenshot tool removed - not needed for text-based Anthropic browser tools
-  // Only Gemini Computer Use needs screenshots for vision-based navigation
+  {
+    name: 'screenshot',
+    description: 'Take a screenshot of the current page to see what is visible',
+    input_schema: {
+      type: 'object',
+      properties: {},
+    },
+  },
 ];
 
 export async function streamAnthropicWithBrowserTools(
@@ -184,11 +190,32 @@ export async function streamAnthropicWithBrowserTools(
         const result = await executeTool(toolUse.name, toolUse.input);
         console.log('✅ Tool result:', result);
 
-        toolResults.push({
-          type: 'tool_result',
-          tool_use_id: toolUse.id,
-          content: JSON.stringify(result),
-        });
+        // Handle screenshot results differently - include image data
+        if (toolUse.name === 'screenshot' && result.success && result.screenshot) {
+          // Extract base64 data from data URL
+          const base64Data = result.screenshot.split(',')[1];
+          toolResults.push({
+            type: 'tool_result',
+            tool_use_id: toolUse.id,
+            content: [
+              {
+                type: 'image',
+                source: {
+                  type: 'base64',
+                  media_type: 'image/png',
+                  data: base64Data,
+                },
+              },
+            ],
+          });
+        } else {
+          // Regular tool result
+          toolResults.push({
+            type: 'tool_result',
+            tool_use_id: toolUse.id,
+            content: JSON.stringify(result),
+          });
+        }
 
         // Small delay between actions
         await new Promise(resolve => setTimeout(resolve, 500));
