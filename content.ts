@@ -273,8 +273,12 @@ function executePageAction(
           }
           return { success: false, message: `Element not found: ${selector || target}` };
         } else if (coordinates) {
+          console.log(`🎯 Click coordinates received: x=${coordinates.x}, y=${coordinates.y}`);
+          console.log(`📏 Viewport size: ${window.innerWidth}x${window.innerHeight}`);
+          console.log(`📜 Document scroll: x=${window.scrollX}, y=${window.scrollY}`);
 
           let element = document.elementFromPoint(coordinates.x, coordinates.y) as HTMLElement;
+          console.log(`🎯 Element at coordinates:`, element?.tagName, element?.className);
 
           // If element is an input or near an input, try to find the actual input field
           // This improves accuracy for search boxes and text inputs
