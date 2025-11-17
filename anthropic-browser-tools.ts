@@ -124,7 +124,32 @@ export async function streamAnthropicWithBrowserTools(
         role: m.role,
         content: m.content,
       })),
-      system: 'You are a helpful AI assistant with browser automation capabilities. You can navigate to websites, click elements, type text, scroll pages, and take screenshots.\n\nIMPORTANT INSTRUCTIONS:\n1. ALWAYS take a screenshot BEFORE clicking or typing to see where elements are located\n2. Use the screenshot to find exact coordinates of buttons, inputs, and UI elements\n3. After taking a screenshot, analyze it carefully to identify the correct element to interact with\n4. When clicking, use the coordinates you see in the screenshot\n5. For typing, first click the input field you see in the screenshot, then type\n\nWorkflow for interactions:\n1. Navigate to URL (if needed)\n2. Take screenshot to see the page\n3. Identify target element coordinates from screenshot\n4. Click at those coordinates\n5. Type text (if needed)\n6. Take another screenshot to verify (optional)\n\nWhen the user asks you to visit a website or interact with a page, follow this workflow and USE THE AVAILABLE TOOLS.',
+      system: `You are a helpful AI assistant with browser automation capabilities. You can navigate to websites, click elements, type text, scroll pages, and take screenshots.
+
+CRITICAL COORDINATE INSTRUCTIONS:
+1. ALWAYS take a screenshot BEFORE clicking to see the page
+2. When you receive a screenshot, you'll also get the viewport dimensions (e.g., "1280x800")
+3. The screenshot image shows the EXACT pixels you need to click
+4. Measure coordinates carefully in the screenshot:
+   - Top-left corner of the image = (0, 0)
+   - If viewport is 1280x800, bottom-right = (1280, 800)
+   - A button in the center would be around (640, 400)
+5. Look at WHERE elements appear in the screenshot and estimate their center coordinates
+6. For small buttons/icons, click their CENTER point, not edges
+
+WORKFLOW:
+1. Take screenshot
+2. Carefully examine the screenshot to find the target element
+3. Estimate the CENTER coordinates of that element in the image
+4. Click those coordinates
+5. If clicking fails, take another screenshot and try again with adjusted coordinates
+
+COORDINATE EXAMPLES:
+- Search button in top-right corner of 1280x800 screen → around (1200, 50)
+- Input field in center of screen → around (640, 400)
+- "Sign in" button in header → measure its position in the screenshot
+
+When the user asks you to interact with a page, follow this workflow carefully.`,
     };
 
     console.log('📤 Request body:', JSON.stringify(requestBody, null, 2));
@@ -194,14 +219,31 @@ export async function streamAnthropicWithBrowserTools(
         if (toolUse.name === 'screenshot' && result.success && result.screenshot) {
           // Extract base64 data from data URL
           const base64Data = result.screenshot.split(',')[1];
-          const viewport = result.viewport || { width: 1280, height: 800 };
+          const viewport = result.viewport || { width: 1280, height: 800, devicePixelRatio: 1 };
           toolResults.push({
             type: 'tool_result',
             tool_use_id: toolUse.id,
             content: [
               {
                 type: 'text',
-                text: `Screenshot captured. Viewport size: ${viewport.width}x${viewport.height}. When clicking, use coordinates within this viewport size. The top-left corner is (0,0) and bottom-right is (${viewport.width},${viewport.height}).`,
+                text: `Screenshot captured successfully!
+
+Viewport dimensions: ${viewport.width}px wide × ${viewport.height}px tall
+
+COORDINATE SYSTEM:
+- Top-left corner: (0, 0)
+- Top-right corner: (${viewport.width}, 0)
+- Bottom-left corner: (0, ${viewport.height})
+- Bottom-right corner: (${viewport.width}, ${viewport.height})
+- Center of screen: (${Math.round(viewport.width/2)}, ${Math.round(viewport.height/2)})
+
+TO CLICK AN ELEMENT:
+1. Look at the screenshot image below
+2. Find the visual element you want to click
+3. Estimate where it appears in the image (measure from top-left)
+4. Click the CENTER of that element
+5. X coordinate = horizontal position (left to right, 0 to ${viewport.width})
+6. Y coordinate = vertical position (top to bottom, 0 to ${viewport.height})`,
               },
               {
                 type: 'image',
