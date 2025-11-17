@@ -174,7 +174,7 @@ function ChatSidebar() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [browserToolsEnabled, setBrowserToolsEnabled] = useState(true);
+  const [browserToolsEnabled, setBrowserToolsEnabled] = useState(false);
   const [showBrowserToolsWarning, setShowBrowserToolsWarning] = useState(false);
   const [isUserScrolled, setIsUserScrolled] = useState(false);
   const [currentTabId, setCurrentTabId] = useState<number | null>(null);
