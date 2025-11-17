@@ -275,7 +275,26 @@ function executePageAction(
         } else if (coordinates) {
           console.log(`🎯 Click coordinates received: x=${coordinates.x}, y=${coordinates.y}`);
           console.log(`📏 Viewport size: ${window.innerWidth}x${window.innerHeight}`);
+          console.log(`📏 Device pixel ratio: ${window.devicePixelRatio}`);
           console.log(`📜 Document scroll: x=${window.scrollX}, y=${window.scrollY}`);
+
+          // Add visual debug marker at click coordinates
+          const debugMarker = document.createElement('div');
+          debugMarker.style.cssText = `
+            position: fixed;
+            left: ${coordinates.x}px;
+            top: ${coordinates.y}px;
+            width: 20px;
+            height: 20px;
+            background: red;
+            border: 3px solid yellow;
+            border-radius: 50%;
+            z-index: 999999;
+            pointer-events: none;
+            transform: translate(-50%, -50%);
+          `;
+          document.body.appendChild(debugMarker);
+          setTimeout(() => debugMarker.remove(), 3000);
 
           let element = document.elementFromPoint(coordinates.x, coordinates.y) as HTMLElement;
           console.log(`🎯 Element at coordinates:`, element?.tagName, element?.className);
