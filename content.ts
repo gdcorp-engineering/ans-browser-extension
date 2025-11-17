@@ -280,6 +280,11 @@ function executePageAction(
           let element = document.elementFromPoint(coordinates.x, coordinates.y) as HTMLElement;
           console.log(`🎯 Element at coordinates:`, element?.tagName, element?.className);
 
+          if (element) {
+            const rect = element.getBoundingClientRect();
+            console.log(`📦 Element bounds: left=${Math.round(rect.left)}, top=${Math.round(rect.top)}, width=${Math.round(rect.width)}, height=${Math.round(rect.height)}`);
+          }
+
           // If element is an input or near an input, try to find the actual input field
           // This improves accuracy for search boxes and text inputs
           if (element) {
@@ -312,6 +317,36 @@ function executePageAction(
                     x: rect.left + rect.width / 2,
                     y: rect.top + rect.height / 2
                   };
+                } else {
+                  // If still no input found, try to find the largest visible input/textarea on the page
+                  console.log('🔍 Searching for largest visible input field on page...');
+                  const allInputs = Array.from(document.querySelectorAll('input:not([type="hidden"]), textarea, [contenteditable="true"]')) as HTMLElement[];
+                  const visibleInputs = allInputs.filter(input => {
+                    const rect = input.getBoundingClientRect();
+                    return rect.width > 0 && rect.height > 0 &&
+                           rect.top >= 0 && rect.left >= 0 &&
+                           rect.bottom <= window.innerHeight &&
+                           rect.right <= window.innerWidth;
+                  });
+
+                  if (visibleInputs.length > 0) {
+                    // Find the largest input (by area)
+                    const largestInput = visibleInputs.reduce((largest, current) => {
+                      const largestRect = largest.getBoundingClientRect();
+                      const currentRect = current.getBoundingClientRect();
+                      const largestArea = largestRect.width * largestRect.height;
+                      const currentArea = currentRect.width * currentRect.height;
+                      return currentArea > largestArea ? current : largest;
+                    });
+
+                    console.log(`💡 Found largest visible input on page: ${largestInput.tagName}`);
+                    element = largestInput;
+                    const rect = largestInput.getBoundingClientRect();
+                    coordinates = {
+                      x: rect.left + rect.width / 2,
+                      y: rect.top + rect.height / 2
+                    };
+                  }
                 }
               }
             }
