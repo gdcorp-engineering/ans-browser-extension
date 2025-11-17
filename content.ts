@@ -890,8 +890,15 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
  */
 let automationOverlay: HTMLDivElement | null = null;
 let automationButton: HTMLDivElement | null = null;
+let isUserAborted = false; // Track if user manually aborted
 
 function showBrowserAutomationOverlay() {
+  // Don't show overlay if user has aborted
+  if (isUserAborted) {
+    console.log('🚫 Overlay blocked - user has taken over control');
+    return;
+  }
+
   // Don't create duplicate overlay
   if (automationOverlay) return;
 
@@ -960,9 +967,22 @@ function showBrowserAutomationOverlay() {
   const button = automationButton.querySelector('button');
   if (button) {
     button.addEventListener('click', () => {
-      // Send message to sidepanel to abort automation
-      chrome.runtime.sendMessage({ type: 'ABORT_BROWSER_AUTOMATION' });
+      console.log('🛑 Take Over Control button clicked');
+      // Set abort flag to prevent overlay from re-appearing
+      isUserAborted = true;
+      // Reset abort flag after 5 seconds to allow future operations
+      setTimeout(() => {
+        isUserAborted = false;
+        console.log('✅ User abort flag cleared - ready for new operations');
+      }, 5000);
+      // Immediately hide overlay
       hideBrowserAutomationOverlay();
+      // Send message to sidepanel to abort automation
+      chrome.runtime.sendMessage({ type: 'ABORT_BROWSER_AUTOMATION' }, () => {
+        if (chrome.runtime.lastError) {
+          console.log('Sidepanel not responding (this is OK)');
+        }
+      });
     });
   }
 
@@ -973,11 +993,11 @@ function showBrowserAutomationOverlay() {
 function hideBrowserAutomationOverlay() {
   console.log('🔵 Hiding browser automation overlay');
 
-  if (automationOverlay) {
+  if (automationOverlay && automationOverlay.parentNode) {
     automationOverlay.remove();
     automationOverlay = null;
   }
-  if (automationButton) {
+  if (automationButton && automationButton.parentNode) {
     automationButton.remove();
     automationButton = null;
   }
