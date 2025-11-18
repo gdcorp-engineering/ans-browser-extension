@@ -657,32 +657,80 @@ function executePageAction(
 
       case 'scroll':
         console.log('🔄 Scroll action:', { direction, amount, target, selector });
-        console.log('   Current scroll position:', window.scrollY);
+        console.log('   Window scroll position:', window.scrollY);
         console.log('   Page height:', document.body.scrollHeight);
         console.log('   Viewport height:', window.innerHeight);
 
+        // Find the main scrollable element
+        // Many SPAs (like Slack) use a custom scrollable container instead of window scroll
+        const findScrollableElement = (): Element => {
+          // First check if window is scrollable
+          if (document.body.scrollHeight > window.innerHeight && window.scrollY >= 0) {
+            console.log('   Using window scroll');
+            return document.documentElement;
+          }
+
+          // Find elements with overflow scroll/auto that are actually scrollable
+          const scrollableElements = Array.from(
+            document.querySelectorAll('*')
+          ).filter((el: Element) => {
+            const style = window.getComputedStyle(el);
+            const isScrollable =
+              (style.overflow === 'auto' || style.overflow === 'scroll' ||
+               style.overflowY === 'auto' || style.overflowY === 'scroll') &&
+              el.scrollHeight > el.clientHeight;
+            return isScrollable;
+          });
+
+          // Find the largest scrollable element (likely the main content area)
+          if (scrollableElements.length > 0) {
+            const largest = scrollableElements.reduce((largest, current) => {
+              const largestArea = largest.clientHeight * largest.clientWidth;
+              const currentArea = current.clientHeight * current.clientWidth;
+              return currentArea > largestArea ? current : largest;
+            });
+            console.log('   Found scrollable container:', largest.tagName, largest.className);
+            return largest;
+          }
+
+          console.log('   Fallback to document.documentElement');
+          return document.documentElement;
+        };
+
+        const scrollableElement = findScrollableElement();
+        const isWindow = scrollableElement === document.documentElement;
+
         if (direction === 'top' || target === 'top') {
-          window.scrollTo({ top: 0, behavior: 'smooth' });
+          if (isWindow) {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          } else {
+            scrollableElement.scrollTo({ top: 0, behavior: 'smooth' });
+          }
           console.log('   ✓ Scrolled to top');
           return { success: true, message: 'Scrolled to top' };
         } else if (direction === 'bottom' || target === 'bottom') {
-          window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+          const maxScroll = scrollableElement.scrollHeight - scrollableElement.clientHeight;
+          if (isWindow) {
+            window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+          } else {
+            scrollableElement.scrollTo({ top: maxScroll, behavior: 'smooth' });
+          }
           console.log('   ✓ Scrolled to bottom');
           return { success: true, message: 'Scrolled to bottom' };
         } else if (direction === 'up') {
           const scrollAmount = amount || 500;
-          const beforeScroll = window.scrollY;
-          window.scrollBy({ top: -scrollAmount, behavior: 'smooth' });
+          const beforeScroll = scrollableElement.scrollTop;
+          scrollableElement.scrollBy({ top: -scrollAmount, behavior: 'smooth' });
           setTimeout(() => {
-            console.log(`   ✓ Scrolled up by ${scrollAmount}px (from ${beforeScroll} to ${window.scrollY})`);
+            console.log(`   ✓ Scrolled up by ${scrollAmount}px (from ${beforeScroll} to ${scrollableElement.scrollTop})`);
           }, 100);
           return { success: true, message: `Scrolled up by ${scrollAmount}px` };
         } else if (direction === 'down') {
           const scrollAmount = amount || 500;
-          const beforeScroll = window.scrollY;
-          window.scrollBy({ top: scrollAmount, behavior: 'smooth' });
+          const beforeScroll = scrollableElement.scrollTop;
+          scrollableElement.scrollBy({ top: scrollAmount, behavior: 'smooth' });
           setTimeout(() => {
-            console.log(`   ✓ Scrolled down by ${scrollAmount}px (from ${beforeScroll} to ${window.scrollY})`);
+            console.log(`   ✓ Scrolled down by ${scrollAmount}px (from ${beforeScroll} to ${scrollableElement.scrollTop})`);
           }, 100);
           return { success: true, message: `Scrolled down by ${scrollAmount}px` };
         } else if (selector || target) {
