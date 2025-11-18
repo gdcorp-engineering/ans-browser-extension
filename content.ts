@@ -671,26 +671,45 @@ function executePageAction(
           }
 
           // Find elements with overflow scroll/auto that are actually scrollable
+          // Also include overflow:hidden elements that have scrollHeight > clientHeight
+          // (Slack uses hidden scrollbars that appear on hover)
           const scrollableElements = Array.from(
             document.querySelectorAll('*')
           ).filter((el: Element) => {
             const style = window.getComputedStyle(el);
-            const isScrollable =
-              (style.overflow === 'auto' || style.overflow === 'scroll' ||
-               style.overflowY === 'auto' || style.overflowY === 'scroll') &&
-              el.scrollHeight > el.clientHeight;
-            return isScrollable;
+            const hasScrollableContent = el.scrollHeight > el.clientHeight;
+
+            // Check for explicit scrollable styles
+            const hasScrollStyle =
+              style.overflow === 'auto' || style.overflow === 'scroll' ||
+              style.overflowY === 'auto' || style.overflowY === 'scroll';
+
+            // Also check for hidden overflow with scrollable content (Slack pattern)
+            const hasHiddenScrollable =
+              (style.overflow === 'hidden' || style.overflowY === 'hidden') &&
+              hasScrollableContent &&
+              el.clientHeight > 100; // Must be reasonably sized
+
+            return hasScrollableContent && (hasScrollStyle || hasHiddenScrollable);
           });
 
-          console.log(`   Found ${scrollableElements.length} scrollable elements`);
+          console.log(`   Found ${scrollableElements.length} scrollable elements (including hidden scrollbars)`);
 
           // Find the largest scrollable element (likely the main content area)
           if (scrollableElements.length > 0) {
-            const largest = scrollableElements.reduce((largest, current) => {
-              const largestArea = largest.clientHeight * largest.clientWidth;
-              const currentArea = current.clientHeight * current.clientWidth;
-              return currentArea > largestArea ? current : largest;
+            // Prioritize elements with actual scroll position or large scroll height
+            const sorted = scrollableElements.sort((a, b) => {
+              // Prefer elements that are currently scrolled (user has interacted with them)
+              if (a.scrollTop > 0 && b.scrollTop === 0) return -1;
+              if (b.scrollTop > 0 && a.scrollTop === 0) return 1;
+
+              // Then sort by area
+              const aArea = a.clientHeight * a.clientWidth;
+              const bArea = b.clientHeight * b.clientWidth;
+              return bArea - aArea;
             });
+
+            const largest = sorted[0];
             console.log('   Selected scrollable container:', {
               tag: largest.tagName,
               class: largest.className,
@@ -698,6 +717,7 @@ function executePageAction(
               scrollTop: largest.scrollTop,
               scrollHeight: largest.scrollHeight,
               clientHeight: largest.clientHeight,
+              overflow: window.getComputedStyle(largest).overflowY,
               canScrollMore: largest.scrollTop > 0 || (largest.scrollHeight - largest.clientHeight - largest.scrollTop) > 0
             });
             return largest;

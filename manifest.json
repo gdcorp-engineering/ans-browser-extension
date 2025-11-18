@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "GoDaddy ANS Chat Sidebar",
-  "version": "1.5.3",
+  "version": "1.5.4",
   "description": "GoDaddy ANS AI-powered sidebar chat with computer use capabilities",
   "permissions": [
     "sidePanel",
