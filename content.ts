@@ -682,6 +682,8 @@ function executePageAction(
             return isScrollable;
           });
 
+          console.log(`   Found ${scrollableElements.length} scrollable elements`);
+
           // Find the largest scrollable element (likely the main content area)
           if (scrollableElements.length > 0) {
             const largest = scrollableElements.reduce((largest, current) => {
@@ -689,7 +691,15 @@ function executePageAction(
               const currentArea = current.clientHeight * current.clientWidth;
               return currentArea > largestArea ? current : largest;
             });
-            console.log('   Found scrollable container:', largest.tagName, largest.className);
+            console.log('   Selected scrollable container:', {
+              tag: largest.tagName,
+              class: largest.className,
+              id: (largest as HTMLElement).id,
+              scrollTop: largest.scrollTop,
+              scrollHeight: largest.scrollHeight,
+              clientHeight: largest.clientHeight,
+              canScrollMore: largest.scrollTop > 0 || (largest.scrollHeight - largest.clientHeight - largest.scrollTop) > 0
+            });
             return largest;
           }
 
