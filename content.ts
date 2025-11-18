@@ -656,26 +656,46 @@ function executePageAction(
         return { success: false, message: 'Value required for fill action' };
 
       case 'scroll':
+        console.log('🔄 Scroll action:', { direction, amount, target, selector });
+        console.log('   Current scroll position:', window.scrollY);
+        console.log('   Page height:', document.body.scrollHeight);
+        console.log('   Viewport height:', window.innerHeight);
+
         if (direction === 'top' || target === 'top') {
           window.scrollTo({ top: 0, behavior: 'smooth' });
+          console.log('   ✓ Scrolled to top');
           return { success: true, message: 'Scrolled to top' };
         } else if (direction === 'bottom' || target === 'bottom') {
           window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+          console.log('   ✓ Scrolled to bottom');
           return { success: true, message: 'Scrolled to bottom' };
         } else if (direction === 'up') {
-          window.scrollBy({ top: -(amount || 300), behavior: 'smooth' });
-          return { success: true, message: `Scrolled up by ${amount || 300}px` };
+          const scrollAmount = amount || 500;
+          const beforeScroll = window.scrollY;
+          window.scrollBy({ top: -scrollAmount, behavior: 'smooth' });
+          setTimeout(() => {
+            console.log(`   ✓ Scrolled up by ${scrollAmount}px (from ${beforeScroll} to ${window.scrollY})`);
+          }, 100);
+          return { success: true, message: `Scrolled up by ${scrollAmount}px` };
         } else if (direction === 'down') {
-          window.scrollBy({ top: (amount || 300), behavior: 'smooth' });
-          return { success: true, message: `Scrolled down by ${amount || 300}px` };
+          const scrollAmount = amount || 500;
+          const beforeScroll = window.scrollY;
+          window.scrollBy({ top: scrollAmount, behavior: 'smooth' });
+          setTimeout(() => {
+            console.log(`   ✓ Scrolled down by ${scrollAmount}px (from ${beforeScroll} to ${window.scrollY})`);
+          }, 100);
+          return { success: true, message: `Scrolled down by ${scrollAmount}px` };
         } else if (selector || target) {
           const element = document.querySelector(selector || target!);
           if (element) {
             element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            console.log('   ✓ Scrolled to element:', selector || target);
             return { success: true, message: `Scrolled to: ${selector || target}` };
           }
+          console.error('   ✗ Element not found:', selector || target);
           return { success: false, message: `Element not found: ${selector || target}` };
         }
+        console.log('   ✓ Default scroll');
         return { success: true, message: 'Scrolled' };
 
       case 'keyboard_type':
