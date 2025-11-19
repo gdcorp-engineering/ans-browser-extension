@@ -52,7 +52,8 @@ function SettingsPage() {
   const [updateMessage, setUpdateMessage] = useState<string | null>(null);
 
   const CURRENT_VERSION = '1.5.4'; // This should match manifest.json version
-  const UPDATE_CHECK_URL = 'https://api.github.com/repos/vyung-godaddy/open-chatgpt-atlas/releases/latest';
+  const GITHUB_REPO = 'gdcorp-engineering/ans-browser-extension';
+  const WORKFLOW_NAME = 'build.yml';
 
   const checkForUpdates = async () => {
     setUpdateChecking(true);
@@ -61,21 +62,41 @@ function SettingsPage() {
     setUpdateAvailable(null);
 
     try {
-      const response = await fetch(UPDATE_CHECK_URL);
+      // Fetch latest workflow runs for Prod environment
+      const workflowRunsUrl = `https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/${WORKFLOW_NAME}/runs?status=success&per_page=1`;
+      const runsResponse = await fetch(workflowRunsUrl);
 
-      if (!response.ok) {
-        throw new Error(`Failed to check for updates: ${response.status}`);
+      if (!runsResponse.ok) {
+        throw new Error(`Failed to check for updates: ${runsResponse.status}`);
       }
 
-      const release = await response.json();
-      const latestVersion = release.tag_name.replace(/^v/, ''); // Remove 'v' prefix if present
+      const runsData = await runsResponse.json();
+
+      if (!runsData.workflow_runs || runsData.workflow_runs.length === 0) {
+        throw new Error('No successful builds found');
+      }
+
+      const latestRun = runsData.workflow_runs[0];
+
+      // Extract version from commit message or use workflow run number
+      const commitMessage = latestRun.head_commit?.message || '';
+      const versionMatch = commitMessage.match(/v?(\d+\.\d+\.\d+)/);
+      const latestVersion = versionMatch ? versionMatch[1] : `build-${latestRun.run_number}`;
 
       // Compare versions
       if (latestVersion !== CURRENT_VERSION) {
+        // Get artifacts for this run
+        const artifactsUrl = `https://api.github.com/repos/${GITHUB_REPO}/actions/runs/${latestRun.id}/artifacts`;
+        const artifactsResponse = await fetch(artifactsUrl);
+        const artifactsData = await artifactsResponse.json();
+
+        // Find the Prod artifact
+        const prodArtifact = artifactsData.artifacts?.find((a: any) => a.name === 'extension-prod');
+
         setUpdateAvailable({
           version: latestVersion,
-          downloadUrl: release.html_url,
-          releaseNotes: release.body || 'No release notes available'
+          downloadUrl: `https://github.com/${GITHUB_REPO}/actions/runs/${latestRun.id}`,
+          releaseNotes: commitMessage || 'Check GitHub Actions for details'
         });
       } else {
         setUpdateMessage("You're up to date! 🎉");
@@ -408,10 +429,13 @@ function SettingsPage() {
                   width: '100%'
                 }}
               >
-                📥 Download Update
+                📥 Download from GitHub Actions
               </button>
               <p style={{ fontSize: '12px', color: '#856404', marginTop: '8px', marginBottom: 0 }}>
-                After downloading, go to <code>chrome://extensions/</code> and reload the extension.
+                1. Sign in with SSO if prompted<br />
+                2. Download the <strong>extension-prod</strong> artifact<br />
+                3. Extract the zip file<br />
+                4. Go to <code>chrome://extensions/</code> and click "Load unpacked" or reload the extension
               </p>
             </div>
           )}
