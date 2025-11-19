@@ -55,6 +55,22 @@ function SettingsPage() {
   const GITHUB_REPO = 'gdcorp-engineering/ans-browser-extension';
   const WORKFLOW_NAME = 'build.yml';
 
+  // Compare semantic versions (e.g., "1.5.4" vs "1.5.3")
+  const compareVersions = (v1: string, v2: string): number => {
+    const parts1 = v1.split('.').map(Number);
+    const parts2 = v2.split('.').map(Number);
+
+    for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
+      const part1 = parts1[i] || 0;
+      const part2 = parts2[i] || 0;
+
+      if (part1 > part2) return 1;  // v1 is newer
+      if (part1 < part2) return -1; // v2 is newer
+    }
+
+    return 0; // versions are equal
+  };
+
   const checkForUpdates = async () => {
     setUpdateChecking(true);
     setUpdateError(null);
@@ -83,8 +99,11 @@ function SettingsPage() {
       const versionMatch = commitMessage.match(/v?(\d+\.\d+\.\d+)/);
       const latestVersion = versionMatch ? versionMatch[1] : `build-${latestRun.run_number}`;
 
-      // Compare versions
-      if (latestVersion !== CURRENT_VERSION) {
+      // Compare versions - only show update if latest is NEWER than current
+      const comparison = compareVersions(latestVersion, CURRENT_VERSION);
+
+      if (comparison > 0) {
+        // Latest version is newer
         // Get artifacts for this run
         const artifactsUrl = `https://api.github.com/repos/${GITHUB_REPO}/actions/runs/${latestRun.id}/artifacts`;
         const artifactsResponse = await fetch(artifactsUrl);
@@ -98,8 +117,11 @@ function SettingsPage() {
           downloadUrl: `https://github.com/${GITHUB_REPO}/actions/runs/${latestRun.id}`,
           releaseNotes: commitMessage || 'Check GitHub Actions for details'
         });
-      } else {
+      } else if (comparison === 0) {
         setUpdateMessage("You're up to date! 🎉");
+      } else {
+        // Current version is newer than latest build (development version)
+        setUpdateMessage(`You're running a development version (${CURRENT_VERSION}) which is newer than the latest release (${latestVersion})`);
       }
     } catch (error) {
       console.error('Update check failed:', error);
