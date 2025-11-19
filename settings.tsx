@@ -411,7 +411,7 @@ function SettingsPage() {
             <label>ANS Authentication</label>
             <button
               onClick={() => {
-                window.open('https://ra.int.dev-godaddy.com/v1/agents', '_blank');
+                window.open('https://ra.int.dev-godaddy.com/', '_blank');
               }}
               style={{
                 padding: '12px 20px',
