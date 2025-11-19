@@ -361,14 +361,14 @@ function SettingsPage() {
           <div className="api-key-input-wrapper">
             <input
               type="text"
-              value={settings.customBaseUrl || ''}
+              value={settings.customBaseUrl || 'https://caas-gocode-prod.caas-prod.prod.onkatana.net'}
               onChange={(e) => setSettings({ ...settings, customBaseUrl: e.target.value })}
-              placeholder="e.g., https://your-custom-endpoint.com"
+              placeholder="https://caas-gocode-prod.caas-prod.prod.onkatana.net"
               className="api-key-input"
             />
           </div>
           <p className="help-text">
-            Leave empty to use default provider endpoint. Enter a custom API endpoint to use your own provider.
+            GoCode API endpoint for Claude requests.
           </p>
         </div>
 
