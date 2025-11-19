@@ -9,29 +9,19 @@ interface SettingsProps {
 }
 
 const PROVIDER_MODELS = {
-  google: [
-    { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', description: '1M token context' },
-    { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', description: 'Fast and efficient' },
-    { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash Lite', description: 'Optimized for speed' },
-  ],
   anthropic: [
     { id: 'claude-sonnet-4-5-20250929', name: 'Claude Sonnet 4.5', description: 'Latest and most capable' },
     { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', description: 'Most intelligent model' },
     { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku', description: 'Fastest model' },
   ],
-  openai: [
-    { id: 'gpt-4o', name: 'GPT-4o', description: 'Most capable' },
-    { id: 'gpt-4o-mini', name: 'GPT-4o Mini', description: 'Fast and affordable' },
-    { id: 'gpt-4-turbo', name: 'GPT-4 Turbo', description: 'Previous generation' },
-  ],
 };
 
 const Settings = ({ settings, onSave, onClose }: SettingsProps) => {
-  const [provider, setProvider] = useState<'google' | 'anthropic' | 'openai'>(
-    (settings?.provider as 'google' | 'anthropic' | 'openai') || 'google'
+  const [provider, setProvider] = useState<'anthropic'>(
+    (settings?.provider as 'anthropic') || 'anthropic'
   );
   const [apiKey, setApiKey] = useState(settings?.googleApiKey || '');
-  const [model, setModel] = useState(settings?.model || 'gemini-2.5-pro');
+  const [model, setModel] = useState(settings?.model || 'claude-sonnet-4-5-20250929');
   const [customBaseUrl, setCustomBaseUrl] = useState(settings?.customBaseUrl || '');
   const [composioApiKey, setComposioApiKey] = useState(settings?.composioApiKey || '');
   const [showApiKey, setShowApiKey] = useState(false);
@@ -111,7 +101,7 @@ const Settings = ({ settings, onSave, onClose }: SettingsProps) => {
             <select
               value={provider}
               onChange={(e) => {
-                const newProvider = e.target.value as 'google' | 'anthropic' | 'openai';
+                const newProvider = e.target.value as 'anthropic';
                 setProvider(newProvider);
                 setModel(PROVIDER_MODELS[newProvider][0].id);
               }}
@@ -124,9 +114,7 @@ const Settings = ({ settings, onSave, onClose }: SettingsProps) => {
                 fontSize: '14px',
               }}
             >
-              <option value="google">Google Gemini</option>
               <option value="anthropic">Anthropic Claude</option>
-              <option value="openai">OpenAI</option>
             </select>
           </div>
 
