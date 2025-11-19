@@ -46,6 +46,47 @@ function SettingsPage() {
   const [activeTab, setActiveTab] = useState<'connected' | 'marketplace' | 'custom'>('connected');
   const [fetchLogs, setFetchLogs] = useState<string[]>([]);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [updateChecking, setUpdateChecking] = useState(false);
+  const [updateAvailable, setUpdateAvailable] = useState<{ version: string; downloadUrl: string; releaseNotes?: string } | null>(null);
+  const [updateError, setUpdateError] = useState<string | null>(null);
+  const [updateMessage, setUpdateMessage] = useState<string | null>(null);
+
+  const CURRENT_VERSION = '1.5.4'; // This should match manifest.json version
+  const UPDATE_CHECK_URL = 'https://api.github.com/repos/vyung-godaddy/open-chatgpt-atlas/releases/latest';
+
+  const checkForUpdates = async () => {
+    setUpdateChecking(true);
+    setUpdateError(null);
+    setUpdateMessage(null);
+    setUpdateAvailable(null);
+
+    try {
+      const response = await fetch(UPDATE_CHECK_URL);
+
+      if (!response.ok) {
+        throw new Error(`Failed to check for updates: ${response.status}`);
+      }
+
+      const release = await response.json();
+      const latestVersion = release.tag_name.replace(/^v/, ''); // Remove 'v' prefix if present
+
+      // Compare versions
+      if (latestVersion !== CURRENT_VERSION) {
+        setUpdateAvailable({
+          version: latestVersion,
+          downloadUrl: release.html_url,
+          releaseNotes: release.body || 'No release notes available'
+        });
+      } else {
+        setUpdateMessage("You're up to date! 🎉");
+      }
+    } catch (error) {
+      console.error('Update check failed:', error);
+      setUpdateError(error instanceof Error ? error.message : 'Failed to check for updates');
+    } finally {
+      setUpdateChecking(false);
+    }
+  };
 
   useEffect(() => {
     // Load settings from chrome.storage
@@ -278,6 +319,104 @@ function SettingsPage() {
       </div>
 
       <div className="settings-content">
+        {/* Update Section */}
+        <div className="setting-group" style={{ background: '#f8f9fa', padding: '16px', borderRadius: '8px', marginBottom: '24px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+            <div>
+              <label style={{ marginBottom: '4px', display: 'block' }}>Extension Updates</label>
+              <span style={{ fontSize: '13px', color: '#666' }}>Current version: {CURRENT_VERSION}</span>
+            </div>
+            <button
+              onClick={checkForUpdates}
+              disabled={updateChecking}
+              style={{
+                padding: '8px 16px',
+                background: updateChecking ? '#6c757d' : '#007bff',
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: updateChecking ? 'not-allowed' : 'pointer',
+                fontSize: '13px',
+                fontWeight: '500'
+              }}
+            >
+              {updateChecking ? '⏳ Checking...' : '🔄 Check for Updates'}
+            </button>
+          </div>
+
+          {updateMessage && (
+            <div style={{
+              padding: '12px',
+              background: '#d4edda',
+              border: '1px solid #c3e6cb',
+              borderRadius: '6px',
+              color: '#155724',
+              fontSize: '14px'
+            }}>
+              {updateMessage}
+            </div>
+          )}
+
+          {updateError && (
+            <div style={{
+              padding: '12px',
+              background: '#f8d7da',
+              border: '1px solid #f5c6cb',
+              borderRadius: '6px',
+              color: '#721c24',
+              fontSize: '14px'
+            }}>
+              ⚠️ {updateError}
+            </div>
+          )}
+
+          {updateAvailable && (
+            <div style={{
+              padding: '16px',
+              background: '#fff3cd',
+              border: '1px solid #ffc107',
+              borderRadius: '6px'
+            }}>
+              <div style={{ marginBottom: '12px' }}>
+                <strong style={{ color: '#856404', fontSize: '15px' }}>
+                  🎉 Update Available: Version {updateAvailable.version}
+                </strong>
+              </div>
+              {updateAvailable.releaseNotes && (
+                <div style={{
+                  fontSize: '13px',
+                  color: '#856404',
+                  marginBottom: '12px',
+                  maxHeight: '100px',
+                  overflowY: 'auto',
+                  whiteSpace: 'pre-wrap'
+                }}>
+                  {updateAvailable.releaseNotes}
+                </div>
+              )}
+              <button
+                onClick={() => window.open(updateAvailable.downloadUrl, '_blank')}
+                style={{
+                  padding: '10px 20px',
+                  background: '#28a745',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  width: '100%'
+                }}
+              >
+                📥 Download Update
+              </button>
+              <p style={{ fontSize: '12px', color: '#856404', marginTop: '8px', marginBottom: 0 }}>
+                After downloading, go to <code>chrome://extensions/</code> and reload the extension.
+              </p>
+            </div>
+          )}
+        </div>
+
         <div className="setting-group">
           <label>AI Provider</label>
           <select
