@@ -12,29 +12,19 @@ import {
 } from './trusted-business-service';
 
 const PROVIDER_MODELS = {
-  google: [
-    { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', description: '1M token context' },
-    { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', description: 'Fast and efficient' },
-    { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash Lite', description: 'Optimized for speed' },
-  ],
   anthropic: [
     { id: 'claude-sonnet-4-5-20250929', name: 'Claude Sonnet 4.5', description: 'Latest and most capable' },
     { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', description: 'Most intelligent model' },
     { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku', description: 'Fastest model' },
     { id: 'claude-3-opus-20240229', name: 'Claude 3 Opus', description: 'Previous generation' },
   ],
-  openai: [
-    { id: 'gpt-4o', name: 'GPT-4o', description: 'Most capable' },
-    { id: 'gpt-4o-mini', name: 'GPT-4o Mini', description: 'Fast and affordable' },
-    { id: 'gpt-4-turbo', name: 'GPT-4 Turbo', description: 'Previous generation' },
-  ],
 };
 
 function SettingsPage() {
   const [settings, setSettings] = useState<Settings>({
-    provider: 'google',
+    provider: 'anthropic',
     apiKey: '',
-    model: 'gemini-2.5-pro',
+    model: 'claude-sonnet-4-5-20250929',
     toolMode: 'tool-router',
     composioApiKey: '',
     mcpEnabled: false,
@@ -302,9 +292,7 @@ function SettingsPage() {
             }}
             className="model-select"
           >
-            <option value="google">Google Gemini</option>
             <option value="anthropic">Anthropic Claude</option>
-            <option value="openai">OpenAI</option>
           </select>
         </div>
 

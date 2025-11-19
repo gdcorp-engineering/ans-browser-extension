@@ -2,7 +2,7 @@
 import { z } from 'zod';
 
 export type ToolMode = 'tool-router';
-export type Provider = 'google' | 'anthropic' | 'openai';
+export type Provider = 'anthropic';
 
 export type ProtocolType = 'mcp' | 'a2a';
 
