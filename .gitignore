@@ -31,3 +31,8 @@ Thumbs.db
 *.log
 npm-debug.log*
 artifacts/
+
+# Extension packaging
+packages/
+extension-key.pem
+*.crx
