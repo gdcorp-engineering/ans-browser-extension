@@ -99,30 +99,33 @@ function SettingsPage() {
       const versionMatch = commitMessage.match(/v?(\d+\.\d+\.\d+)/);
       const latestVersion = versionMatch ? versionMatch[1] : `build-${latestRun.run_number}`;
 
-      // Compare versions - only show update if latest is NEWER than current
+      // Compare versions
       const comparison = compareVersions(latestVersion, CURRENT_VERSION);
 
+      // Get artifacts for this run
+      const artifactsUrl = `https://api.github.com/repos/${GITHUB_REPO}/actions/runs/${latestRun.id}/artifacts`;
+      const artifactsResponse = await fetch(artifactsUrl);
+      const artifactsData = await artifactsResponse.json();
+
+      // Find the Prod artifact
+      const prodArtifact = artifactsData.artifacts?.find((a: any) => a.name === 'extension-prod');
+
+      // Always show update available (for debugging/testing)
+      // Show appropriate message based on version comparison
+      let versionMessage = '';
       if (comparison > 0) {
-        // Latest version is newer
-        // Get artifacts for this run
-        const artifactsUrl = `https://api.github.com/repos/${GITHUB_REPO}/actions/runs/${latestRun.id}/artifacts`;
-        const artifactsResponse = await fetch(artifactsUrl);
-        const artifactsData = await artifactsResponse.json();
-
-        // Find the Prod artifact
-        const prodArtifact = artifactsData.artifacts?.find((a: any) => a.name === 'extension-prod');
-
-        setUpdateAvailable({
-          version: latestVersion,
-          downloadUrl: `https://github.com/${GITHUB_REPO}/actions/runs/${latestRun.id}`,
-          releaseNotes: commitMessage || 'Check GitHub Actions for details'
-        });
+        versionMessage = `Update Available: Version ${latestVersion}`;
       } else if (comparison === 0) {
-        setUpdateMessage("You're up to date! 🎉");
+        versionMessage = `Reinstall Current Version: ${latestVersion}`;
       } else {
-        // Current version is newer than latest build (development version)
-        setUpdateMessage(`You're running a development version (${CURRENT_VERSION}) which is newer than the latest release (${latestVersion})`);
+        versionMessage = `Downgrade to Release Version: ${latestVersion} (from dev ${CURRENT_VERSION})`;
       }
+
+      setUpdateAvailable({
+        version: latestVersion,
+        downloadUrl: `https://github.com/${GITHUB_REPO}/actions/runs/${latestRun.id}`,
+        releaseNotes: commitMessage || 'Check GitHub Actions for details'
+      });
     } catch (error) {
       console.error('Update check failed:', error);
       setUpdateError(error instanceof Error ? error.message : 'Failed to check for updates');
@@ -422,7 +425,16 @@ function SettingsPage() {
             }}>
               <div style={{ marginBottom: '12px' }}>
                 <strong style={{ color: '#856404', fontSize: '15px' }}>
-                  🎉 Update Available: Version {updateAvailable.version}
+                  {(() => {
+                    const comparison = compareVersions(updateAvailable.version, CURRENT_VERSION);
+                    if (comparison > 0) {
+                      return `🎉 Update Available: Version ${updateAvailable.version}`;
+                    } else if (comparison === 0) {
+                      return `🔄 Reinstall Current Version: ${updateAvailable.version}`;
+                    } else {
+                      return `⬇️ Latest Release: Version ${updateAvailable.version}`;
+                    }
+                  })()}
                 </strong>
               </div>
               {updateAvailable.releaseNotes && (
