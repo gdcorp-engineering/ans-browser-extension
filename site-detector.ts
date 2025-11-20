@@ -40,7 +40,9 @@ export function agentNameToDomain(agentName: string): string {
 /**
  * Check if a domain matches an agent name
  * e.g., "www.godaddy.com" matches agent "www-godaddy-com"
- * Also handles: "godaddy.com" matches agent "www-godaddy-com"
+ * Also handles:
+ * - "godaddy.com" matches agent "www-godaddy-com"
+ * - "www.godaddy.com" matches agent "www-godaddy-com-mcp" (prefix match)
  */
 export function doesDomainMatchAgent(domain: string, agentName: string): boolean {
   console.log(`   🔍 Matching domain "${domain}" against agent "${agentName}"`);
@@ -54,12 +56,23 @@ export function doesDomainMatchAgent(domain: string, agentName: string): boolean
     return true;
   }
 
+  // Prefix match (e.g., "www-godaddy-com" matches "www-godaddy-com-mcp")
+  if (agentName.startsWith(normalizedDomain + '-')) {
+    console.log(`      ✓ Prefix match! (agent has suffix: ${agentName.substring(normalizedDomain.length)})`);
+    return true;
+  }
+
   // Try with www prefix if domain doesn't have it
   if (!domain.startsWith('www.')) {
     const withWww = domainToAgentName(`www.${domain}`);
     console.log(`      Trying with www prefix: "${withWww}"`);
     if (withWww === agentName) {
       console.log(`      ✓ Match with www prefix!`);
+      return true;
+    }
+    // Prefix match with www
+    if (agentName.startsWith(withWww + '-')) {
+      console.log(`      ✓ Prefix match with www prefix!`);
       return true;
     }
   }
@@ -70,6 +83,11 @@ export function doesDomainMatchAgent(domain: string, agentName: string): boolean
     console.log(`      Trying without www prefix: "${withoutWww}"`);
     if (withoutWww === agentName) {
       console.log(`      ✓ Match without www prefix!`);
+      return true;
+    }
+    // Prefix match without www
+    if (agentName.startsWith(withoutWww + '-')) {
+      console.log(`      ✓ Prefix match without www prefix!`);
       return true;
     }
   }
