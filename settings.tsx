@@ -437,28 +437,58 @@ function SettingsPage() {
                   {updateAvailable.releaseNotes}
                 </div>
               )}
-              <button
-                onClick={() => window.open(updateAvailable.downloadUrl, '_blank')}
-                style={{
-                  padding: '10px 20px',
-                  background: '#28a745',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  width: '100%'
-                }}
-              >
-                📥 Download from GitHub Actions
-              </button>
-              <p style={{ fontSize: '12px', color: '#856404', marginTop: '8px', marginBottom: 0 }}>
-                1. Sign in with SSO if prompted<br />
-                2. Download the <strong>extension-prod</strong> artifact<br />
-                3. Extract the zip file<br />
-                4. Go to <code>chrome://extensions/</code> and click "Load unpacked" or reload the extension
-              </p>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px' }}>
+                <button
+                  onClick={() => window.open(updateAvailable.downloadUrl, '_blank')}
+                  style={{
+                    padding: '10px 16px',
+                    background: '#28a745',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    fontSize: '13px',
+                    fontWeight: '600'
+                  }}
+                >
+                  📥 Download Update
+                </button>
+                <button
+                  onClick={() => {
+                    // Open the extensions management page showing this extension
+                    window.open('chrome://extensions/?id=' + chrome.runtime.id, '_blank');
+                  }}
+                  style={{
+                    padding: '10px 16px',
+                    background: '#007bff',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    fontSize: '13px',
+                    fontWeight: '600'
+                  }}
+                >
+                  📂 Show Install Path
+                </button>
+              </div>
+              <div style={{
+                padding: '12px',
+                background: '#fff',
+                border: '1px solid #ffc107',
+                borderRadius: '6px',
+                fontSize: '12px',
+                color: '#333'
+              }}>
+                <strong>📋 Update Instructions:</strong>
+                <ol style={{ margin: '8px 0 0 0', paddingLeft: '20px' }}>
+                  <li>Click <strong>"Download Update"</strong> → Sign in with SSO → Download <strong>extension-prod</strong> artifact</li>
+                  <li>Click <strong>"Show Install Path"</strong> to open Chrome's extension management page</li>
+                  <li>On that page, find this extension and note the path shown under "ID" (for unpacked extensions, you'll see the folder path)</li>
+                  <li>Extract the downloaded zip file and replace all files in that folder</li>
+                  <li>Go back to <code>chrome://extensions/</code> and click the reload button (↻) for this extension</li>
+                </ol>
+              </div>
             </div>
           )}
         </div>
