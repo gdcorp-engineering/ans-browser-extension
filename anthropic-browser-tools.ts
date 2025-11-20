@@ -18,24 +18,24 @@ const BROWSER_TOOLS = [
   },
   {
     name: 'clickElement',
-    description: 'Click an element using a CSS selector or text content. This is the PREFERRED method - use this instead of coordinate-based clicking whenever possible.',
+    description: 'Click an element using CSS selector or text content. PREFERRED method.',
     input_schema: {
       type: 'object',
       properties: {
         selector: {
           type: 'string',
-          description: 'CSS selector for the element to click (e.g., "button.submit", "#search-btn", "input[type=submit]")',
+          description: 'CSS selector for the element',
         },
         text: {
           type: 'string',
-          description: 'Alternative: text content to search for (e.g., "Search", "Sign In"). Will click the first matching element.',
+          description: 'Alternative: text content to search for',
         },
       },
     },
   },
   {
     name: 'click',
-    description: 'Click at specific coordinates on the page. ONLY use this as a last resort when clickElement cannot find the element.',
+    description: 'Click at coordinates. Last resort only.',
     input_schema: {
       type: 'object',
       properties: {
@@ -47,12 +47,12 @@ const BROWSER_TOOLS = [
   },
   {
     name: 'type',
-    description: 'Type text into an input field. If selector is provided, will focus that element first.',
+    description: 'Type text into input field',
     input_schema: {
       type: 'object',
       properties: {
         text: { type: 'string', description: 'Text to type' },
-        selector: { type: 'string', description: 'CSS selector for the input (e.g., "input[name=search]", "#email")' },
+        selector: { type: 'string', description: 'CSS selector for input' },
       },
       required: ['text'],
     },
@@ -75,7 +75,7 @@ const BROWSER_TOOLS = [
   },
   {
     name: 'getPageContext',
-    description: 'Get information about the current page including URL, title, content, and interactive elements. ALWAYS call this first to understand what elements are available.',
+    description: 'Get page info. Call first.',
     input_schema: {
       type: 'object',
       properties: {},
@@ -83,7 +83,7 @@ const BROWSER_TOOLS = [
   },
   {
     name: 'screenshot',
-    description: 'Take a screenshot of the current page. Only use this if DOM-based methods fail or you need to see visual layout.',
+    description: 'Take screenshot. Last resort if DOM fails.',
     input_schema: {
       type: 'object',
       properties: {},
@@ -91,13 +91,13 @@ const BROWSER_TOOLS = [
   },
   {
     name: 'pressKey',
-    description: 'Press a special key like Enter, Tab, Escape, etc. Use this after typing to submit forms or trigger actions.',
+    description: 'Press key (Enter, Tab, Escape, etc)',
     input_schema: {
       type: 'object',
       properties: {
         key: {
           type: 'string',
-          description: 'The key to press (e.g., "Enter", "Tab", "Escape", "Backspace", "Delete", "ArrowUp", "ArrowDown")',
+          description: 'Key name',
         },
       },
       required: ['key'],
@@ -121,7 +121,7 @@ export async function streamAnthropicWithBrowserTools(
   // Keep only the most recent messages to avoid context length issues
   // Page context can be large, and tool use adds more messages during the loop
   // So we need to be very aggressive with history trimming
-  const MAX_HISTORY_MESSAGES = 2; // Reduced from 4 to 2 - only keep last user message
+  const MAX_HISTORY_MESSAGES = 1; // Keep only the immediate last message
   let conversationMessages = messages.length > MAX_HISTORY_MESSAGES
     ? messages.slice(-MAX_HISTORY_MESSAGES)
     : [...messages];
@@ -155,23 +155,22 @@ export async function streamAnthropicWithBrowserTools(
         role: m.role,
         content: m.content,
       })),
-      system: `You are a helpful AI assistant with browser automation capabilities. You can navigate to websites, click elements, type text, scroll pages, and take screenshots.
+      system: `🚨 CRITICAL RULE #1: AFTER TYPING IN SEARCH/INPUT, IMMEDIATELY PRESS ENTER 🚨
+Every time you call type(), you MUST call pressKey({key:"Enter"}) immediately after.
+NO EXCEPTIONS. This is required for searches to work.
 
-CRITICAL: ALWAYS PREFER DOM-BASED METHODS OVER SCREENSHOTS
+You are a helpful AI assistant with browser automation capabilities. You can navigate to websites, click elements, type text, scroll pages, and take screenshots.
 
-CRITICAL RULE: AFTER TYPING, ALWAYS PRESS ENTER
-⚠️ When you use the 'type' action in ANY search box or input field, you MUST immediately follow it with pressKey({key: "Enter"}) to submit.
-⚠️ Do NOT wait for confirmation or check for a submit button - just press Enter immediately after typing.
-⚠️ This is REQUIRED for search functionality to work.
+ALWAYS PREFER DOM-BASED METHODS OVER SCREENSHOTS
 
 INTERACTION WORKFLOW (Follow this order):
 
 1. **First, get page context**: Call getPageContext to see the page structure, interactive elements, and their selectors
 
 2. **Use DOM methods (PREFERRED)**:
-   - Use clickElement with CSS selectors or text content (e.g., clickElement with selector="#search-btn" or text="Search")
-   - Use type with selectors to focus and type into inputs (e.g., type with selector="input[name=q]" and text="pants")
-   - Then IMMEDIATELY use pressKey with key="Enter" after typing in search/input fields
+   - Use clickElement with CSS selectors or text content
+   - Use type with selectors to focus and type into inputs
+   - 🚨 THEN IMMEDIATELY pressKey({key:"Enter"}) - REQUIRED AFTER EVERY type() 🚨
    - These methods are more reliable and efficient than coordinates
 
 3. **Only use screenshots as LAST RESORT**:
@@ -179,9 +178,9 @@ INTERACTION WORKFLOW (Follow this order):
    - If you need to understand visual layout
    - Then take screenshot and use coordinate-based click
 
-SEARCH BOX WORKFLOW (REQUIRED):
-Step 1: type with selector="input[type=search]" and text="John Doe"
-Step 2: pressKey with key="Enter" (DO NOT SKIP THIS!)
+🚨 SEARCH BOX WORKFLOW - MUST FOLLOW EXACTLY:
+Step 1: type({selector:"input[type=search]", text:"John Doe"})
+Step 2: pressKey({key:"Enter"}) ← MANDATORY - DO NOT SKIP!
 
 DOM METHOD EXAMPLES:
 - Search for someone in Workday:
@@ -195,6 +194,8 @@ COORDINATE CLICKING (last resort only):
 - Measure coordinates from top-left (0,0)
 - Click the CENTER of elements
 - Viewport dimensions tell you the bounds
+
+🚨 REMEMBER: type() → pressKey({key:"Enter"}) ALWAYS! 🚨
 
 When the user asks you to interact with a page, follow this workflow carefully. Always try DOM methods first!`,
     };
@@ -273,24 +274,7 @@ When the user asks you to interact with a page, follow this workflow carefully. 
             content: [
               {
                 type: 'text',
-                text: `Screenshot captured successfully!
-
-Viewport dimensions: ${viewport.width}px wide × ${viewport.height}px tall
-
-COORDINATE SYSTEM:
-- Top-left corner: (0, 0)
-- Top-right corner: (${viewport.width}, 0)
-- Bottom-left corner: (0, ${viewport.height})
-- Bottom-right corner: (${viewport.width}, ${viewport.height})
-- Center of screen: (${Math.round(viewport.width/2)}, ${Math.round(viewport.height/2)})
-
-TO CLICK AN ELEMENT:
-1. Look at the screenshot image below
-2. Find the visual element you want to click
-3. Estimate where it appears in the image (measure from top-left)
-4. Click the CENTER of that element
-5. X coordinate = horizontal position (left to right, 0 to ${viewport.width})
-6. Y coordinate = vertical position (top to bottom, 0 to ${viewport.height})`,
+                text: `Screenshot: ${viewport.width}×${viewport.height}px. Top-left=(0,0), Bottom-right=(${viewport.width},${viewport.height})`,
               },
               {
                 type: 'image',
@@ -340,7 +324,7 @@ TO CLICK AN ELEMENT:
 
     // Trim conversation to prevent context overflow during the loop
     // Keep only the most recent messages to avoid hitting limits
-    const MAX_LOOP_MESSAGES = 6; // Reduced from 8 to 6 - tool use/results are verbose
+    const MAX_LOOP_MESSAGES = 4; // Aggressive trimming - page context is large
     if (conversationMessages.length > MAX_LOOP_MESSAGES) {
       console.log(`⚠️  Trimming conversation from ${conversationMessages.length} to ${MAX_LOOP_MESSAGES} messages`);
       conversationMessages = conversationMessages.slice(-MAX_LOOP_MESSAGES);
