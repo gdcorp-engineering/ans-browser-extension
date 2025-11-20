@@ -246,13 +246,17 @@ function SettingsPage() {
   };
 
   const handleToggleServer = (id: string) => {
+    // Create a completely new array to ensure React detects the change
+    const updatedServers = (settings.mcpServers || []).map(s =>
+      s.id === id ? { ...s, enabled: !s.enabled } : { ...s }
+    );
+
     const newSettings = {
       ...settings,
-      mcpServers: (settings.mcpServers || []).map(s =>
-        s.id === id ? { ...s, enabled: !s.enabled } : s
-      ),
+      mcpServers: updatedServers,
     };
 
+    // Force state update with new reference
     setSettings(newSettings);
 
     // Auto-save and notify sidebar
