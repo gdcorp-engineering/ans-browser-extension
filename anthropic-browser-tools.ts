@@ -179,13 +179,10 @@ INTERACTION WORKFLOW (Follow this order):
    - Then take screenshot and use coordinate-based click
 
 🚨 SEARCH BOX WORKFLOW - MUST FOLLOW EXACTLY:
-Step 1: type({selector:"input[type=search]", text:"John Doe"})
+Step 1: type({selector:"input[type=search]", text:"your search text"})
 Step 2: pressKey({key:"Enter"}) ← MANDATORY - DO NOT SKIP!
 
 DOM METHOD EXAMPLES:
-- Search for someone in Workday:
-  1. type({selector: "input[type=search]", text: "John Doe"})
-  2. pressKey({key: "Enter"}) ← REQUIRED!
 - Click button: clickElement with text="Search" or selector="button[type=submit]"
 - Sign in link: clickElement with text="Sign In" or selector="a[href*=signin]"
 
