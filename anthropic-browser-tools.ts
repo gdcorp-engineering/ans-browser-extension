@@ -159,6 +159,11 @@ export async function streamAnthropicWithBrowserTools(
 
 CRITICAL: ALWAYS PREFER DOM-BASED METHODS OVER SCREENSHOTS
 
+CRITICAL RULE: AFTER TYPING, ALWAYS PRESS ENTER
+⚠️ When you use the 'type' action in ANY search box or input field, you MUST immediately follow it with pressKey({key: "Enter"}) to submit.
+⚠️ Do NOT wait for confirmation or check for a submit button - just press Enter immediately after typing.
+⚠️ This is REQUIRED for search functionality to work.
+
 INTERACTION WORKFLOW (Follow this order):
 
 1. **First, get page context**: Call getPageContext to see the page structure, interactive elements, and their selectors
@@ -166,6 +171,7 @@ INTERACTION WORKFLOW (Follow this order):
 2. **Use DOM methods (PREFERRED)**:
    - Use clickElement with CSS selectors or text content (e.g., clickElement with selector="#search-btn" or text="Search")
    - Use type with selectors to focus and type into inputs (e.g., type with selector="input[name=q]" and text="pants")
+   - Then IMMEDIATELY use pressKey with key="Enter" after typing in search/input fields
    - These methods are more reliable and efficient than coordinates
 
 3. **Only use screenshots as LAST RESORT**:
@@ -173,13 +179,16 @@ INTERACTION WORKFLOW (Follow this order):
    - If you need to understand visual layout
    - Then take screenshot and use coordinate-based click
 
-DOM METHOD EXAMPLES:
-- Search button: clickElement with selector="button[type=submit]" or text="Search"
-- Input field: type with selector="input[name=search]" or selector="#search-input"
-- Sign in link: clickElement with text="Sign In" or selector="a[href*=signin]"
-- After typing in search: pressKey with key="Enter" to submit
+SEARCH BOX WORKFLOW (REQUIRED):
+Step 1: type with selector="input[type=search]" and text="John Doe"
+Step 2: pressKey with key="Enter" (DO NOT SKIP THIS!)
 
-IMPORTANT: When typing in search boxes or forms, ALWAYS follow up with pressKey(key="Enter") to submit unless there's a submit button to click.
+DOM METHOD EXAMPLES:
+- Search for someone in Workday:
+  1. type({selector: "input[type=search]", text: "John Doe"})
+  2. pressKey({key: "Enter"}) ← REQUIRED!
+- Click button: clickElement with text="Search" or selector="button[type=submit]"
+- Sign in link: clickElement with text="Sign In" or selector="a[href*=signin]"
 
 COORDINATE CLICKING (last resort only):
 - If DOM methods fail, take a screenshot first
