@@ -1185,10 +1185,22 @@ GUIDELINES:
       case 'type_text':
       case 'keyboard_input':
       case 'input_text':
-        return await executeTool('type', { 
-          selector: 'input:focus, textarea:focus, [contenteditable="true"]:focus', 
+        const typeResult = await executeTool('type', {
+          selector: args.selector || 'input:focus, textarea:focus, [contenteditable="true"]:focus',
           text: args.text || args.input || args.content
         });
+
+        // Automatically press Enter for search inputs after typing
+        if (typeResult.success) {
+          const selector = args.selector || '';
+          if (selector.includes('search') || selector.includes('input[type=search]') ||
+              selector.includes('input[name=q]') || selector.includes('input[name=search]')) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+            await executeTool('pressKey', { key: 'Enter' });
+          }
+        }
+
+        return typeResult;
       
       case 'scroll':
       case 'scroll_down':
@@ -1229,10 +1241,10 @@ GUIDELINES:
       
       case 'press_key':
       case 'key_press':
+      case 'pressKey':
         // Handle special keys like Enter, Tab, etc.
-        return await executeTool('type', { 
-          selector: 'input:focus, textarea:focus, [contenteditable="true"]:focus', 
-          text: args.key || args.keyCode
+        return await executeTool('pressKey', {
+          key: args.key || args.keyCode || 'Enter'
         });
       
       case 'type_text_at':
@@ -1261,7 +1273,7 @@ GUIDELINES:
         }
 
         // Use keyboard_type action which simulates actual keyboard typing
-        const typeResult = await new Promise<any>((resolve) => {
+        const keyboardTypeResult = await new Promise<any>((resolve) => {
           chrome.runtime.sendMessage(
             {
               type: 'EXECUTE_ACTION',
@@ -1280,7 +1292,7 @@ GUIDELINES:
           await executeTool('pressKey', { key: 'Enter' });
         }
 
-        return typeResult;
+        return keyboardTypeResult;
       
       case 'key_combination':
         // Press keyboard key combinations like ["Control", "A"] or ["Enter"]
