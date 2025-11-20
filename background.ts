@@ -71,6 +71,58 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
     return true;
   }
 
+  // Get current tab (for content script)
+  if (request.type === 'GET_CURRENT_TAB') {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0]) {
+        sendResponse({ tabId: tabs[0].id });
+      } else {
+        sendResponse({ tabId: null });
+      }
+    });
+    return true;
+  }
+
+  // Open sidebar
+  if (request.type === 'OPEN_SIDEBAR') {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0] && tabs[0].id) {
+        chrome.sidePanel.open({ tabId: tabs[0].id }).catch((error: Error) => {
+          console.error('Error opening sidebar:', error);
+        });
+        sendResponse({ success: true });
+      } else {
+        // Fallback: open without tabId
+        chrome.sidePanel.open({}).catch((error: Error) => {
+          console.error('Error opening sidebar:', error);
+        });
+        sendResponse({ success: true });
+      }
+    });
+    return true;
+  }
+
+  // Close sidebar
+  if (request.type === 'CLOSE_SIDEBAR') {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0] && tabs[0].id) {
+        // Note: Chrome doesn't provide a direct API to close the sidebar
+        // The user can close it by clicking the extension icon
+        // We can try to hide it by setting enabled to false temporarily
+        chrome.sidePanel.setOptions({ enabled: false, tabId: tabs[0].id }).then(() => {
+          // Re-enable it so it can be opened again
+          setTimeout(() => {
+            chrome.sidePanel.setOptions({ enabled: true, tabId: tabs[0].id }).catch(() => {});
+          }, 100);
+        }).catch(() => {});
+        sendResponse({ success: true });
+      } else {
+        sendResponse({ success: true });
+      }
+    });
+    return true;
+  }
+
   // Get browser history
   if (request.type === 'GET_HISTORY') {
     const query = request.query || '';

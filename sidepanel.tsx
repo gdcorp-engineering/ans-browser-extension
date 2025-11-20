@@ -35,6 +35,26 @@ const getModelDisplayName = (modelId: string | undefined): string => {
   return MODEL_DISPLAY_NAMES[modelId] || modelId;
 };
 
+// Provider models configuration
+const PROVIDER_MODELS = {
+  google: [
+    { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', description: '1M token context' },
+    { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', description: 'Fast and efficient' },
+    { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash Lite', description: 'Optimized for speed' },
+  ],
+  anthropic: [
+    { id: 'claude-sonnet-4-5-20250929', name: 'Claude Sonnet 4.5', description: 'Latest and most capable' },
+    { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', description: 'Most intelligent model' },
+    { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku', description: 'Fastest model' },
+    { id: 'claude-3-opus-20240229', name: 'Claude 3 Opus', description: 'Previous generation' },
+  ],
+  openai: [
+    { id: 'gpt-4o', name: 'GPT-4o', description: 'Most capable' },
+    { id: 'gpt-4o-mini', name: 'GPT-4o Mini', description: 'Fast and affordable' },
+    { id: 'gpt-4-turbo', name: 'GPT-4 Turbo', description: 'Previous generation' },
+  ],
+};
+
 // Custom component to handle link clicks - opens in new tab
 const LinkComponent = ({ href, children }: { href?: string; children?: React.ReactNode }) => {
   const handleLinkClick = (e: React.MouseEvent) => {
@@ -178,8 +198,18 @@ function ChatSidebar() {
   const [showBrowserToolsWarning, setShowBrowserToolsWarning] = useState(false);
   const [isUserScrolled, setIsUserScrolled] = useState(false);
   const [currentTabId, setCurrentTabId] = useState<number | null>(null);
+  const [showMenu, setShowMenu] = useState(false);
+  const [showModelMenu, setShowModelMenu] = useState(false);
+  const [showChatMenu, setShowChatMenu] = useState(false);
+  const [onboardingState, setOnboardingState] = useState<{
+    active: boolean;
+    step: 'provider' | 'apiKey' | 'optional' | 'complete';
+    tempSettings: Partial<Settings>;
+    waitingFor?: 'composio' | 'ans';
+  } | null>(null);
   const [trustedAgentOptIn, setTrustedAgentOptIn] = useState(true); // User opt-in for trusted agents
   const [currentSiteAgent, setCurrentSiteAgent] = useState<{ serverId: string; serverName: string } | null>(null);
+  const [samplePrompts, setSamplePrompts] = useState<string[]>([]);
   const abortControllerRef = useRef<AbortController | null>(null);
   const mcpClientRef = useRef<MCPClient | null>(null);
   const mcpToolsRef = useRef<Record<string, unknown> | null>(null);
@@ -369,6 +399,282 @@ function ChatSidebar() {
     }
   };
 
+  // Comprehensive page analysis based on content and structure
+  const analyzePageCharacteristics = (context: any) => {
+    const title = (context.title || '').toLowerCase();
+    const url = (context.url || '').toLowerCase();
+    const textContent = context.textContent || '';
+    const lowerContent = textContent.toLowerCase();
+    const links = context.links || [];
+    const forms = context.forms || [];
+    const interactiveElements = context.interactiveElements || [];
+    const metadata = context.metadata || {};
+    const images = context.images || [];
+
+    const characteristics = {
+      // Content characteristics
+      contentLength: textContent.length,
+      hasLongContent: textContent.length > 2000,
+      hasMediumContent: textContent.length > 500 && textContent.length <= 2000,
+      hasShortContent: textContent.length < 500,
+      
+      // Structural characteristics
+      linkCount: links.length,
+      formCount: forms.length,
+      imageCount: images.length,
+      hasManyLinks: links.length > 10,
+      hasManyImages: images.length > 5,
+      
+      // Content type indicators
+      hasProductKeywords: /\b(buy|purchase|add to cart|checkout|price|$|€|£)\b/i.test(textContent),
+      hasArticleKeywords: /\b(article|story|news|report|analysis|opinion|editorial)\b/i.test(title + ' ' + textContent),
+      hasFormKeywords: /\b(contact|register|sign up|subscribe|newsletter|login|sign in)\b/i.test(title + ' ' + textContent),
+      hasSearchKeywords: /\b(search|results|query|find)\b/i.test(title + ' ' + url),
+      hasDocumentationKeywords: /\b(guide|tutorial|documentation|api|reference|docs)\b/i.test(title + ' ' + textContent),
+      hasSocialKeywords: /\b(profile|follow|like|share|comment|post)\b/i.test(title + ' ' + url),
+      hasVideoKeywords: /\b(video|watch|play|stream|youtube|vimeo)\b/i.test(title + ' ' + url + ' ' + textContent),
+      
+      // URL patterns
+      urlHasArticle: /\/article\/|\/post\/|\/blog\/|\/news\/|\/story\//i.test(url),
+      urlHasProduct: /\/product\/|\/item\/|\/shop\/|\/buy\//i.test(url),
+      urlHasSearch: /\/search\/|\/results\//i.test(url),
+      urlHasProfile: /\/profile\/|\/user\/|\/account\//i.test(url),
+      
+      // Form analysis
+      hasPrimaryForms: forms.some((f: any) => 
+        f.action?.match(/(contact|register|signup|submit|apply)/i) ||
+        f.inputs?.some((input: any) => 
+          input.name?.match(/(name|email|phone|message|subject)/i)
+        )
+      ),
+      hasSecondaryForms: forms.some((f: any) => 
+        f.action?.match(/(newsletter|subscribe|search)/i) ||
+        f.inputs?.length === 1 && f.inputs[0]?.type === 'search'
+      ),
+      
+      // Interactive elements
+      hasSearchBox: interactiveElements.some((el: any) => 
+        el.type === 'search' || 
+        el.text?.toLowerCase().includes('search') || 
+        el.ariaLabel?.toLowerCase().includes('search')
+      ),
+      hasManyButtons: interactiveElements.filter((el: any) => 
+        el.tag === 'button' || el.tag === 'a'
+      ).length > 5,
+      
+      // Metadata
+      hasDescription: !!metadata.description,
+      hasKeywords: !!metadata.keywords,
+      hasAuthor: !!metadata.author,
+    };
+
+    return characteristics;
+  };
+
+  // Determine page type based on comprehensive analysis
+  const detectPageType = (characteristics: any): string => {
+    // E-commerce / Shopping
+    if (characteristics.hasProductKeywords || 
+        characteristics.urlHasProduct ||
+        (characteristics.hasManyImages && characteristics.hasProductKeywords)) {
+      return 'ecommerce';
+    }
+    
+    // Article / Blog / News / Content
+    if (characteristics.hasArticleKeywords || 
+        characteristics.urlHasArticle ||
+        (characteristics.hasLongContent && !characteristics.hasPrimaryForms) ||
+        (characteristics.hasMediumContent && characteristics.hasAuthor)) {
+      return 'article';
+    }
+    
+    // Documentation / Guides
+    if (characteristics.hasDocumentationKeywords ||
+        (characteristics.hasLongContent && characteristics.hasManyLinks)) {
+      return 'documentation';
+    }
+    
+    // Search results
+    if (characteristics.hasSearchKeywords || 
+        characteristics.urlHasSearch ||
+        (characteristics.hasSearchBox && characteristics.hasManyLinks)) {
+      return 'search';
+    }
+    
+    // Social / Profile pages
+    if (characteristics.hasSocialKeywords || characteristics.urlHasProfile) {
+      return 'social';
+    }
+    
+    // Video / Media
+    if (characteristics.hasVideoKeywords) {
+      return 'video';
+    }
+    
+    // Form-focused pages
+    if (characteristics.hasPrimaryForms && 
+        characteristics.hasShortContent &&
+        !characteristics.hasLongContent) {
+      return 'form';
+    }
+    
+    return 'generic';
+  };
+
+  // Helper function to format nouns/topics properly (capitalize first letter)
+  const formatNoun = (word: string): string => {
+    if (!word) return word;
+    // Capitalize first letter, keep rest lowercase
+    return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+  };
+
+  // Helper function to extract main topics from text content
+  const extractMainTopics = (textContent: string): string[] => {
+    if (!textContent || textContent.length < 50) return [];
+    
+    // Extract words that appear frequently (simple approach)
+    const words = textContent.toLowerCase()
+      .replace(/[^\w\s]/g, ' ')
+      .split(/\s+/)
+      .filter(word => word.length > 4);
+    
+    const wordCount: Record<string, number> = {};
+    words.forEach(word => {
+      wordCount[word] = (wordCount[word] || 0) + 1;
+    });
+
+    // Get top words (excluding common stop words)
+    const stopWords = new Set(['about', 'after', 'before', 'could', 'every', 'first', 'might', 'never', 'other', 'should', 'their', 'there', 'these', 'those', 'which', 'would']);
+    const topWords = Object.entries(wordCount)
+      .filter(([word]) => !stopWords.has(word))
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 3)
+      .map(([word]) => formatNoun(word)); // Format nouns properly
+
+    return topWords;
+  };
+
+  // Generate sample prompts based on comprehensive page analysis
+  const generateSamplePrompts = async () => {
+    try {
+      const context: any = await executeTool('getPageContext', {});
+      if (!context) {
+        setSamplePrompts([]);
+        return;
+      }
+
+      const prompts: string[] = [];
+      const textContent = context.textContent || '';
+      const mainTopics = extractMainTopics(textContent);
+      
+      // Comprehensive page analysis
+      const characteristics = analyzePageCharacteristics(context);
+      const pageType = detectPageType(characteristics);
+
+      // Generate prompts based on page type and characteristics
+      switch (pageType) {
+        case 'ecommerce':
+          prompts.push(`What products or services are available on this page?`);
+          if (characteristics.hasManyImages) {
+            prompts.push(`Show me product details and pricing information`);
+          }
+          prompts.push(`Help me find the best deals or offers`);
+          break;
+
+        case 'article':
+          // Content-focused prompts for articles (even if they have forms)
+          prompts.push(`Summarize the main points of this article`);
+          prompts.push(`What are the key takeaways from this content?`);
+          if (mainTopics.length > 0) {
+            prompts.push(`Tell me more about ${formatNoun(mainTopics[0])}`);
+          } else if (characteristics.hasManyLinks) {
+            prompts.push(`Find related topics or links on this page`);
+          } else {
+            prompts.push(`What is the main topic or theme?`);
+          }
+          break;
+
+        case 'documentation':
+          prompts.push(`Explain the main concepts on this page`);
+          prompts.push(`What are the key features or APIs documented here?`);
+          if (characteristics.hasManyLinks) {
+            prompts.push(`Show me related documentation or examples`);
+          } else {
+            prompts.push(`Help me understand how to use this`);
+          }
+          break;
+
+        case 'search':
+          prompts.push(`What search results are shown on this page?`);
+          prompts.push(`Help me refine or improve my search`);
+          prompts.push(`What are the most relevant results here?`);
+          break;
+
+        case 'social':
+          prompts.push(`What information is available on this profile?`);
+          prompts.push(`Show me recent activity or posts`);
+          prompts.push(`What can I learn about this user or page?`);
+          break;
+
+        case 'video':
+          prompts.push(`What is this video about?`);
+          prompts.push(`Summarize the key points or topics`);
+          prompts.push(`What information is available about this content?`);
+          break;
+
+        case 'form':
+          // Only show form prompts if forms are the primary purpose
+          prompts.push(`Help me fill out the form on this page`);
+          prompts.push(`What information is required in this form?`);
+          prompts.push(`Guide me through submitting this form`);
+          break;
+
+        default: // generic
+          // Generate prompts based on content characteristics
+          if (characteristics.hasLongContent) {
+            prompts.push(`Summarize the main content of this page`);
+            if (mainTopics.length > 0) {
+              prompts.push(`Tell me more about ${formatNoun(mainTopics[0])}`);
+            }
+            prompts.push(`What are the key points or takeaways?`);
+          } else if (characteristics.hasManyLinks) {
+            prompts.push(`What links or resources are available on this page?`);
+            prompts.push(`Help me navigate to relevant sections`);
+            prompts.push(`What is the main purpose of this page?`);
+          } else if (characteristics.hasSearchBox) {
+            prompts.push(`Help me search for something on this page`);
+            prompts.push(`What can I search for here?`);
+            prompts.push(`Guide me to use the search functionality`);
+          } else if (characteristics.hasManyImages) {
+            prompts.push(`What images or media are on this page?`);
+            prompts.push(`Describe the visual content`);
+            prompts.push(`What is the purpose of this page?`);
+          } else if (mainTopics.length > 0) {
+            const topic = formatNoun(mainTopics[0]);
+            prompts.push(`Tell me more about ${topic}`);
+            prompts.push(`What information is available about ${topic}?`);
+            prompts.push(`Help me understand ${topic} on this page`);
+          } else {
+            // Generic fallback prompts
+            prompts.push(`What is the purpose of this page?`);
+            prompts.push(`Summarize the main content`);
+            prompts.push(`Help me understand this page better`);
+          }
+          break;
+      }
+
+      // Ensure we have exactly 3 prompts (pad with generic ones if needed)
+      while (prompts.length < 3) {
+        prompts.push(`Help me understand this page better`);
+      }
+
+      setSamplePrompts(prompts.slice(0, 3));
+    } catch (error) {
+      console.log('Could not generate sample prompts:', error);
+      setSamplePrompts([]);
+    }
+  };
+
   // Get current tab ID and load its messages
   useEffect(() => {
     const getCurrentTab = async () => {
@@ -386,6 +692,9 @@ function ChatSidebar() {
 
         // Check for trusted agent on this site
         checkForTrustedAgent();
+        
+        // Generate sample prompts for current tab
+        generateSamplePrompts();
       }
     };
 
@@ -411,25 +720,59 @@ function ChatSidebar() {
 
       // Check for trusted agent on new tab
       checkForTrustedAgent();
+      
+      // Generate sample prompts for new tab
+      generateSamplePrompts();
     };
 
     chrome.tabs.onActivated.addListener(handleTabChange);
 
-    // Listen for URL changes within the current tab (e.g., navigation via browser tools)
+    // Listen for URL changes and page refreshes within the current tab
     const handleTabUpdate = (tabId: number, changeInfo: chrome.tabs.TabChangeInfo, tab: chrome.tabs.Tab) => {
-      // Only react to URL changes on the current tab
-      if (changeInfo.url && tabId === currentTabIdRef.current) {
-        console.log('📍 Tab URL changed to:', changeInfo.url);
-        // Check for trusted agent on the new URL
-        checkForTrustedAgent();
+      // Only react to changes on the current tab
+      if (tabId === currentTabIdRef.current) {
+        // Handle URL changes (navigation)
+        if (changeInfo.url) {
+          console.log('📍 Tab URL changed to:', changeInfo.url);
+          // Check for trusted agent on the new URL
+          checkForTrustedAgent();
+          // Regenerate sample prompts for new URL
+          generateSamplePrompts();
+        }
+        // Handle page refresh/load completion
+        // status === 'complete' means the page has finished loading
+        if (changeInfo.status === 'complete' && tab.url) {
+          console.log('📍 Page finished loading:', tab.url);
+          // Small delay to ensure DOM is fully ready
+          setTimeout(() => {
+            // Regenerate prompts when page loads/refreshes (UI will show/hide based on messages)
+            if (tabId === currentTabIdRef.current) {
+              generateSamplePrompts();
+            }
+          }, 500);
+        }
       }
     };
 
     chrome.tabs.onUpdated.addListener(handleTabUpdate);
 
+    // Listen for sidepanel visibility changes (when user opens/closes sidepanel)
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        // Sidepanel became visible - regenerate prompts in case page changed
+        console.log('📍 Sidepanel became visible, regenerating prompts');
+        setTimeout(() => {
+          generateSamplePrompts();
+        }, 300);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
     return () => {
       chrome.tabs.onActivated.removeListener(handleTabChange);
       chrome.tabs.onUpdated.removeListener(handleTabUpdate);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, []); // Empty array - only run once on mount
 
@@ -441,6 +784,27 @@ function ChatSidebar() {
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    if (!showMenu) {
+      setShowModelMenu(false);
+      setShowChatMenu(false);
+      return;
+    }
+    
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (!target.closest('#ans-menu-button') && !target.closest('#ans-menu-dropdown')) {
+        setShowMenu(false);
+        setShowModelMenu(false);
+        setShowChatMenu(false);
+      }
+    };
+    
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showMenu]);
 
   // Save messages whenever they change
   useEffect(() => {
@@ -497,6 +861,217 @@ function ChatSidebar() {
 
   const openSettings = () => {
     chrome.runtime.openOptionsPage();
+  };
+
+  const selectProvider = async (provider: Provider) => {
+    if (!onboardingState || onboardingState.step !== 'provider') return;
+    
+    const providerName = provider === 'google' ? 'Google' : provider === 'anthropic' ? 'Anthropic' : 'OpenAI';
+    await processOnboardingInput(providerName);
+  };
+
+  const startOnboarding = () => {
+    setOnboardingState({
+      active: true,
+      step: 'provider',
+      tempSettings: {}
+    });
+    setShowSettings(false);
+    setMessages([
+      {
+        id: '1',
+        role: 'assistant',
+        content: `Welcome! Let's get you set up. I'll guide you through the configuration.\n\n**Step 1: Choose your AI Provider**\n\nWhich AI provider would you like to use?\n\n• **Google** - Gemini models (recommended for browser automation)\n• **Anthropic** - Claude models\n• **OpenAI** - GPT models\n\nClick one of the options below or type "Google", "Anthropic", or "OpenAI" to continue.`
+      }
+    ]);
+  };
+
+  const processOnboardingInput = async (userInput: string) => {
+    if (!onboardingState) return;
+
+    const input = userInput.trim().toLowerCase();
+    const currentStep = onboardingState.step;
+    const tempSettings = { ...onboardingState.tempSettings };
+
+    if (currentStep === 'provider') {
+      let provider: Provider | null = null;
+      if (input.includes('google') || input === 'g') {
+        provider = 'google';
+      } else if (input.includes('anthropic') || input.includes('claude') || input === 'a') {
+        provider = 'anthropic';
+      } else if (input.includes('openai') || input.includes('gpt') || input === 'o') {
+        provider = 'openai';
+      }
+
+      if (provider) {
+        const defaultModel = PROVIDER_MODELS[provider][0].id;
+        tempSettings.provider = provider;
+        tempSettings.model = defaultModel;
+        
+        setOnboardingState({
+          active: true,
+          step: 'apiKey',
+          tempSettings
+        });
+
+        const providerName = provider === 'google' ? 'Google' : provider === 'anthropic' ? 'Anthropic' : 'OpenAI';
+
+        setMessages(prev => [...prev, {
+          id: Date.now().toString(),
+          role: 'user',
+          content: userInput
+        }, {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: `Great! You've selected **${providerName}**.\n\n**Step 2: GoCode Key**\n\nPlease provide your GoCode Key. This is your API key for the selected provider.\n\nPaste your GoCode Key here:`
+        }]);
+      } else {
+        setMessages(prev => [...prev, {
+          id: Date.now().toString(),
+          role: 'user',
+          content: userInput
+        }, {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: `I didn't recognize that provider. Please type **"Google"**, **"Anthropic"**, or **"OpenAI"** to continue.`
+        }]);
+      }
+    } else if (currentStep === 'apiKey') {
+      if (input.length > 10) { // Basic validation - API keys are usually longer
+        tempSettings.apiKey = userInput.trim();
+        
+        // Save required settings
+        const finalSettings: Settings = {
+          provider: tempSettings.provider!,
+          apiKey: tempSettings.apiKey,
+          model: tempSettings.model!
+        };
+
+        chrome.storage.local.set({ atlasSettings: finalSettings }, () => {
+          setSettings(finalSettings);
+          setOnboardingState({
+            active: true,
+            step: 'optional',
+            tempSettings: finalSettings
+          });
+
+          setMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            role: 'user',
+            content: '••••••••' // Hide the API key
+          }, {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: `Perfect! Your API key has been saved. ✅\n\n**Step 3: Optional Configuration**\n\nWould you like to configure optional features now?\n\n• **Composio** - Connect to Gmail, Slack, GitHub, and 500+ apps\n• **Custom MCP Servers** - Add custom Model Context Protocol servers\n• **ANS Integration** - GoDaddy Agent Naming System\n\nType **"Yes"** to configure these, or **"No"** to skip and start chatting.`
+          }]);
+        });
+      } else {
+        setMessages(prev => [...prev, {
+          id: Date.now().toString(),
+          role: 'user',
+          content: userInput
+        }, {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: `That doesn't look like a valid GoCode Key. Please paste your full GoCode Key.`
+        }]);
+      }
+    } else if (currentStep === 'optional') {
+      if (input.includes('yes') || input.includes('y') || input === 'y') {
+        setMessages(prev => [...prev, {
+          id: Date.now().toString(),
+          role: 'user',
+          content: userInput
+        }, {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: `Great! Let's set up optional features.\n\n**Composio API Key** (optional)\n\nComposio lets you connect to Gmail, Slack, GitHub, and 500+ apps. Get your API key from: https://app.composio.dev/settings\n\nPaste your Composio API key, or type **"Skip"** to continue:`
+        }]);
+        setOnboardingState({
+          active: true,
+          step: 'optional',
+          tempSettings: { ...tempSettings, waitingFor: 'composio' }
+        });
+      } else if (input.includes('no') || input === 'n') {
+        // Complete onboarding
+        setOnboardingState(null);
+        setMessages(prev => [...prev, {
+          id: Date.now().toString(),
+          role: 'user',
+          content: userInput
+        }, {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: `Perfect! You're all set. 🎉\n\nYou can start chatting now. If you want to configure optional features later, you can access Settings from the menu (⋯) button.\n\nWhat would you like to do?`
+        }]);
+      } else if (onboardingState.waitingFor === 'composio') {
+        if (input.includes('skip')) {
+          setMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            role: 'user',
+            content: userInput
+          }, {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: `Composio skipped. ✅\n\n**ANS API Token** (optional)\n\nFor GoDaddy employees: Add your ANS API token for trusted agent access.\n\nPaste your ANS token, or type **"Skip"** to finish:`
+          }]);
+          setOnboardingState({
+            active: true,
+            step: 'optional',
+            tempSettings: { ...tempSettings, composioApiKey: undefined },
+            waitingFor: 'ans'
+          });
+        } else if (input.length > 10) {
+          const updatedSettings = { ...tempSettings, composioApiKey: userInput.trim() };
+          chrome.storage.local.set({ atlasSettings: updatedSettings }, () => {
+            setSettings(updatedSettings as Settings);
+            setMessages(prev => [...prev, {
+              id: Date.now().toString(),
+              role: 'user',
+              content: '••••••••'
+            }, {
+              id: (Date.now() + 1).toString(),
+              role: 'assistant',
+              content: `Composio API key saved! ✅\n\n**ANS API Token** (optional)\n\nFor GoDaddy employees: Add your ANS API token for trusted agent access.\n\nPaste your ANS token, or type **"Skip"** to finish:`
+            }]);
+            setOnboardingState({
+              active: true,
+              step: 'optional',
+              tempSettings: updatedSettings,
+              waitingFor: 'ans'
+            });
+          });
+        }
+      } else if (onboardingState.waitingFor === 'ans') {
+        if (input.includes('skip')) {
+          setOnboardingState(null);
+          setMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            role: 'user',
+            content: userInput
+          }, {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: `Setup complete! 🎉\n\nYou're all set to start using the extension. You can configure additional settings anytime from the Settings menu.\n\nWhat would you like to do?`
+          }]);
+        } else if (input.length > 5) {
+          const updatedSettings = { ...tempSettings, ansApiToken: userInput.trim() };
+          chrome.storage.local.set({ atlasSettings: updatedSettings }, () => {
+            setSettings(updatedSettings as Settings);
+            setOnboardingState(null);
+            setMessages(prev => [...prev, {
+              id: Date.now().toString(),
+              role: 'user',
+              content: '••••••••'
+            }, {
+              id: (Date.now() + 1).toString(),
+              role: 'assistant',
+              content: `ANS token saved! ✅\n\nSetup complete! 🎉\n\nYou're all set to start using the extension. What would you like to do?`
+            }]);
+          });
+        }
+      }
+    }
   };
 
   const isComposioSessionExpired = (): boolean => {
@@ -616,6 +1191,46 @@ function ChatSidebar() {
     } catch (error) {
       console.warn('Failed to hide browser automation overlay:', error);
     }
+  };
+
+  const switchModel = async (modelId: string) => {
+    if (!settings) return;
+    const updatedSettings = { ...settings, model: modelId };
+    setSettings(updatedSettings);
+    chrome.storage.local.set({ atlasSettings: updatedSettings });
+    setShowModelMenu(false);
+    setShowMenu(false);
+  };
+
+  const switchChat = (tabId: number) => {
+    if (tabMessagesRef.current[tabId]) {
+      setMessages(tabMessagesRef.current[tabId]);
+      setCurrentTabId(tabId);
+      setShowChatMenu(false);
+      setShowMenu(false);
+      // Scroll to bottom
+      setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, 100);
+    }
+  };
+
+  const getChatHistory = () => {
+    const history: Array<{ tabId: number; title: string; preview: string; messageCount: number }> = [];
+    Object.entries(tabMessagesRef.current).forEach(([tabIdStr, msgs]) => {
+      const tabId = parseInt(tabIdStr);
+      if (msgs && msgs.length > 0) {
+        const firstUserMessage = msgs.find(m => m.role === 'user');
+        const preview = firstUserMessage?.content?.slice(0, 50) || 'New chat';
+        history.push({
+          tabId,
+          title: `Chat ${tabId}`,
+          preview,
+          messageCount: msgs.length
+        });
+      }
+    });
+    return history.sort((a, b) => b.tabId - a.tabId); // Most recent first
   };
 
   const newChat = async () => {
@@ -1549,9 +2164,9 @@ GUIDELINES:
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!input.trim() || isLoading || !settings) return;
+  // Helper function to submit a message (can be called with prompt text directly)
+  const submitMessage = async (messageText: string) => {
+    if (!messageText.trim() || isLoading || !settings) return;
 
     // Get page context to include with the message
     let pageContext = '';
@@ -1569,12 +2184,12 @@ GUIDELINES:
     const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
-      content: input + pageContext,
+      content: messageText + pageContext,
     };
 
     const newMessages = [...messages, userMessage];
     setMessages(newMessages);
-    setInput('');
+    setInput(''); // Clear input field
     setIsLoading(true);
     setIsUserScrolled(false); // Reset scroll state when user sends message
 
@@ -1602,7 +2217,7 @@ GUIDELINES:
         try {
           const a2aService = getA2AService();
           // Send message to A2A agent using SDK
-          const response = await a2aService.sendMessage(currentSiteAgent.serverId, input);
+          const response = await a2aService.sendMessage(currentSiteAgent.serverId, messageText);
 
           // Update assistant message with response
           setMessages(prev => {
@@ -2116,6 +2731,24 @@ GUIDELINES:
     }
   };
 
+  // Form submit handler (calls submitMessage with input value)
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!input.trim() || isLoading) return;
+    
+    // Check if we're in onboarding mode
+    if (onboardingState?.active) {
+      const userInput = input;
+      setInput('');
+      await processOnboardingInput(userInput);
+      return;
+    }
+    
+    // Normal chat flow
+    if (!settings) return;
+    await submitMessage(input);
+  };
+
   // Check if user is scrolled to bottom
   const isAtBottom = () => {
     if (!messagesContainerRef.current) return true;
@@ -2162,18 +2795,63 @@ GUIDELINES:
     };
   }, []);
 
-  if (showSettings && !settings) {
+  if (!settings && !onboardingState?.active) {
     return (
       <div className="chat-container">
         <div className="welcome-message" style={{ padding: '40px 20px' }}>
-          <h2>Welcome to GoDaddy ANS</h2>
-          <p style={{ marginBottom: '20px' }}>Please configure your AI provider to get started.</p>
+          <h2>Welcome! Get Ready to Harness the Agentic Web</h2>
+          <div style={{
+            marginBottom: '24px',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '6px 12px',
+            borderRadius: '6px',
+            backgroundColor: 'rgba(0, 177, 64, 0.1)',
+            border: '1px solid rgba(0, 177, 64, 0.3)'
+          }}>
+            <span style={{
+              fontSize: '11px',
+              fontWeight: 600,
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px',
+              color: '#00B140'
+            }}>Powered by</span>
+            <span style={{
+              fontSize: '12px',
+              fontWeight: 600,
+              color: '#00B140'
+            }}>GoDaddy Agent Name Service</span>
+          </div>
+          <p style={{ marginBottom: '8px', fontSize: '16px', fontWeight: 500 }}>Let's get your new companion tailored for you.</p>
           <button
-            onClick={openSettings}
-            className="settings-icon-btn"
-            style={{ width: 'auto', padding: '12px 24px' }}
+            onClick={startOnboarding}
+            style={{ 
+              width: 'auto', 
+              padding: '12px 24px',
+              marginTop: '16px',
+              fontSize: '15px',
+              fontWeight: 600,
+              background: 'linear-gradient(90deg, #0066CC, #1BA87E, #6B46C1, #9333EA)',
+              backgroundSize: '200% 100%',
+              color: '#ffffff',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+              animation: 'godaddy-gradient 4s ease-in-out infinite',
+              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = 'scale(1.05)';
+              e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.15)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.1)';
+            }}
           >
-            Open Settings
+            Get Started
           </button>
         </div>
       </div>
@@ -2199,7 +2877,7 @@ GUIDELINES:
                   : getModelDisplayName(settings?.model))}
           </p>
         </div>
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', position: 'relative' }}>
           <button
             onClick={toggleBrowserTools}
             className={`settings-icon-btn ${browserToolsEnabled ? 'active' : ''}`}
@@ -2209,19 +2887,247 @@ GUIDELINES:
             {browserToolsEnabled ? '◉' : '○'}
           </button>
           <button
+            id="ans-menu-button"
+            onClick={() => setShowMenu(!showMenu)}
+            className="settings-icon-btn"
+            title="Menu"
+            style={{ position: 'relative' }}
+          >
+            ⋯
+          </button>
+          {showMenu && (
+            <div id="ans-menu-dropdown" style={{
+              position: 'absolute',
+              top: '100%',
+              right: 0,
+              marginTop: '8px',
+              backgroundColor: '#1a1a1a',
+              border: '1px solid #333',
+              borderRadius: '8px',
+              padding: '8px 0',
+              minWidth: '220px',
+              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+              zIndex: 1000
+            }}>
+              {/* Model Selection */}
+              <div style={{ position: 'relative' }}>
+                <button
+                  onClick={() => {
+                    setShowModelMenu(!showModelMenu);
+                    setShowChatMenu(false);
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '10px 16px',
+                    background: 'transparent',
+                    border: 'none',
+                    color: '#ffffff',
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    fontFamily: 'inherit',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center'
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#2a2a2a'}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                >
+                  <span>Model</span>
+                  <span style={{ fontSize: '12px' }}>▶</span>
+                </button>
+                {showModelMenu && settings && (
+                  <div style={{
+                    position: 'absolute',
+                    right: '100%',
+                    top: 0,
+                    marginRight: '4px',
+                    backgroundColor: '#1a1a1a',
+                    border: '1px solid #333',
+                    borderRadius: '8px',
+                    padding: '8px 0',
+                    minWidth: '200px',
+                    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+                    maxHeight: '300px',
+                    overflowY: 'auto'
+                  }}>
+                    {PROVIDER_MODELS[settings.provider]?.map((model) => (
+                      <button
+                        key={model.id}
+                        onClick={() => switchModel(model.id)}
+                        style={{
+                          width: '100%',
+                          padding: '10px 16px',
+                          background: settings.model === model.id ? '#00B140' : 'transparent',
+                          border: 'none',
+                          color: '#ffffff',
+                          textAlign: 'left',
+                          cursor: 'pointer',
+                          fontSize: '13px',
+                          fontFamily: 'inherit'
+                        }}
+                        onMouseEnter={(e) => {
+                          if (settings.model !== model.id) {
+                            e.currentTarget.style.backgroundColor = '#2a2a2a';
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (settings.model !== model.id) {
+                            e.currentTarget.style.backgroundColor = 'transparent';
+                          }
+                        }}
+                      >
+                        <div style={{ fontWeight: settings.model === model.id ? 600 : 400 }}>
+                          {model.name}
+                        </div>
+                        <div style={{ fontSize: '11px', color: '#d1d5db', marginTop: '2px' }}>
+                          {model.description}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Switch Chat */}
+              <div style={{ position: 'relative' }}>
+                <button
+                  onClick={() => {
+                    setShowChatMenu(!showChatMenu);
+                    setShowModelMenu(false);
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '10px 16px',
+                    background: 'transparent',
+                    border: 'none',
+                    color: '#ffffff',
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    fontFamily: 'inherit',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center'
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#2a2a2a'}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                >
+                  <span>Switch Chat</span>
+                  <span style={{ fontSize: '12px' }}>▶</span>
+                </button>
+                {showChatMenu && (
+                  <div style={{
+                    position: 'absolute',
+                    right: '100%',
+                    top: 0,
+                    marginRight: '4px',
+                    backgroundColor: '#1a1a1a',
+                    border: '1px solid #333',
+                    borderRadius: '8px',
+                    padding: '8px 0',
+                    minWidth: '250px',
+                    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+                    maxHeight: '300px',
+                    overflowY: 'auto'
+                  }}>
+                    {getChatHistory().length > 0 ? (
+                      getChatHistory().map((chat) => (
+                        <button
+                          key={chat.tabId}
+                          onClick={() => switchChat(chat.tabId)}
+                          style={{
+                            width: '100%',
+                            padding: '10px 16px',
+                            background: currentTabId === chat.tabId ? '#00B140' : 'transparent',
+                            border: 'none',
+                            color: '#ffffff',
+                            textAlign: 'left',
+                            cursor: 'pointer',
+                            fontSize: '13px',
+                            fontFamily: 'inherit'
+                          }}
+                          onMouseEnter={(e) => {
+                            if (currentTabId !== chat.tabId) {
+                              e.currentTarget.style.backgroundColor = '#2a2a2a';
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            if (currentTabId !== chat.tabId) {
+                              e.currentTarget.style.backgroundColor = 'transparent';
+                            }
+                          }}
+                        >
+                          <div style={{ fontWeight: currentTabId === chat.tabId ? 600 : 400 }}>
+                            {chat.preview}...
+                          </div>
+                          <div style={{ fontSize: '11px', color: '#d1d5db', marginTop: '2px' }}>
+                            {chat.messageCount} messages
+                          </div>
+                        </button>
+                      ))
+                    ) : (
+                      <div style={{
+                        padding: '10px 16px',
+                        color: '#d1d5db',
+                        fontSize: '13px',
+                        textAlign: 'center'
+                      }}>
+                        No chat history
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div style={{
+                height: '1px',
+                backgroundColor: '#333',
+                margin: '8px 0'
+              }} />
+
+              <button
+                onClick={() => {
+                  setShowMenu(false);
+                  openSettings();
+                }}
+                style={{
+                  width: '100%',
+                  padding: '10px 16px',
+                  background: 'transparent',
+                  border: 'none',
+                  color: '#ffffff',
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  fontFamily: 'inherit'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#2a2a2a'}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+              >
+                Settings
+              </button>
+            </div>
+          )}
+          <button
             onClick={newChat}
             className="settings-icon-btn"
             title="New Chat"
             disabled={isLoading}
+            style={{ fontSize: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
           >
-            +
+            <span className="material-symbols-outlined" style={{ fontSize: '20px', lineHeight: '1' }}>edit_note</span>
           </button>
           <button
-            onClick={openSettings}
+            onClick={() => {
+              // Close sidebar by sending message to background
+              chrome.runtime.sendMessage({ type: 'CLOSE_SIDEBAR' });
+            }}
             className="settings-icon-btn"
-            title="Settings"
+            title="Close"
+            style={{ fontSize: '18px', lineHeight: '1' }}
           >
-            ⋯
+            ×
           </button>
         </div>
       </div>
@@ -2283,8 +3189,6 @@ GUIDELINES:
       <div className="messages-container" ref={messagesContainerRef}>
         {messages.length === 0 ? (
           <div className="welcome-message">
-            <h2>How can I help you today?</h2>
-            <p>I'm GoDaddy ANS, your AI assistant. I can help you browse the web, analyze content, and perform various tasks.</p>
           </div>
         ) : (
           messages.map((message) => (
@@ -2295,7 +3199,96 @@ GUIDELINES:
               <div className="message-content">
                 {message.content ? (
                   message.role === 'assistant' ? (
-                    <MessageParser content={message.content} />
+                    <>
+                      <MessageParser content={message.content} />
+                      {onboardingState?.active && onboardingState.step === 'provider' && message.id === '1' && (
+                        <div style={{ 
+                          marginTop: '16px', 
+                          display: 'flex', 
+                          flexDirection: 'column', 
+                          gap: '10px' 
+                        }}>
+                          <button
+                            onClick={() => selectProvider('google')}
+                            style={{
+                              padding: '12px 16px',
+                              background: 'rgba(255, 255, 255, 0.05)',
+                              border: '1px solid rgba(255, 255, 255, 0.2)',
+                              borderRadius: '8px',
+                              color: 'inherit',
+                              cursor: 'pointer',
+                              textAlign: 'left',
+                              fontSize: '14px',
+                              fontWeight: 500,
+                              transition: 'all 0.2s',
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+                              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.3)';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
+                              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+                            }}
+                          >
+                            <div style={{ fontWeight: 600, marginBottom: '4px' }}>Google</div>
+                            <div style={{ fontSize: '12px', opacity: 0.8 }}>Gemini models (recommended for browser automation)</div>
+                          </button>
+                          <button
+                            onClick={() => selectProvider('anthropic')}
+                            style={{
+                              padding: '12px 16px',
+                              background: 'rgba(255, 255, 255, 0.05)',
+                              border: '1px solid rgba(255, 255, 255, 0.2)',
+                              borderRadius: '8px',
+                              color: 'inherit',
+                              cursor: 'pointer',
+                              textAlign: 'left',
+                              fontSize: '14px',
+                              fontWeight: 500,
+                              transition: 'all 0.2s',
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+                              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.3)';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
+                              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+                            }}
+                          >
+                            <div style={{ fontWeight: 600, marginBottom: '4px' }}>Anthropic</div>
+                            <div style={{ fontSize: '12px', opacity: 0.8 }}>Claude models</div>
+                          </button>
+                          <button
+                            onClick={() => selectProvider('openai')}
+                            style={{
+                              padding: '12px 16px',
+                              background: 'rgba(255, 255, 255, 0.05)',
+                              border: '1px solid rgba(255, 255, 255, 0.2)',
+                              borderRadius: '8px',
+                              color: 'inherit',
+                              cursor: 'pointer',
+                              textAlign: 'left',
+                              fontSize: '14px',
+                              fontWeight: 500,
+                              transition: 'all 0.2s',
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+                              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.3)';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
+                              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+                            }}
+                          >
+                            <div style={{ fontWeight: 600, marginBottom: '4px' }}>OpenAI</div>
+                            <div style={{ fontSize: '12px', opacity: 0.8 }}>GPT models</div>
+                          </button>
+                        </div>
+                      )}
+                    </>
                   ) : (
                     <UserMessageParser content={message.content} />
                   )
@@ -2316,13 +3309,41 @@ GUIDELINES:
         <div ref={messagesEndRef} />
       </div>
 
+      {/* Sample Prompts */}
+      {samplePrompts.length > 0 && messages.length === 0 && !isLoading && (
+        <div className="sample-prompts-container">
+          {samplePrompts.map((prompt, index) => (
+            <button
+              key={index}
+              type="button"
+              className="sample-prompt-button"
+              onClick={() => {
+                submitMessage(prompt);
+              }}
+            >
+              {prompt}
+            </button>
+          ))}
+        </div>
+      )}
+
       <form className="input-form" onSubmit={handleSubmit}>
         <input
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder={!settings ? "Loading settings..." : "Message GoDaddy ANS..."}
-          disabled={isLoading || !settings}
+          placeholder={
+            onboardingState?.active 
+              ? (onboardingState.step === 'provider' 
+                  ? "Type Google, Anthropic, or OpenAI..." 
+                  : onboardingState.step === 'apiKey'
+                  ? "Paste your GoCode Key..."
+                  : "Type your response...")
+              : !settings 
+              ? "Loading settings..." 
+              : "Ask me anything"
+          }
+          disabled={isLoading || (!settings && !onboardingState?.active)}
           className="chat-input"
         />
         {isLoading ? (
@@ -2336,10 +3357,11 @@ GUIDELINES:
         ) : (
           <button
             type="submit"
-            disabled={!input.trim() || !settings}
+            disabled={!input.trim() || (!settings && !onboardingState?.active)}
             className="send-button"
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
           >
-            ⏎
+            <span className="material-symbols-outlined" style={{ fontSize: '20px', lineHeight: '1' }}>send</span>
           </button>
         )}
       </form>

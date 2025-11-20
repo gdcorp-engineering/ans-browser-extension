@@ -10,6 +10,7 @@ This directory contains markdown files for the GitHub wiki.
 4. **Architecture.md** - Technical architecture overview
 5. **Artifacts.md** - Guide to downloading and using GitHub Actions artifacts
 6. **Development.md** - Development guide for contributors
+7. **Sample-Prompts.md** - Implementation documentation for the sample prompts feature
 
 ## How to Upload to GitHub Wiki
 
@@ -37,6 +38,7 @@ This directory contains markdown files for the GitHub wiki.
    - Development
    - Architecture
    - Artifacts
+   - Sample-Prompts
 
 ### Method 2: Using Git (Advanced)
 
@@ -106,6 +108,14 @@ git push origin master
 - Code style guide
 - Commit message format
 - Common issues and solutions
+
+### Sample-Prompts.md
+- Feature overview and architecture
+- Page analysis and type detection
+- Prompt generation logic
+- Implementation details
+- Code structure and extensibility
+- Examples and troubleshooting
 
 ## Verification
 

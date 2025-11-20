@@ -1299,3 +1299,92 @@ if (document.readyState === 'loading') {
   // DOM is already interactive or complete
   sendPageLoadMessage();
 }
+
+/**
+ * Inject floating "Ask GoDaddy ANS" button on web pages
+ * Opens the sidebar when clicked
+ */
+let ansFloatingButton: HTMLDivElement | null = null;
+
+function createANSFloatingButton() {
+  // Don't create duplicate button
+  if (ansFloatingButton) return;
+
+  // Ensure document.body exists
+  if (!document.body) {
+    const observer = new MutationObserver(() => {
+      if (document.body) {
+        observer.disconnect();
+        createANSFloatingButton();
+      }
+    });
+    observer.observe(document.documentElement, { childList: true });
+    return;
+  }
+
+  // Get extension icon URL
+  const iconUrl = chrome.runtime.getURL('icons/icon.png');
+
+  // Create button container
+  ansFloatingButton = document.createElement('div');
+  ansFloatingButton.id = 'ans-floating-button';
+  ansFloatingButton.innerHTML = `
+    <button id="ans-floating-btn" style="
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: linear-gradient(135deg, #00B140 0%, #008A32 100%);
+      color: white;
+      border: none;
+      padding: 10px 16px;
+      font-size: 14px;
+      font-weight: 600;
+      border-radius: 24px;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(0, 177, 64, 0.3);
+      transition: all 0.2s ease;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      white-space: nowrap;
+    ">
+      <img src="${iconUrl}" alt="GoDaddy ANS" style="width: 20px; height: 20px; object-fit: contain; display: block;" onerror="this.style.display='none';" />
+      Ask GoDaddy ANS
+    </button>
+  `;
+  ansFloatingButton.style.cssText = `
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 999997;
+    pointer-events: auto;
+  `;
+
+  // Add hover effects
+  const button = ansFloatingButton.querySelector('#ans-floating-btn') as HTMLButtonElement;
+  if (button) {
+    button.addEventListener('mouseenter', () => {
+      button.style.transform = 'translateY(-2px)';
+      button.style.boxShadow = '0 6px 16px rgba(0, 177, 64, 0.4)';
+    });
+    button.addEventListener('mouseleave', () => {
+      button.style.transform = 'translateY(0)';
+      button.style.boxShadow = '0 4px 12px rgba(0, 177, 64, 0.3)';
+    });
+    button.addEventListener('click', () => {
+      // Open sidebar via background script
+      chrome.runtime.sendMessage({ type: 'OPEN_SIDEBAR' }, (response) => {
+        if (chrome.runtime.lastError) {
+          console.error('Error opening sidebar:', chrome.runtime.lastError);
+        }
+      });
+    });
+  }
+
+  document.body.appendChild(ansFloatingButton);
+}
+
+// Create button when page loads
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', createANSFloatingButton, { once: true });
+} else {
+  createANSFloatingButton();
+}
