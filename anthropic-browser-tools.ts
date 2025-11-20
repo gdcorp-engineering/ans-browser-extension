@@ -89,6 +89,20 @@ const BROWSER_TOOLS = [
       properties: {},
     },
   },
+  {
+    name: 'pressKey',
+    description: 'Press a special key like Enter, Tab, Escape, etc. Use this after typing to submit forms or trigger actions.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        key: {
+          type: 'string',
+          description: 'The key to press (e.g., "Enter", "Tab", "Escape", "Backspace", "Delete", "ArrowUp", "ArrowDown")',
+        },
+      },
+      required: ['key'],
+    },
+  },
 ];
 
 export async function streamAnthropicWithBrowserTools(
@@ -163,6 +177,9 @@ DOM METHOD EXAMPLES:
 - Search button: clickElement with selector="button[type=submit]" or text="Search"
 - Input field: type with selector="input[name=search]" or selector="#search-input"
 - Sign in link: clickElement with text="Sign In" or selector="a[href*=signin]"
+- After typing in search: pressKey with key="Enter" to submit
+
+IMPORTANT: When typing in search boxes or forms, ALWAYS follow up with pressKey(key="Enter") to submit unless there's a submit button to click.
 
 COORDINATE CLICKING (last resort only):
 - If DOM methods fail, take a screenshot first

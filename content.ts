@@ -840,6 +840,7 @@ function executePageAction(
         return { success: false, message: 'Value required for keyboard_type action' };
 
       case 'press_key':
+      case 'pressKey':
         // Press a specific key on the currently focused element
         const keyToPress = (key || value || target || 'Enter') as string;
         const focusedElement = document.activeElement;
