@@ -841,9 +841,19 @@ function executePageAction(
 
       case 'press_key':
       case 'pressKey':
-        // Press a specific key on the currently focused element
+        // Press a specific key on the currently focused element or specified selector
         const keyToPress = (key || value || target || 'Enter') as string;
-        const focusedElement = document.activeElement;
+
+        // If a selector is provided, find and focus that element first
+        let focusedElement = document.activeElement;
+        if (selector || target) {
+          const targetElement = document.querySelector(selector || target!) as HTMLElement;
+          if (targetElement) {
+            targetElement.focus();
+            focusedElement = targetElement;
+            console.log('   ✓ Re-focused element:', selector || target);
+          }
+        }
 
         if (focusedElement) {
           // Special handling for Enter key - actually submit the form

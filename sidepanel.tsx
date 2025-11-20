@@ -208,6 +208,7 @@ function ChatSidebar() {
   const tabMessagesRef = useRef<Record<number, Message[]>>({});
   const currentTabIdRef = useRef<number | null>(null);
   const messagesRef = useRef<Message[]>([]);
+  const lastTypedSelectorRef = useRef<string | null>(null); // Store last typed selector for Enter key
 
   const executeTool = async (toolName: string, parameters: any, retryCount = 0): Promise<any> => {
     const MAX_RETRIES = 3;
@@ -252,8 +253,10 @@ function ChatSidebar() {
           coordinates: parameters.x !== undefined ? { x: parameters.x, y: parameters.y } : undefined
         }, handleResponse);
       } else if (toolName === 'type') {
-        chrome.runtime.sendMessage({ 
-          type: 'EXECUTE_ACTION', 
+        // Store the selector for later use with pressKey
+        lastTypedSelectorRef.current = parameters.selector;
+        chrome.runtime.sendMessage({
+          type: 'EXECUTE_ACTION',
           action: 'fill',
           target: parameters.selector,
           value: parameters.text
@@ -277,10 +280,13 @@ function ChatSidebar() {
           maxResults: parameters.maxResults
         }, handleResponse);
       } else if (toolName === 'pressKey') {
-        chrome.runtime.sendMessage({ 
-          type: 'EXECUTE_ACTION', 
+        // Use provided selector or fall back to last typed selector
+        const selectorToUse = parameters.selector || lastTypedSelectorRef.current;
+        chrome.runtime.sendMessage({
+          type: 'EXECUTE_ACTION',
           action: 'press_key',
-          key: parameters.key
+          key: parameters.key,
+          selector: selectorToUse // Pass selector to ensure correct element has focus
         }, handleResponse);
       } else if (toolName === 'clearInput') {
         chrome.runtime.sendMessage({ 
@@ -1185,18 +1191,19 @@ GUIDELINES:
       case 'type_text':
       case 'keyboard_input':
       case 'input_text':
+        const typeSelector = args.selector || 'input:focus, textarea:focus, [contenteditable="true"]:focus';
         const typeResult = await executeTool('type', {
-          selector: args.selector || 'input:focus, textarea:focus, [contenteditable="true"]:focus',
+          selector: typeSelector,
           text: args.text || args.input || args.content
         });
 
         // Automatically press Enter for search inputs after typing
         if (typeResult.success) {
-          const selector = args.selector || '';
-          if (selector.includes('search') || selector.includes('input[type=search]') ||
-              selector.includes('input[name=q]') || selector.includes('input[name=search]')) {
+          if (typeSelector.includes('search') || typeSelector.includes('input[type=search]') ||
+              typeSelector.includes('input[name=q]') || typeSelector.includes('input[name=search]')) {
             await new Promise(resolve => setTimeout(resolve, 100));
-            await executeTool('pressKey', { key: 'Enter' });
+            // Pass the selector to pressKey to ensure correct element has focus
+            await executeTool('pressKey', { key: 'Enter', selector: typeSelector });
           }
         }
 
