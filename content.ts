@@ -625,9 +625,54 @@ function executePageAction(
                     // Trigger all necessary events for React/Vue/Angular apps
                     inputElement.dispatchEvent(new Event('input', { bubbles: true }));
                     inputElement.dispatchEvent(new Event('change', { bubbles: true }));
-                    inputElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-                    inputElement.dispatchEvent(new KeyboardEvent('keypress', { key: 'Enter', bubbles: true }));
-                    inputElement.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', bubbles: true }));
+
+                    // Check if this is a search input - if so, press Enter immediately
+                    const isSearchInput = target?.includes('search') ||
+                                         inputElement.type === 'search' ||
+                                         inputElement.name?.toLowerCase().includes('search') ||
+                                         inputElement.id?.toLowerCase().includes('search') ||
+                                         inputElement.placeholder?.toLowerCase().includes('search') ||
+                                         inputElement.getAttribute('aria-label')?.toLowerCase().includes('search');
+
+                    if (isSearchInput) {
+                      console.log('   🔍 Search input detected - pressing Enter immediately');
+
+                      // Dispatch Enter key events with all required properties
+                      const enterKeyInit: KeyboardEventInit = {
+                        key: 'Enter',
+                        code: 'Enter',
+                        keyCode: 13,
+                        which: 13,
+                        bubbles: true,
+                        cancelable: true,
+                        composed: true
+                      };
+
+                      inputElement.dispatchEvent(new KeyboardEvent('keydown', enterKeyInit));
+                      inputElement.dispatchEvent(new KeyboardEvent('keypress', enterKeyInit));
+                      inputElement.dispatchEvent(new KeyboardEvent('keyup', enterKeyInit));
+
+                      // Try to submit the form
+                      const form = inputElement.closest('form');
+                      if (form) {
+                        // Try clicking submit button first (more realistic)
+                        const submitBtn = form.querySelector('button[type="submit"], input[type="submit"]') as HTMLElement;
+                        if (submitBtn) {
+                          console.log('   ✓ Clicking submit button');
+                          submitBtn.click();
+                        } else {
+                          console.log('   ✓ Submitting form');
+                          form.submit();
+                        }
+                      } else {
+                        // No form - try to find nearby search/submit button
+                        const nearbyButton = document.querySelector('button[type="submit"], button[aria-label*="search" i], button[aria-label*="submit" i]') as HTMLElement;
+                        if (nearbyButton) {
+                          console.log('   ✓ Clicking nearby search button');
+                          nearbyButton.click();
+                        }
+                      }
+                    }
 
 
                   } else if (element!.getAttribute('contenteditable') === 'true') {

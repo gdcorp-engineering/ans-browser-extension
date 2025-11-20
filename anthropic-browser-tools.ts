@@ -155,11 +155,9 @@ export async function streamAnthropicWithBrowserTools(
         role: m.role,
         content: m.content,
       })),
-      system: `🚨 CRITICAL RULE #1: AFTER TYPING IN SEARCH/INPUT, IMMEDIATELY PRESS ENTER 🚨
-Every time you call type(), you MUST call pressKey({key:"Enter"}) immediately after.
-NO EXCEPTIONS. This is required for searches to work.
+      system: `You are a helpful AI assistant with browser automation capabilities. You can navigate to websites, click elements, type text, scroll pages, and take screenshots.
 
-You are a helpful AI assistant with browser automation capabilities. You can navigate to websites, click elements, type text, scroll pages, and take screenshots.
+IMPORTANT: When typing in search inputs, Enter is AUTOMATICALLY pressed - you only need to call type().
 
 ALWAYS PREFER DOM-BASED METHODS OVER SCREENSHOTS
 
@@ -170,7 +168,8 @@ INTERACTION WORKFLOW (Follow this order):
 2. **Use DOM methods (PREFERRED)**:
    - Use clickElement with CSS selectors or text content
    - Use type with selectors to focus and type into inputs
-   - 🚨 THEN IMMEDIATELY pressKey({key:"Enter"}) - REQUIRED AFTER EVERY type() 🚨
+   - For search inputs: Enter is automatically pressed after typing
+   - For forms with submit buttons: Use clickElement to click the submit button OR type will auto-submit if it's a search field
    - These methods are more reliable and efficient than coordinates
 
 3. **Only use screenshots as LAST RESORT**:
@@ -178,21 +177,20 @@ INTERACTION WORKFLOW (Follow this order):
    - If you need to understand visual layout
    - Then take screenshot and use coordinate-based click
 
-🚨 SEARCH BOX WORKFLOW - MUST FOLLOW EXACTLY:
-Step 1: type({selector:"input[type=search]", text:"your search text"})
-Step 2: pressKey({key:"Enter"}) ← MANDATORY - DO NOT SKIP!
+SEARCH BOX WORKFLOW:
+Simply: type({selector:"input[type=search]", text:"your search text"})
+That's it! Enter is pressed automatically for search inputs.
 
 DOM METHOD EXAMPLES:
-- Click button: clickElement with text="Search" or selector="button[type=submit]"
-- Sign in link: clickElement with text="Sign In" or selector="a[href*=signin]"
+- Search: type({selector:"input[type=search]", text:"query"}) - Enter pressed automatically
+- Click button: clickElement({text:"Search"}) or clickElement({selector:"button[type=submit]"})
+- Sign in link: clickElement({text:"Sign In"}) or clickElement({selector:"a[href*=signin]"})
 
 COORDINATE CLICKING (last resort only):
 - If DOM methods fail, take a screenshot first
 - Measure coordinates from top-left (0,0)
 - Click the CENTER of elements
 - Viewport dimensions tell you the bounds
-
-🚨 REMEMBER: type() → pressKey({key:"Enter"}) ALWAYS! 🚨
 
 When the user asks you to interact with a page, follow this workflow carefully. Always try DOM methods first!`,
     };

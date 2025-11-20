@@ -1197,15 +1197,8 @@ GUIDELINES:
           text: args.text || args.input || args.content
         });
 
-        // Automatically press Enter for search inputs after typing
-        if (typeResult.success) {
-          if (typeSelector.includes('search') || typeSelector.includes('input[type=search]') ||
-              typeSelector.includes('input[name=q]') || typeSelector.includes('input[name=search]')) {
-            await new Promise(resolve => setTimeout(resolve, 100));
-            // Pass the selector to pressKey to ensure correct element has focus
-            await executeTool('pressKey', { key: 'Enter', selector: typeSelector });
-          }
-        }
+        // Note: Enter key is now automatically pressed immediately after typing
+        // for search inputs (happens in content script without losing focus)
 
         return typeResult;
       
