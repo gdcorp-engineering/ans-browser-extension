@@ -249,6 +249,30 @@ function extractPageContext(): PageContext {
     return meta?.getAttribute('content') || undefined;
   };
 
+  // Find all search-related inputs for debugging
+  const searchInputs = Array.from(
+    document.querySelectorAll('input[type="search"], input[type="text"]')
+  )
+    .map(el => {
+      const input = el as HTMLInputElement;
+      const rect = input.getBoundingClientRect();
+      return {
+        selector: getElementSelector(input),
+        type: input.type,
+        id: input.id,
+        name: input.name,
+        placeholder: input.placeholder,
+        'aria-label': input.getAttribute('aria-label'),
+        'data-automation-id': input.getAttribute('data-automation-id'),
+        role: input.getAttribute('role'),
+        className: input.className,
+        visible: rect.width > 0 && rect.height > 0 && rect.top >= 0,
+        dimensions: { width: rect.width, height: rect.height, top: rect.top, left: rect.left }
+      };
+    })
+    .filter(input => input.visible)
+    .slice(0, 10); // Limit to first 10 visible inputs
+
   return {
     url: window.location.href,
     title: document.title,
@@ -257,6 +281,7 @@ function extractPageContext(): PageContext {
     images,
     forms,
     interactiveElements, // NEW: List of clickable elements with selectors
+    searchInputs, // NEW: List of all visible search/text inputs for debugging
     metadata: {
       description: getMetaContent('description') || getMetaContent('og:description'),
       keywords: getMetaContent('keywords'),
@@ -523,29 +548,39 @@ function executePageAction(
           const textToType = value; // Capture value to preserve type narrowing
           let element: HTMLElement | null = null;
 
+          console.log('🔍 fill action - target selector:', target);
+
           // Try to find element by selector if provided
           if (target && !target.includes(':focus')) {
             element = document.querySelector(target) as HTMLElement;
+            if (element) {
+              console.log('✅ Found element by selector:', target);
+            } else {
+              console.log('❌ No element found with selector:', target);
+            }
           }
 
           // If no element found or selector was for focused elements, use the currently focused element
           if (!element) {
             element = document.activeElement as HTMLElement;
+            console.log('🎯 Using currently focused element:', element?.tagName);
           }
 
           // If element is BODY (nothing focused), try to find a visible search/text input
           if (element && element.tagName === 'BODY') {
             console.log('💡 Nothing focused, searching for visible input field...');
 
-            // Try to find common search input selectors
+            // Try to find common search input selectors (prioritize main search over autocomplete)
             const searchSelectors = [
+              'input[type="search"][data-automation-id*="searchBox"]', // Workday main search
+              'input[type="search"]:not([role="combobox"])', // Search inputs that aren't autocomplete
               'input[type="search"]',
-              'input[name*="search" i]',
-              'input[id*="search" i]',
-              'input[placeholder*="search" i]',
-              'input[aria-label*="search" i]',
+              'input[name*="search" i]:not([role="combobox"])',
+              'input[id*="search" i]:not([role="combobox"])',
+              'input[placeholder*="search" i]:not([role="combobox"])',
+              'input[aria-label*="search" i]:not([role="combobox"])',
               'input[type="text"][name="q"]', // Common search param
-              'input[type="text"]:not([type="hidden"])', // Any visible text input
+              'input[type="text"]:not([type="hidden"]):not([role="combobox"])', // Any visible text input that's not autocomplete
             ];
 
             for (const selector of searchSelectors) {
@@ -562,6 +597,23 @@ function executePageAction(
                 break;
               }
             }
+          }
+
+          // Log details about the element we found
+          if (element && element.tagName === 'INPUT') {
+            const inputEl = element as HTMLInputElement;
+            console.log('📋 Selected input details:', {
+              tagName: inputEl.tagName,
+              type: inputEl.type,
+              id: inputEl.id,
+              name: inputEl.name,
+              className: inputEl.className,
+              placeholder: inputEl.placeholder,
+              'aria-label': inputEl.getAttribute('aria-label'),
+              'data-automation-id': inputEl.getAttribute('data-automation-id'),
+              role: inputEl.getAttribute('role'),
+              value: inputEl.value
+            });
           }
 
           if (element && (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA' ||
@@ -634,8 +686,18 @@ function executePageAction(
                                          inputElement.placeholder?.toLowerCase().includes('search') ||
                                          inputElement.getAttribute('aria-label')?.toLowerCase().includes('search');
 
-                    if (isSearchInput) {
+                    // Exclude autocomplete/combobox inputs (those are dropdowns, not search boxes)
+                    const isCombobox = inputElement.getAttribute('role') === 'combobox';
+
+                    if (isSearchInput && !isCombobox) {
                       console.log('   🔍 Search input detected - pressing Enter immediately');
+                      console.log('   📋 Pressing Enter on:', {
+                        id: inputElement.id,
+                        name: inputElement.name,
+                        type: inputElement.type,
+                        'data-automation-id': inputElement.getAttribute('data-automation-id'),
+                        placeholder: inputElement.placeholder
+                      });
 
                       // Dispatch Enter key events with all required properties
                       const enterKeyInit: KeyboardEventInit = {
