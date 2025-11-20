@@ -18,7 +18,8 @@
     "package:zip:dev": "BUILD_ENV=dev npm run package:zip",
     "package:zip:test": "BUILD_ENV=test npm run package:zip",
     "package:zip:prod": "BUILD_ENV=prod npm run package:zip",
-    "get-extension-id": "node get-extension-id.js"
+    "get-extension-id": "node get-extension-id.js",
+    "test:prompts": "node test-prompt-runner.mjs"
   },
   "dependencies": {
     "@a2a-js/sdk": "^0.3.5",
@@ -41,6 +42,7 @@
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.3",
     "crx": "^5.0.1",
+    "playwright": "^1.56.1",
     "typescript": "^5.6.3",
     "vite": "^5.4.10"
   }

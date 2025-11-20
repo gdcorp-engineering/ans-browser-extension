@@ -45,42 +45,70 @@ if (!existsSync(outputDir)) {
   mkdirSync(outputDir, { recursive: true });
 }
 
-// Create ZIP file
+// Create ZIP files - both versioned and latest
 const zipFileName = `ans-extension-${BUILD_ENV}-v${version}.zip`;
 const zipPath = resolve(outputDir, zipFileName);
+const latestZipFileName = `ans-extension-${BUILD_ENV}-latest.zip`;
+const latestZipPath = resolve(outputDir, latestZipFileName);
 
 console.log('🔨 Creating ZIP file...');
 
-try {
-  // Use zip command (available on macOS and Linux, or install on Windows)
-  const command = `cd "${extensionDir}" && zip -r "${zipPath}" . -x "*.DS_Store" "*.git*"`;
-  execSync(command, { stdio: 'inherit' });
-  console.log(`✅ Successfully created: ${zipPath}`);
-  console.log('');
-  console.log('📋 Next steps for users:');
-  console.log('   1. Download this ZIP file');
-  console.log('   2. Extract it to a folder');
-  console.log('   3. Open Chrome → chrome://extensions/');
-  console.log('   4. Enable Developer mode');
-  console.log('   5. Click "Load unpacked" and select the extracted folder');
-} catch (error) {
-  // Try alternative method for Windows
-  if (process.platform === 'win32') {
-    try {
-      // Try PowerShell Compress-Archive
-      const psCommand = `Compress-Archive -Path "${extensionDir}\\*" -DestinationPath "${zipPath}" -Force`;
-      execSync(`powershell -Command "${psCommand}"`, { stdio: 'inherit' });
-      console.log(`✅ Successfully created: ${zipPath}`);
-    } catch (psError) {
-      console.error('❌ Failed to create ZIP file');
-      console.error('   Please install a ZIP tool or use 7-Zip');
-      console.error('   Or manually zip the folder:', extensionDir);
-      process.exit(1);
+const createZip = (targetPath) => {
+  try {
+    // Use zip command (available on macOS and Linux, or install on Windows)
+    const command = `cd "${extensionDir}" && zip -r "${targetPath}" . -x "*.DS_Store" "*.git*"`;
+    execSync(command, { stdio: 'inherit' });
+    return true;
+  } catch (error) {
+    // Try alternative method for Windows
+    if (process.platform === 'win32') {
+      try {
+        // Try PowerShell Compress-Archive
+        const psCommand = `Compress-Archive -Path "${extensionDir}\\*" -DestinationPath "${targetPath}" -Force`;
+        execSync(`powershell -Command "${psCommand}"`, { stdio: 'inherit' });
+        return true;
+      } catch (psError) {
+        return false;
+      }
     }
-  } else {
-    console.error('❌ Failed to create ZIP file');
-    console.error('   Make sure the `zip` command is available');
-    process.exit(1);
+    return false;
   }
+};
+
+// Create versioned ZIP
+if (!createZip(zipPath)) {
+  console.error('❌ Failed to create ZIP file');
+  console.error('   Please install a ZIP tool or use 7-Zip');
+  console.error('   Or manually zip the folder:', extensionDir);
+  process.exit(1);
 }
+
+console.log(`✅ Successfully created: ${zipPath}`);
+
+// Create latest ZIP (copy of versioned for installer to use)
+try {
+  if (process.platform === 'win32') {
+    // Windows: copy file
+    execSync(`copy /Y "${zipPath}" "${latestZipPath}"`, { stdio: 'pipe' });
+  } else {
+    // Unix: copy file
+    execSync(`cp "${zipPath}" "${latestZipPath}"`, { stdio: 'pipe' });
+  }
+  console.log(`✅ Successfully created: ${latestZipPath} (for installer download)`);
+} catch (error) {
+  console.warn(`⚠️  Could not create latest ZIP file: ${error.message}`);
+  console.warn('   The versioned ZIP file was created successfully.');
+}
+
+console.log('');
+console.log('📋 Next steps for users:');
+console.log('   1. Download this ZIP file');
+console.log('   2. Extract it to a folder');
+console.log('   3. Open Chrome → chrome://extensions/');
+console.log('   4. Enable Developer mode');
+console.log('   5. Click "Load unpacked" and select the extracted folder');
+console.log('');
+console.log(`📦 Files created:`);
+console.log(`   - ${zipFileName} (versioned)`);
+console.log(`   - ${latestZipFileName} (for installer download)`);
 

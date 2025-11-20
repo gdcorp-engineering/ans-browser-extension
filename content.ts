@@ -182,6 +182,17 @@ interface PageContext {
     description?: string;
     keywords?: string;
     author?: string;
+    ogType?: string;
+  };
+  structure?: {
+    headings: Array<{ level: string; text: string }>;
+    hasArticleStructure: boolean;
+    hasMainStructure: boolean;
+    hasNavigation: boolean;
+    sectionCount: number;
+    paragraphCount: number;
+    mainContentLength: number;
+    mainContentRatio: number;
   };
   viewport: {
     width: number;
@@ -249,6 +260,31 @@ function extractPageContext(): PageContext {
     return meta?.getAttribute('content') || undefined;
   };
 
+  // Extract structural information for better page type detection
+  const headings = Array.from(document.querySelectorAll('h1, h2, h3')).slice(0, 10).map(h => ({
+    level: h.tagName.toLowerCase(),
+    text: h.textContent?.trim() || ''
+  }));
+
+  // Detect main content area (article, main, or largest content container)
+  const mainContent = document.querySelector('article, main, [role="main"]') || 
+                     Array.from(document.querySelectorAll('div')).reduce((largest, div) => {
+                       const text = div.textContent || '';
+                       return text.length > (largest?.textContent?.length || 0) ? div : largest;
+                     }, null as Element | null);
+
+  const mainContentText = mainContent?.textContent?.slice(0, 5000) || '';
+  const mainContentLength = mainContentText.length;
+
+  // Analyze content structure
+  const hasArticleStructure = !!document.querySelector('article, [role="article"]');
+  const hasMainStructure = !!document.querySelector('main, [role="main"]');
+  const hasNavigation = !!document.querySelector('nav, [role="navigation"]');
+  
+  // Count semantic elements
+  const sectionCount = document.querySelectorAll('section, article').length;
+  const paragraphCount = document.querySelectorAll('p').length;
+
   return {
     url: window.location.href,
     title: document.title,
@@ -256,11 +292,22 @@ function extractPageContext(): PageContext {
     links,
     images,
     forms,
-    interactiveElements, // NEW: List of clickable elements with selectors
+    interactiveElements,
     metadata: {
       description: getMetaContent('description') || getMetaContent('og:description'),
       keywords: getMetaContent('keywords'),
-      author: getMetaContent('author')
+      author: getMetaContent('author'),
+      ogType: getMetaContent('og:type')
+    },
+    structure: {
+      headings,
+      hasArticleStructure,
+      hasMainStructure,
+      hasNavigation,
+      sectionCount,
+      paragraphCount,
+      mainContentLength,
+      mainContentRatio: mainContentLength / Math.max(totalTextLength, 1) // Ratio of main content to total
     },
     viewport: {
       width: window.innerWidth,

@@ -196,13 +196,10 @@
                 <p>Download the extension ZIP file. It will be saved to your Downloads folder.</p>
                 <div class="download-section">
                     <h2>📥 Download Extension</h2>
-                    <p style="margin-bottom: 15px;">Click the button below to download (if you have the ZIP file):</p>
-                    <button class="button" onclick="alert('Please download the extension ZIP file from your source (GitHub, email, etc.) and save it to your Downloads folder.')">
-                        📥 I Have the ZIP File
-                    </button>
-                    <p style="margin-top: 15px; font-size: 14px; color: #666;">
-                        Don't have the file? Contact your administrator or check your email.
-                    </p>
+                    <p style="margin-bottom: 15px;">Click the button below to download the extension ZIP file:</p>
+                    <a href="./downloads/ans-extension-dev-latest.zip" class="button" download>
+                        📥 Download Extension ZIP
+                    </a>
                 </div>
             </div>
             
@@ -226,7 +223,7 @@
                 <p>Open Google Chrome and go to the extensions page:</p>
                 <div class="code">chrome://extensions/</div>
                 <p style="margin-top: 10px;">Or click this button to open it automatically:</p>
-                <a href="chrome://extensions/" class="button">🔗 Open Chrome Extensions</a>
+                <button class="button" onclick="openChromeExtensions(this)">🔗 Open Chrome Extensions</button>
                 <div class="note">
                     <strong>⚠️ Note:</strong> If the button doesn't work, copy <code>chrome://extensions/</code> and paste it into Chrome's address bar.
                 </div>
@@ -275,23 +272,86 @@
                 </ul>
             </div>
             
-            <div class="note" style="margin-top: 30px;">
-                <strong>📚 Need More Help?</strong><br>
-                Check the full documentation or contact your administrator for assistance.
-            </div>
         </div>
     </div>
     
     <script>
-        // Try to open chrome://extensions/ when button is clicked
-        document.querySelector('a[href="chrome://extensions/"]').addEventListener('click', function(e) {
-            // This will only work if the page is opened in Chrome
-            // Otherwise, show instructions
-            if (!navigator.userAgent.includes('Chrome')) {
-                e.preventDefault();
-                alert('Please open this page in Google Chrome, then copy "chrome://extensions/" into the address bar.');
+        function openChromeExtensions(button) {
+            // Check if we're running from a local file (file:// protocol)
+            // Chrome blocks chrome:// URLs from local files for security
+            if (window.location.protocol === 'file:') {
+                // Running from local file - show instructions instead
+                showFallbackInstructions(button);
+                return;
             }
-        });
+            
+            // Try to open chrome://extensions/ in a new tab (only works from HTTP/HTTPS)
+            try {
+                const newTab = window.open('chrome://extensions/', '_blank');
+                
+                // Check if the tab was blocked or failed to open
+                setTimeout(function() {
+                    if (!newTab || newTab.closed || typeof newTab.closed === 'undefined') {
+                        // Tab was blocked or failed - show instructions
+                        showFallbackInstructions(button);
+                    }
+                }, 100);
+            } catch (e) {
+                // If window.open fails, show instructions
+                showFallbackInstructions(button);
+            }
+        }
+        
+        function showFallbackInstructions(button) {
+            // Check if instructions container already exists
+            const existingContainer = button.parentNode.querySelector('.chrome-extensions-instructions');
+            if (existingContainer) {
+                // Already shown, don't add again
+                return;
+            }
+            
+            // Show the URL in a prominent input field that users can copy
+            const container = document.createElement('div');
+            container.className = 'chrome-extensions-instructions';
+            container.style.marginTop = '15px';
+            container.style.padding = '15px';
+            container.style.background = '#e7f3ff';
+            container.style.borderRadius = '6px';
+            container.style.border = '2px solid #2196F3';
+            
+            const label = document.createElement('p');
+            label.innerHTML = '<strong>📋 Copy this URL and paste it into Chrome\'s address bar:</strong>';
+            label.style.marginBottom = '10px';
+            label.style.color = '#1976D2';
+            
+            const urlInput = document.createElement('input');
+            urlInput.value = 'chrome://extensions/';
+            urlInput.style.width = '100%';
+            urlInput.style.padding = '12px';
+            urlInput.style.fontSize = '16px';
+            urlInput.style.borderRadius = '4px';
+            urlInput.style.border = '2px solid #2196F3';
+            urlInput.style.fontFamily = 'monospace';
+            urlInput.readOnly = true;
+            urlInput.onclick = function() { 
+                this.select(); 
+                // Try to copy to clipboard
+                try {
+                    document.execCommand('copy');
+                    const originalText = button.textContent;
+                    button.textContent = '✅ Copied!';
+                    setTimeout(function() {
+                        button.textContent = originalText;
+                    }, 2000);
+                } catch (e) {
+                    // Copy failed, but selection still works
+                }
+            };
+            
+            container.appendChild(label);
+            container.appendChild(urlInput);
+            button.parentNode.insertBefore(container, button.nextSibling);
+        }
     </script>
 </body>
 </html>

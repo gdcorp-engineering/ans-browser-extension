@@ -437,9 +437,9 @@ function ChatSidebar() {
     }
   };
 
-  // Comprehensive page analysis based on content and structure
+  // Comprehensive page analysis based on content, structure, and semantic HTML
   const analyzePageCharacteristics = (context: any) => {
-    const title = (context.title || '').toLowerCase();
+    const title = context.title || '';
     const url = (context.url || '').toLowerCase();
     const textContent = context.textContent || '';
     const lowerContent = textContent.toLowerCase();
@@ -448,33 +448,74 @@ function ChatSidebar() {
     const interactiveElements = context.interactiveElements || [];
     const metadata = context.metadata || {};
     const images = context.images || [];
+    const structure = context.structure || {};
+
+    // Analyze content structure (semantic HTML is most reliable)
+    const hasArticleTag = structure.hasArticleStructure || false;
+    const hasMainTag = structure.hasMainStructure || false;
+    const paragraphCount = structure.paragraphCount || 0;
+    const sectionCount = structure.sectionCount || 0;
+    const mainContentRatio = structure.mainContentRatio || 0;
+    const hasStructuredContent = paragraphCount > 3 || sectionCount > 1;
+
+    // Content density analysis
+    const contentLength = textContent.length;
+    const wordsPerParagraph = paragraphCount > 0 ? contentLength / paragraphCount : 0;
+    // Dense content: either high words per paragraph OR many paragraphs with substantial content
+    const isContentDense = wordsPerParagraph > 100 || (paragraphCount > 10 && contentLength > 2000);
+
+    // Analyze interactive elements for purpose
+    const buttonTexts = interactiveElements
+      .filter((el: any) => el.tag === 'button')
+      .map((el: any) => (el.text || el.ariaLabel || '').toLowerCase())
+      .join(' ');
+    
+    const hasCartButtons = /\b(add to cart|add to bag|checkout|view cart|shopping cart)\b/i.test(buttonTexts);
+    const hasPurchaseButtons = /\b(buy now|purchase|order now|add to cart)\b/i.test(buttonTexts);
 
     const characteristics = {
       // Content characteristics
-      contentLength: textContent.length,
-      hasLongContent: textContent.length > 2000,
-      hasMediumContent: textContent.length > 500 && textContent.length <= 2000,
-      hasShortContent: textContent.length < 500,
+      contentLength,
+      hasLongContent: contentLength > 2000,
+      hasMediumContent: contentLength > 500 && contentLength <= 2000,
+      hasShortContent: contentLength < 500,
       
-      // Structural characteristics
+      // Structural characteristics (most reliable indicators)
+      hasArticleTag,
+      hasMainTag,
+      hasStructuredContent,
+      paragraphCount,
+      sectionCount,
+      mainContentRatio,
+      isContentDense,
+      
+      // Link and media analysis
       linkCount: links.length,
       formCount: forms.length,
       imageCount: images.length,
       hasManyLinks: links.length > 10,
       hasManyImages: images.length > 5,
       
-      // Content type indicators
-      hasProductKeywords: /\b(buy|purchase|add to cart|checkout|price|$|€|£)\b/i.test(textContent),
-      hasArticleKeywords: /\b(article|story|news|report|analysis|opinion|editorial)\b/i.test(title + ' ' + textContent),
-      hasFormKeywords: /\b(contact|register|sign up|subscribe|newsletter|login|sign in)\b/i.test(title + ' ' + textContent),
+      // URL and title for detection
+      url,
+      title: title.toLowerCase(),
+      
+      // E-commerce detection (very specific patterns)
+      hasCartButtons,
+      hasPurchaseButtons,
+      hasStrongEcommerceIndicators: hasCartButtons || hasPurchaseButtons,
+      hasPriceKeywords: /\$\d+\.?\d*|\d+\.?\d*\s*(dollars?|euros?|pounds?|USD|EUR|GBP|per month|per year)\b/i.test(textContent),
+      urlHasProduct: /\/product\/|\/item\/|\/shop\/|\/buy\/|\/cart\//i.test(url),
+      
+      // Content type patterns (less reliable, used as secondary indicators)
+      hasArticleKeywords: /\b(article|story|news|report|analysis|opinion|editorial|published|byline)\b/i.test(title + ' ' + textContent),
+      hasDocumentationKeywords: /\b(guide|tutorial|documentation|api|reference|docs|getting started|how to)\b/i.test(title + ' ' + textContent),
       hasSearchKeywords: /\b(search|results|query|find)\b/i.test(title + ' ' + url),
-      hasDocumentationKeywords: /\b(guide|tutorial|documentation|api|reference|docs)\b/i.test(title + ' ' + textContent),
       hasSocialKeywords: /\b(profile|follow|like|share|comment|post)\b/i.test(title + ' ' + url),
       hasVideoKeywords: /\b(video|watch|play|stream|youtube|vimeo)\b/i.test(title + ' ' + url + ' ' + textContent),
       
-      // URL patterns
+      // URL patterns (secondary indicators)
       urlHasArticle: /\/article\/|\/post\/|\/blog\/|\/news\/|\/story\//i.test(url),
-      urlHasProduct: /\/product\/|\/item\/|\/shop\/|\/buy\//i.test(url),
       urlHasSearch: /\/search\/|\/results\//i.test(url),
       urlHasProfile: /\/profile\/|\/user\/|\/account\//i.test(url),
       
@@ -504,66 +545,183 @@ function ChatSidebar() {
       hasDescription: !!metadata.description,
       hasKeywords: !!metadata.keywords,
       hasAuthor: !!metadata.author,
+      ogType: metadata.ogType,
     };
 
     return characteristics;
   };
 
   // Determine page type based on comprehensive analysis
-  const detectPageType = (characteristics: any): string => {
-    // E-commerce / Shopping
-    if (characteristics.hasProductKeywords || 
-        characteristics.urlHasProduct ||
-        (characteristics.hasManyImages && characteristics.hasProductKeywords)) {
-      return 'ecommerce';
+  // Priority: URL patterns > Article > Documentation > Video > Search > E-commerce > Generic
+  const detectPageType = (characteristics: any, context?: any): string => {
+    const url = characteristics.url || (context?.url || '').toLowerCase();
+    const title = characteristics.title || (context?.title || '').toLowerCase();
+    
+    // Check URL patterns first (most reliable)
+    const urlHasDocs = /\/docs\/|\/documentation\/|\/guide\/|\/tutorial\//i.test(url) ||
+                      /developer\.|docs\.|documentation\./i.test(url) ||
+                      /react\.dev|vuejs\.org|developer\.mozilla/i.test(url);
+    const urlHasVideo = /youtube\.com|vimeo\.com|twitch\.tv/i.test(url);
+    const urlHasSearch = /\/search\/|\/results\//i.test(url) || /google\.com\/search|bing\.com\/search/i.test(url);
+    const urlHasArticle = /\/article\/|\/post\/|\/blog\/|\/news\/|\/story\//i.test(url);
+    const urlHasBlog = /medium\.com|dev\.to|wordpress\.com/i.test(url);
+    const urlIsHomepage = /^https?:\/\/(www\.)?[^\/]+\/?$/.test(url) || /^https?:\/\/(www\.)?[^\/]+\/index\.(html|php)?$/.test(url);
+    const urlHasForm = /\/contact|\/signup|\/register|\/apply|\/form\//i.test(url);
+    const urlHasProduct = /\/product\/|\/item\/|\/shop\/|\/buy\/|\/cart\/|\/dp\//i.test(url);
+    
+    // Priority order: Form (URL) > Search > Video (domain) > Documentation (URL) > Article (URL) > Blog > News > Article (structure) > E-commerce > Generic
+    
+    // 1. Form pages (check URL FIRST - forms are very specific)
+    // If URL pattern matches, trust it even if form detection fails
+    if (urlHasForm) {
+      // Prefer form if primary forms detected, but also accept if it's a form URL with short content
+      if (characteristics.hasPrimaryForms || 
+          (characteristics.hasShortContent && !characteristics.hasLongContent)) {
+        return 'form';
+      }
     }
     
-    // Article / Blog / News / Content
-    if (characteristics.hasArticleKeywords || 
-        characteristics.urlHasArticle ||
-        (characteristics.hasLongContent && !characteristics.hasPrimaryForms) ||
-        (characteristics.hasMediumContent && characteristics.hasAuthor)) {
-      return 'article';
-    }
-    
-    // Documentation / Guides
-    if (characteristics.hasDocumentationKeywords ||
-        (characteristics.hasLongContent && characteristics.hasManyLinks)) {
-      return 'documentation';
-    }
-    
-    // Search results
-    if (characteristics.hasSearchKeywords || 
-        characteristics.urlHasSearch ||
-        (characteristics.hasSearchBox && characteristics.hasManyLinks)) {
+    // 2. Search results (URL pattern is most reliable)
+    if (urlHasSearch) {
       return 'search';
     }
     
-    // Social / Profile pages
-    if (characteristics.hasSocialKeywords || characteristics.urlHasProfile) {
-      return 'social';
-    }
-    
-    // Video / Media
-    if (characteristics.hasVideoKeywords) {
+    // 3. Video sites (ONLY on video domains - avoid false positives)
+    if (urlHasVideo) {
       return 'video';
     }
     
-    // Form-focused pages
+    // 4. Documentation (check URL BEFORE article tags - docs often use article tags)
+    if (urlHasDocs) {
+      return 'documentation';
+    }
+    
+    // 5. Article URL patterns (blog posts, news articles)
+    if (urlHasArticle) {
+      return 'article';
+    }
+    
+    // 6. Blog platforms (Medium, Dev.to) - even if content is minimal
+    if (urlHasBlog) {
+      return 'article';
+    }
+    
+    // 7. News site detection - detect by domain and content structure
+    const isNewsDomain = /(cnn|bbc|nytimes|washingtonpost|theguardian|reuters|npr|ap|wsj|bloomberg)\.(com|org)/i.test(url);
+    if (isNewsDomain && 
+        characteristics.hasStructuredContent &&
+        (characteristics.hasLongContent || characteristics.paragraphCount > 5) &&
+        !characteristics.hasStrongEcommerceIndicators) {
+      return 'article';
+    }
+    
+    // 8. Documentation by keywords (but NOT if it has article tags - docs use article tags)
+    if (characteristics.hasDocumentationKeywords &&
+        !characteristics.hasArticleTag &&
+        !urlIsHomepage &&
+        characteristics.hasStructuredContent && 
+        characteristics.hasManyLinks && 
+        (characteristics.isContentDense || characteristics.hasLongContent)) {
+      return 'documentation';
+    }
+    
+    // 9. Article detection by structure (but exclude homepages, docs URLs, and form URLs)
+    if (!urlIsHomepage && !urlHasDocs && !urlHasForm &&
+        characteristics.hasArticleTag &&
+        (characteristics.hasLongContent || characteristics.paragraphCount > 5)) {
+      return 'article';
+    }
+    
+    // 10. Strong content structure indicators for articles (but not homepages, docs, or forms)
+    // Also handle Wikipedia and educational sites
+    const isWikipedia = /wikipedia\.org/i.test(url);
+    const isEducational = /khanacademy|wikipedia|edu/i.test(url);
+    
+    if (!urlIsHomepage && !urlHasDocs && !urlHasForm &&
+        characteristics.hasStructuredContent && 
+        (characteristics.isContentDense || characteristics.paragraphCount > 10) && 
+        !characteristics.hasStrongEcommerceIndicators &&
+        (characteristics.hasLongContent || characteristics.paragraphCount > 5) &&
+        (characteristics.hasArticleKeywords || !characteristics.hasDocumentationKeywords)) {
+      return 'article';
+    }
+    
+    // Wikipedia and educational sites with structured content
+    if ((isWikipedia || isEducational) && 
+        characteristics.hasStructuredContent &&
+        (characteristics.hasLongContent || characteristics.paragraphCount > 5)) {
+      if (isEducational && characteristics.hasDocumentationKeywords) {
+        return 'documentation';
+      }
+      return 'article';
+    }
+    
+    // 11. E-commerce product pages (URL pattern is strongest signal)
+    if (urlHasProduct && 
+        (characteristics.hasStrongEcommerceIndicators || characteristics.hasPriceKeywords) &&
+        !characteristics.hasArticleTag) {
+      return 'ecommerce';
+    }
+    
+    // 12. E-commerce by cart buttons + price keywords (but not content pages)
+    const hasEcommerceEvidence = characteristics.hasStrongEcommerceIndicators && (
+      characteristics.urlHasProduct || 
+      characteristics.hasPriceKeywords
+    );
+    const isContentPage = characteristics.hasArticleTag || 
+                         (characteristics.hasStructuredContent && characteristics.isContentDense && characteristics.mainContentRatio > 0.5);
+    if (hasEcommerceEvidence && !isContentPage && !urlIsHomepage) {
+      return 'ecommerce';
+    }
+    
+    // 13. Form pages by form detection (if URL pattern didn't match)
     if (characteristics.hasPrimaryForms && 
         characteristics.hasShortContent &&
-        !characteristics.hasLongContent) {
+        !characteristics.hasLongContent &&
+        !urlIsHomepage) {
       return 'form';
+    }
+    
+    // 14. Social / Profile pages
+    if (characteristics.hasSocialKeywords || characteristics.urlHasProfile) {
+      return 'social';
     }
     
     return 'generic';
   };
 
-  // Helper function to format nouns/topics properly (capitalize first letter)
-  const formatNoun = (word: string): string => {
-    if (!word) return word;
-    // Capitalize first letter, keep rest lowercase
+  // Helper function to find original capitalization of a word in text
+  const findOriginalCapitalization = (word: string, textContent: string): string => {
+    if (!word || !textContent) return word;
+    const lowerWord = word.toLowerCase();
+    
+    // Try to find the word in the original text with its original capitalization
+    const regex = new RegExp(`\\b${lowerWord.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi');
+    const matches = textContent.match(regex);
+    
+    if (matches && matches.length > 0) {
+      // Return the most common capitalization, or first match if all different
+      const capitalizations: Record<string, number> = {};
+      matches.forEach(match => {
+        capitalizations[match] = (capitalizations[match] || 0) + 1;
+      });
+      
+      // Find most common capitalization
+      const mostCommon = Object.entries(capitalizations)
+        .sort(([, a], [, b]) => b - a)[0]?.[0];
+      
+      if (mostCommon) return mostCommon;
+    }
+    
+    // Fallback: capitalize first letter if not found
     return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+  };
+
+  // Helper function to format nouns/topics properly (preserve original capitalization)
+  const formatNoun = (word: string, textContent: string): string => {
+    if (!word) return word;
+    // Try to find original capitalization in the text
+    return findOriginalCapitalization(word, textContent);
   };
 
   // Helper function to extract main topics from text content
@@ -587,7 +745,7 @@ function ChatSidebar() {
       .filter(([word]) => !stopWords.has(word))
       .sort(([, a], [, b]) => b - a)
       .slice(0, 3)
-      .map(([word]) => formatNoun(word)); // Format nouns properly
+      .map(([word]) => formatNoun(word, textContent)); // Format nouns with original capitalization
 
     return topWords;
   };
@@ -607,7 +765,21 @@ function ChatSidebar() {
       
       // Comprehensive page analysis
       const characteristics = analyzePageCharacteristics(context);
-      const pageType = detectPageType(characteristics);
+      const pageType = detectPageType(characteristics, context);
+
+      // Debug logging for page analysis
+      console.log('🔍 Page analysis:', {
+        pageType,
+        hasArticleTag: characteristics.hasArticleTag,
+        hasMainTag: characteristics.hasMainTag,
+        hasStructuredContent: characteristics.hasStructuredContent,
+        isContentDense: characteristics.isContentDense,
+        paragraphCount: characteristics.paragraphCount,
+        hasStrongEcommerceIndicators: characteristics.hasStrongEcommerceIndicators,
+        urlHasProduct: characteristics.urlHasProduct,
+        hasPriceKeywords: characteristics.hasPriceKeywords,
+        contentLength: characteristics.contentLength,
+      });
 
       // Generate prompts based on page type and characteristics
       switch (pageType) {
@@ -624,7 +796,7 @@ function ChatSidebar() {
           prompts.push(`Summarize the main points of this article`);
           prompts.push(`What are the key takeaways from this content?`);
           if (mainTopics.length > 0) {
-            prompts.push(`Tell me more about ${formatNoun(mainTopics[0])}`);
+            prompts.push(`Tell me more about ${mainTopics[0]}`);
           } else if (characteristics.hasManyLinks) {
             prompts.push(`Find related topics or links on this page`);
           } else {
@@ -672,7 +844,7 @@ function ChatSidebar() {
           if (characteristics.hasLongContent) {
             prompts.push(`Summarize the main content of this page`);
             if (mainTopics.length > 0) {
-              prompts.push(`Tell me more about ${formatNoun(mainTopics[0])}`);
+              prompts.push(`Tell me more about ${mainTopics[0]}`);
             }
             prompts.push(`What are the key points or takeaways?`);
           } else if (characteristics.hasManyLinks) {
@@ -688,7 +860,7 @@ function ChatSidebar() {
             prompts.push(`Describe the visual content`);
             prompts.push(`What is the purpose of this page?`);
           } else if (mainTopics.length > 0) {
-            const topic = formatNoun(mainTopics[0]);
+            const topic = mainTopics[0]; // Already formatted with original capitalization
             prompts.push(`Tell me more about ${topic}`);
             prompts.push(`What information is available about ${topic}?`);
             prompts.push(`Help me understand ${topic} on this page`);
