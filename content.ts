@@ -846,9 +846,61 @@ function executePageAction(
         const focusedElement = document.activeElement;
 
         if (focusedElement) {
+          // Special handling for Enter key - actually submit the form
+          if (keyToPress === 'Enter') {
+            // First try dispatching keyboard events with all required properties for Chrome
+            const keyEventInit: KeyboardEventInit = {
+              key: 'Enter',
+              code: 'Enter',
+              keyCode: 13,
+              which: 13,
+              bubbles: true,
+              cancelable: true,
+              composed: true
+            };
+
+            const keydownEvent = new KeyboardEvent('keydown', keyEventInit);
+            const keypressEvent = new KeyboardEvent('keypress', keyEventInit);
+            const keyupEvent = new KeyboardEvent('keyup', keyEventInit);
+
+            focusedElement.dispatchEvent(keydownEvent);
+            focusedElement.dispatchEvent(keypressEvent);
+            focusedElement.dispatchEvent(keyupEvent);
+
+            // If it's an input field, try to submit the parent form
+            if (focusedElement instanceof HTMLInputElement || focusedElement instanceof HTMLTextAreaElement) {
+              const form = focusedElement.closest('form');
+              if (form) {
+                // Try clicking submit button first (more realistic)
+                const submitBtn = form.querySelector('button[type="submit"], input[type="submit"]') as HTMLElement;
+                if (submitBtn) {
+                  console.log('   ✓ Clicking submit button');
+                  submitBtn.click();
+                  return { success: true, message: 'Pressed Enter (clicked submit button)' };
+                }
+
+                // Otherwise submit the form directly
+                console.log('   ✓ Submitting form');
+                form.submit();
+                return { success: true, message: 'Pressed Enter (submitted form)' };
+              }
+
+              // If no form, try to find and click a nearby search/submit button
+              const nearbyButton = document.querySelector('button[type="submit"], button[aria-label*="search" i], button[aria-label*="submit" i]') as HTMLElement;
+              if (nearbyButton) {
+                console.log('   ✓ Clicking nearby submit button');
+                nearbyButton.click();
+                return { success: true, message: 'Pressed Enter (clicked search button)' };
+              }
+            }
+
+            return { success: true, message: 'Pressed Enter key' };
+          }
+
+          // For other keys, dispatch normal keyboard events
           const keyEventInit: KeyboardEventInit = {
             key: keyToPress,
-            code: keyToPress === 'Enter' ? 'Enter' : keyToPress === 'Tab' ? 'Tab' : keyToPress === 'Escape' ? 'Escape' : `Key${keyToPress}`,
+            code: keyToPress === 'Tab' ? 'Tab' : keyToPress === 'Escape' ? 'Escape' : `Key${keyToPress}`,
             bubbles: true,
             cancelable: true
           };
