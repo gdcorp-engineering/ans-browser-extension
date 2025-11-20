@@ -657,9 +657,9 @@ body {
 
 .send-button:disabled {
   background: transparent;
-  color: rgba(255, 255, 255, 0.3);
+  color: rgba(255, 255, 255, 0.6);
   cursor: not-allowed;
-  opacity: 0.5;
+  opacity: 0.8;
 }
 
 .send-button:active:not(:disabled) {
@@ -668,15 +668,18 @@ body {
 }
 
 .send-button.stop-button {
-  background: rgba(239, 68, 68, 0.2);
+  background: transparent;
   border-radius: 8px;
   width: 36px;
   height: 36px;
-  color: #ef4444;
+  color: rgba(239, 68, 68, 0.8);
+  opacity: 0.9;
 }
 
 .send-button.stop-button:hover {
-  background: rgba(239, 68, 68, 0.3);
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+  opacity: 1;
 }
 
 /* Dark Mode Styles */
@@ -848,4 +851,22 @@ body {
 
 .chat-container.dark-mode .typing-indicator span {
   background: #000000;
+}
+
+.chat-container.dark-mode .send-button:disabled {
+  background: transparent;
+  color: rgba(255, 255, 255, 0.6);
+  opacity: 0.8;
+}
+
+.chat-container.dark-mode .send-button.stop-button {
+  background: transparent;
+  color: rgba(239, 68, 68, 0.9);
+  opacity: 0.9;
+}
+
+.chat-container.dark-mode .send-button.stop-button:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  opacity: 1;
 }

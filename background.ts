@@ -87,7 +87,12 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
   if (request.type === 'OPEN_SIDEBAR') {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       if (tabs[0] && tabs[0].id) {
-        chrome.sidePanel.open({ tabId: tabs[0].id }).catch((error: Error) => {
+        chrome.sidePanel.open({ tabId: tabs[0].id }).then(() => {
+          // Notify content script that sidebar opened
+          chrome.tabs.sendMessage(tabs[0].id!, { type: 'SIDEBAR_OPENED' }).catch(() => {
+            // Content script might not be ready, ignore error
+          });
+        }).catch((error: Error) => {
           console.error('Error opening sidebar:', error);
         });
         sendResponse({ success: true });
@@ -99,6 +104,15 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
         sendResponse({ success: true });
       }
     });
+    return true;
+  }
+
+  // Check sidebar state
+  if (request.type === 'CHECK_SIDEBAR_STATE') {
+    // Chrome doesn't provide a direct API to check if sidebar is open
+    // We'll assume it's closed by default and let the content script show the button
+    // The sidebar will send a message when it opens
+    sendResponse({ sidebarOpen: false });
     return true;
   }
 

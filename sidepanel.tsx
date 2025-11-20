@@ -203,10 +203,16 @@ function ChatSidebar() {
   const [showChatMenu, setShowChatMenu] = useState(false);
   const [onboardingState, setOnboardingState] = useState<{
     active: boolean;
-    step: 'provider' | 'apiKey' | 'optional' | 'complete';
+    step: 'provider' | 'gocodeUrl' | 'apiKey' | 'optional' | 'complete';
     tempSettings: Partial<Settings>;
-    waitingFor?: 'composio' | 'ans';
+    waitingFor?: 'businessServices' | 'ans' | 'customMCP';
   } | null>(null);
+  
+  // Use ref to track latest onboarding state for async operations
+  const onboardingStateRef = useRef(onboardingState);
+  useEffect(() => {
+    onboardingStateRef.current = onboardingState;
+  }, [onboardingState]);
   const [trustedAgentOptIn, setTrustedAgentOptIn] = useState(true); // User opt-in for trusted agents
   const [currentSiteAgent, setCurrentSiteAgent] = useState<{ serverId: string; serverName: string } | null>(null);
   const [samplePrompts, setSamplePrompts] = useState<string[]>([]);
@@ -764,6 +770,24 @@ function ChatSidebar() {
         setTimeout(() => {
           generateSamplePrompts();
         }, 300);
+        // Notify content script that sidebar opened
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+          if (tabs[0]?.id) {
+            chrome.tabs.sendMessage(tabs[0].id, { type: 'SIDEBAR_OPENED' }).catch(() => {
+              // Content script might not be ready, ignore error
+            });
+          }
+        });
+      } else {
+        // Sidepanel became hidden - notify content script to show button
+        console.log('📍 Sidepanel became hidden, showing floating button');
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+          if (tabs[0]?.id) {
+            chrome.tabs.sendMessage(tabs[0].id, { type: 'SIDEBAR_CLOSED' }).catch(() => {
+              // Content script might not be ready, ignore error
+            });
+          }
+        });
       }
     };
 
@@ -817,6 +841,15 @@ function ChatSidebar() {
   useEffect(() => {
     // Load settings on mount
     loadSettings();
+    
+    // Notify content script that sidebar opened
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0]?.id) {
+        chrome.tabs.sendMessage(tabs[0].id, { type: 'SIDEBAR_OPENED' }).catch(() => {
+          // Content script might not be ready, ignore error
+        });
+      }
+    });
 
     // Attach settings update listener only once to prevent duplicates
     if (!listenerAttachedRef.current) {
@@ -881,17 +914,19 @@ function ChatSidebar() {
       {
         id: '1',
         role: 'assistant',
-        content: `Welcome! Let's get you set up. I'll guide you through the configuration.\n\n**Step 1: Choose your AI Provider**\n\nWhich AI provider would you like to use?\n\n• **Google** - Gemini models (recommended for browser automation)\n• **Anthropic** - Claude models\n• **OpenAI** - GPT models\n\nClick one of the options below or type "Google", "Anthropic", or "OpenAI" to continue.`
+        content: `Welcome! Let's get you set up. I'll guide you through the configuration.\n\n**Step 1: Choose your AI Provider**\n\nWhich AI provider would you like to use?\n\n• **Google** - Gemini models (recommended for browser automation)\n\n• **Anthropic** - Claude models\n\n• **OpenAI** - GPT models\n\nClick one of the options below or type "Google", "Anthropic", or "OpenAI" to continue.`
       }
     ]);
   };
 
   const processOnboardingInput = async (userInput: string) => {
-    if (!onboardingState) return;
+    // Get latest state from ref to avoid stale closure issues
+    const currentOnboardingState = onboardingStateRef.current;
+    if (!currentOnboardingState) return;
 
     const input = userInput.trim().toLowerCase();
-    const currentStep = onboardingState.step;
-    const tempSettings = { ...onboardingState.tempSettings };
+    const currentStep = currentOnboardingState.step;
+    const tempSettings = { ...currentOnboardingState.tempSettings };
 
     if (currentStep === 'provider') {
       let provider: Provider | null = null;
@@ -916,6 +951,12 @@ function ChatSidebar() {
 
         const providerName = provider === 'google' ? 'Google' : provider === 'anthropic' ? 'Anthropic' : 'OpenAI';
 
+        setOnboardingState({
+          active: true,
+          step: 'gocodeUrl',
+          tempSettings
+        });
+
         setMessages(prev => [...prev, {
           id: Date.now().toString(),
           role: 'user',
@@ -923,7 +964,7 @@ function ChatSidebar() {
         }, {
           id: (Date.now() + 1).toString(),
           role: 'assistant',
-          content: `Great! You've selected **${providerName}**.\n\n**Step 2: GoCode Key**\n\nPlease provide your GoCode Key. This is your API key for the selected provider.\n\nPaste your GoCode Key here:`
+          content: `Great! You've selected **${providerName}**.\n\n**Step 2: GoCode URL**\n\nPlease provide your GoCode URL. This is the endpoint for your GoCode service.\n\nDefault: \`https://caas-gocode-prod.caas-prod.prod.onkatana.net\`\n\nPaste your GoCode URL, or type **"Use Default"** to continue with the default:`
         }]);
       } else {
         setMessages(prev => [...prev, {
@@ -936,15 +977,58 @@ function ChatSidebar() {
           content: `I didn't recognize that provider. Please type **"Google"**, **"Anthropic"**, or **"OpenAI"** to continue.`
         }]);
       }
+    } else if (currentStep === 'gocodeUrl') {
+      // Handle GoCode URL input
+      let gocodeUrl = '';
+      if (input.includes('use default') || input.includes('default')) {
+        gocodeUrl = 'https://caas-gocode-prod.caas-prod.prod.onkatana.net';
+      } else if (userInput.trim().length > 0) {
+        gocodeUrl = userInput.trim();
+        // Basic URL validation
+        if (!gocodeUrl.startsWith('http://') && !gocodeUrl.startsWith('https://')) {
+          setMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            role: 'user',
+            content: userInput
+          }, {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: `Please enter a valid URL starting with http:// or https://, or type **"Use Default"** to use the default GoCode URL.`
+          }]);
+          return;
+        }
+      } else {
+        // Empty input, use default
+        gocodeUrl = 'https://caas-gocode-prod.caas-prod.prod.onkatana.net';
+      }
+
+      tempSettings.customBaseUrl = gocodeUrl;
+      
+      setOnboardingState({
+        active: true,
+        step: 'apiKey',
+        tempSettings
+      });
+
+      setMessages(prev => [...prev, {
+        id: Date.now().toString(),
+        role: 'user',
+        content: input.includes('use default') || input.includes('default') ? 'Use Default' : userInput
+      }, {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: `GoCode URL saved! ✅\n\n**Step 3: GoCode Key**\n\nPlease provide your GoCode Key. This is your API key for the GoCode service.\n\nPaste your GoCode Key here:`
+      }]);
     } else if (currentStep === 'apiKey') {
       if (input.length > 10) { // Basic validation - API keys are usually longer
         tempSettings.apiKey = userInput.trim();
         
-        // Save required settings
+        // Save required settings with GoCode URL
         const finalSettings: Settings = {
           provider: tempSettings.provider!,
           apiKey: tempSettings.apiKey,
-          model: tempSettings.model!
+          model: tempSettings.model!,
+          customBaseUrl: tempSettings.customBaseUrl || 'https://caas-gocode-prod.caas-prod.prod.onkatana.net'
         };
 
         chrome.storage.local.set({ atlasSettings: finalSettings }, () => {
@@ -962,7 +1046,7 @@ function ChatSidebar() {
           }, {
             id: (Date.now() + 1).toString(),
             role: 'assistant',
-            content: `Perfect! Your API key has been saved. ✅\n\n**Step 3: Optional Configuration**\n\nWould you like to configure optional features now?\n\n• **Composio** - Connect to Gmail, Slack, GitHub, and 500+ apps\n• **Custom MCP Servers** - Add custom Model Context Protocol servers\n• **ANS Integration** - GoDaddy Agent Naming System\n\nType **"Yes"** to configure these, or **"No"** to skip and start chatting.`
+            content: `Perfect! Your GoCode Key has been saved. ✅\n\n**Step 4: Optional Configuration**\n\nWould you like to configure optional features now?\n\n• **Enable Business Services** - Access 115 Million verified GoDaddy customer services through AI chat (requires ANS API Token)\n\n• **Custom MCP Servers** - Add custom Model Context Protocol servers\n\nType **"Yes"** to configure these, or **"No"** to skip and start chatting.`
           }]);
         });
       } else {
@@ -977,7 +1061,159 @@ function ChatSidebar() {
         }]);
       }
     } else if (currentStep === 'optional') {
-      if (input.includes('yes') || input.includes('y') || input === 'y') {
+      // Check waitingFor state first before general yes/no responses
+      if (currentOnboardingState.waitingFor === 'businessServices') {
+        if (input.includes('skip')) {
+          setMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            role: 'user',
+            content: userInput
+          }, {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: `Business Services skipped. ✅\n\n**Custom MCP Servers** (optional)\n\nAdd custom Model Context Protocol servers for additional integrations.\n\nWould you like to add a custom MCP server? Type **"Yes"** to add one, or **"Skip"** to finish:`
+          }]);
+          setOnboardingState({
+            active: true,
+            step: 'optional',
+            tempSettings: { ...currentOnboardingState.tempSettings, mcpEnabled: false },
+            waitingFor: 'customMCP'
+          });
+        } else if (input.includes('yes') || input.includes('y') || input === 'y') {
+          // Enable Business Services
+          const updatedTempSettings = { ...currentOnboardingState.tempSettings, mcpEnabled: true };
+          setMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            role: 'user',
+            content: userInput
+          }, {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: `Business Services enabled! ✅\n\n**ANS API Token** (required for Business Services)\n\n🔑 Required for ANS API access. Format: \`Authorization: Bearer eyJraWQiOi...\`\n\nPaste just the token part (without "Bearer"). Token typically starts with "eyJ".\n\nPaste your ANS token, or type **"Skip"** to continue without ANS token:`
+          }]);
+          setOnboardingState({
+            active: true,
+            step: 'optional',
+            tempSettings: updatedTempSettings,
+            waitingFor: 'ans'
+          });
+        } else {
+          // User didn't say yes or skip, ask again
+          setMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            role: 'user',
+            content: userInput
+          }, {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: `Would you like to enable Business Services? Type **"Yes"** to enable, or **"Skip"** to continue:`
+          }]);
+        }
+      } else if (currentOnboardingState.waitingFor === 'ans') {
+        if (input.includes('skip')) {
+          // Save settings with Business Services enabled but no ANS token
+          const updatedSettings = { ...currentOnboardingState.tempSettings, mcpEnabled: true, ansApiToken: undefined };
+          chrome.storage.local.set({ atlasSettings: updatedSettings }, () => {
+            setSettings(updatedSettings as Settings);
+            setMessages(prev => [...prev, {
+              id: Date.now().toString(),
+              role: 'user',
+              content: userInput
+            }, {
+              id: (Date.now() + 1).toString(),
+              role: 'assistant',
+              content: `ANS token skipped. Business Services enabled without ANS token. ✅\n\n**Custom MCP Servers** (optional)\n\nAdd custom Model Context Protocol servers for additional integrations.\n\nWould you like to add a custom MCP server? Type **"Yes"** to add one, or **"Skip"** to finish:`
+            }]);
+            setOnboardingState({
+              active: true,
+              step: 'optional',
+              tempSettings: updatedSettings,
+              waitingFor: 'customMCP'
+            });
+          });
+        } else if (input.length > 5) {
+          // Remove "Bearer " prefix if present
+          let token = userInput.trim();
+          if (token.startsWith('Bearer ')) {
+            token = token.substring(7);
+          }
+          const updatedSettings = { ...currentOnboardingState.tempSettings, mcpEnabled: true, ansApiToken: token };
+          chrome.storage.local.set({ atlasSettings: updatedSettings }, () => {
+            setSettings(updatedSettings as Settings);
+            setMessages(prev => [...prev, {
+              id: Date.now().toString(),
+              role: 'user',
+              content: '••••••••'
+            }, {
+              id: (Date.now() + 1).toString(),
+              role: 'assistant',
+              content: `ANS token saved! ✅\n\n**Custom MCP Servers** (optional)\n\nAdd custom Model Context Protocol servers for additional integrations.\n\nWould you like to add a custom MCP server? Type **"Yes"** to add one, or **"Skip"** to finish:`
+            }]);
+            setOnboardingState({
+              active: true,
+              step: 'optional',
+              tempSettings: updatedSettings,
+              waitingFor: 'customMCP'
+            });
+          });
+        } else {
+          // User didn't provide valid token or skip, ask again
+          setMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            role: 'user',
+            content: userInput
+          }, {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: `Please paste your ANS token (starts with "eyJ"), or type **"Skip"** to continue without ANS token:`
+          }]);
+        }
+      } else if (currentOnboardingState.waitingFor === 'customMCP') {
+        if (input.includes('skip') || input.includes('no') || input === 'n') {
+          // Save final settings and complete onboarding
+          chrome.storage.local.set({ atlasSettings: currentOnboardingState.tempSettings }, () => {
+            setSettings(currentOnboardingState.tempSettings as Settings);
+            setOnboardingState(null);
+            setMessages(prev => [...prev, {
+              id: Date.now().toString(),
+              role: 'user',
+              content: userInput
+            }, {
+              id: (Date.now() + 1).toString(),
+              role: 'assistant',
+              content: `Setup complete! 🎉\n\nYou're all set to start using the extension. You can configure custom MCP servers anytime from the Settings menu (accessible from the menu ⋯ button).\n\nWhat would you like to do?`
+            }]);
+          });
+        } else if (input.includes('yes') || input.includes('y') || input === 'y') {
+          // Direct user to Settings for custom MCP server configuration
+          setMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            role: 'user',
+            content: userInput
+          }, {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: `Great! To add custom MCP servers, you'll need to use the Settings menu. Here's how:\n\n1. Click the menu button (⋯) in the top right\n2. Select "Settings"\n3. Enable "Business Services" if not already enabled\n4. Go to the "Custom" tab\n5. Add your custom MCP server details\n\nFor now, let's complete the basic setup.\n\nSetup complete! 🎉\n\nYou're all set to start using the extension. What would you like to do?`
+          }]);
+          // Save final settings and complete onboarding
+          chrome.storage.local.set({ atlasSettings: currentOnboardingState.tempSettings }, () => {
+            setSettings(currentOnboardingState.tempSettings as Settings);
+            setOnboardingState(null);
+          });
+        } else {
+          // User didn't say yes or skip, ask again
+          setMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            role: 'user',
+            content: userInput
+          }, {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: `Would you like to add a custom MCP server? Type **"Yes"** to learn how, or **"Skip"** to finish setup:`
+          }]);
+        }
+      } else if (input.includes('yes') || input.includes('y') || input === 'y') {
+        // Initial yes to configure optional features
         setMessages(prev => [...prev, {
           id: Date.now().toString(),
           role: 'user',
@@ -985,12 +1221,13 @@ function ChatSidebar() {
         }, {
           id: (Date.now() + 1).toString(),
           role: 'assistant',
-          content: `Great! Let's set up optional features.\n\n**Composio API Key** (optional)\n\nComposio lets you connect to Gmail, Slack, GitHub, and 500+ apps. Get your API key from: https://app.composio.dev/settings\n\nPaste your Composio API key, or type **"Skip"** to continue:`
+          content: `Great! Let's set up optional features.\n\n**Enable Business Services**\n\n🌐 Access 115 Million verified GoDaddy customer services through AI chat. Book appointments, place orders, and interact with businesses naturally.\n\nWould you like to enable Business Services? Type **"Yes"** to enable, or **"Skip"** to continue:`
         }]);
         setOnboardingState({
           active: true,
           step: 'optional',
-          tempSettings: { ...tempSettings, waitingFor: 'composio' }
+          tempSettings: { ...currentOnboardingState.tempSettings },
+          waitingFor: 'businessServices'
         });
       } else if (input.includes('no') || input === 'n') {
         // Complete onboarding
@@ -1004,72 +1241,6 @@ function ChatSidebar() {
           role: 'assistant',
           content: `Perfect! You're all set. 🎉\n\nYou can start chatting now. If you want to configure optional features later, you can access Settings from the menu (⋯) button.\n\nWhat would you like to do?`
         }]);
-      } else if (onboardingState.waitingFor === 'composio') {
-        if (input.includes('skip')) {
-          setMessages(prev => [...prev, {
-            id: Date.now().toString(),
-            role: 'user',
-            content: userInput
-          }, {
-            id: (Date.now() + 1).toString(),
-            role: 'assistant',
-            content: `Composio skipped. ✅\n\n**ANS API Token** (optional)\n\nFor GoDaddy employees: Add your ANS API token for trusted agent access.\n\nPaste your ANS token, or type **"Skip"** to finish:`
-          }]);
-          setOnboardingState({
-            active: true,
-            step: 'optional',
-            tempSettings: { ...tempSettings, composioApiKey: undefined },
-            waitingFor: 'ans'
-          });
-        } else if (input.length > 10) {
-          const updatedSettings = { ...tempSettings, composioApiKey: userInput.trim() };
-          chrome.storage.local.set({ atlasSettings: updatedSettings }, () => {
-            setSettings(updatedSettings as Settings);
-            setMessages(prev => [...prev, {
-              id: Date.now().toString(),
-              role: 'user',
-              content: '••••••••'
-            }, {
-              id: (Date.now() + 1).toString(),
-              role: 'assistant',
-              content: `Composio API key saved! ✅\n\n**ANS API Token** (optional)\n\nFor GoDaddy employees: Add your ANS API token for trusted agent access.\n\nPaste your ANS token, or type **"Skip"** to finish:`
-            }]);
-            setOnboardingState({
-              active: true,
-              step: 'optional',
-              tempSettings: updatedSettings,
-              waitingFor: 'ans'
-            });
-          });
-        }
-      } else if (onboardingState.waitingFor === 'ans') {
-        if (input.includes('skip')) {
-          setOnboardingState(null);
-          setMessages(prev => [...prev, {
-            id: Date.now().toString(),
-            role: 'user',
-            content: userInput
-          }, {
-            id: (Date.now() + 1).toString(),
-            role: 'assistant',
-            content: `Setup complete! 🎉\n\nYou're all set to start using the extension. You can configure additional settings anytime from the Settings menu.\n\nWhat would you like to do?`
-          }]);
-        } else if (input.length > 5) {
-          const updatedSettings = { ...tempSettings, ansApiToken: userInput.trim() };
-          chrome.storage.local.set({ atlasSettings: updatedSettings }, () => {
-            setSettings(updatedSettings as Settings);
-            setOnboardingState(null);
-            setMessages(prev => [...prev, {
-              id: Date.now().toString(),
-              role: 'user',
-              content: '••••••••'
-            }, {
-              id: (Date.now() + 1).toString(),
-              role: 'assistant',
-              content: `ANS token saved! ✅\n\nSetup complete! 🎉\n\nYou're all set to start using the extension. What would you like to do?`
-            }]);
-          });
-        }
       }
     }
   };
@@ -2863,19 +3034,19 @@ GUIDELINES:
       <div className="chat-header">
         <div style={{ flex: 1 }}>
           <h1>GoDaddy ANS</h1>
-          <p>
-            {(settings?.provider
-              ? settings.provider.charAt(0).toUpperCase() + settings.provider.slice(1)
-              : 'Unknown')} · {browserToolsEnabled
-                ? (settings?.provider === 'google'
+          {settings?.provider && settings?.model && (
+            <p>
+              {settings.provider.charAt(0).toUpperCase() + settings.provider.slice(1)} · {browserToolsEnabled
+                ? (settings.provider === 'google'
                   ? getModelDisplayName('gemini-2.5-computer-use-preview-10-2025')
-                  : (settings?.model === 'custom' && settings?.customModelName
+                  : (settings.model === 'custom' && settings.customModelName
                     ? settings.customModelName
-                    : getModelDisplayName(settings?.model)) + ' (Browser Tools)')
-                : (settings?.model === 'custom' && settings?.customModelName
+                    : getModelDisplayName(settings.model)) + ' (Browser Tools)')
+                : (settings.model === 'custom' && settings.customModelName
                   ? settings.customModelName
-                  : getModelDisplayName(settings?.model))}
-          </p>
+                  : getModelDisplayName(settings.model))}
+            </p>
+          )}
         </div>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', position: 'relative' }}>
           <button
@@ -2890,7 +3061,7 @@ GUIDELINES:
             id="ans-menu-button"
             onClick={() => setShowMenu(!showMenu)}
             className="settings-icon-btn"
-            title="Menu"
+            title="Open chat menu"
             style={{ position: 'relative' }}
           >
             ⋯
@@ -3122,6 +3293,14 @@ GUIDELINES:
             onClick={() => {
               // Close sidebar by sending message to background
               chrome.runtime.sendMessage({ type: 'CLOSE_SIDEBAR' });
+              // Notify content script that sidebar closed
+              chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+                if (tabs[0]?.id) {
+                  chrome.tabs.sendMessage(tabs[0].id, { type: 'SIDEBAR_CLOSED' }).catch(() => {
+                    // Content script might not be ready, ignore error
+                  });
+                }
+              });
             }}
             className="settings-icon-btn"
             title="Close"
@@ -3148,43 +3327,45 @@ GUIDELINES:
       )}
 
       {/* Trusted Agent Badge */}
-      <div style={{
-        padding: '8px 16px',
-        background: currentSiteAgent ? '#dcfce7' : '#f3f4f6',
-        borderBottom: currentSiteAgent ? '1px solid #86efac' : '1px solid #d1d5db',
-        fontSize: '13px',
-        color: currentSiteAgent ? '#166534' : '#6b7280',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ fontSize: '16px' }}>{currentSiteAgent ? '✓' : '○'}</span>
-          <span>
-            {currentSiteAgent
-              ? `Trusted agent available: ${agentNameToDomain(currentSiteAgent.serverName)}`
-              : 'Trusted agent not available'}
-          </span>
+      {settings?.provider && settings?.model && (
+        <div style={{
+          padding: '8px 16px',
+          background: currentSiteAgent ? '#dcfce7' : '#f3f4f6',
+          borderBottom: currentSiteAgent ? '1px solid #86efac' : '1px solid #d1d5db',
+          fontSize: '13px',
+          color: currentSiteAgent ? '#166534' : '#6b7280',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '16px' }}>{currentSiteAgent ? '✓' : '○'}</span>
+            <span>
+              {currentSiteAgent
+                ? `Trusted agent available: ${agentNameToDomain(currentSiteAgent.serverName)}`
+                : 'Trusted agent not available'}
+            </span>
+          </div>
+          {currentSiteAgent && (
+            <button
+              onClick={() => setTrustedAgentOptIn(!trustedAgentOptIn)}
+              style={{
+                padding: '4px 12px',
+                fontSize: '12px',
+                background: trustedAgentOptIn ? '#16a34a' : '#9ca3af',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontWeight: '500',
+              }}
+              title={trustedAgentOptIn ? 'Click to use Claude/Gemini instead' : 'Click to use trusted agent'}
+            >
+              {trustedAgentOptIn ? 'Opted In' : 'Opt In'}
+            </button>
+          )}
         </div>
-        {currentSiteAgent && (
-          <button
-            onClick={() => setTrustedAgentOptIn(!trustedAgentOptIn)}
-            style={{
-              padding: '4px 12px',
-              fontSize: '12px',
-              background: trustedAgentOptIn ? '#16a34a' : '#9ca3af',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontWeight: '500',
-            }}
-            title={trustedAgentOptIn ? 'Click to use Claude/Gemini instead' : 'Click to use trusted agent'}
-          >
-            {trustedAgentOptIn ? 'Opted In' : 'Opt In'}
-          </button>
-        )}
-      </div>
+      )}
 
       <div className="messages-container" ref={messagesContainerRef}>
         {messages.length === 0 ? (
@@ -3336,6 +3517,8 @@ GUIDELINES:
             onboardingState?.active 
               ? (onboardingState.step === 'provider' 
                   ? "Type Google, Anthropic, or OpenAI..." 
+                  : onboardingState.step === 'gocodeUrl'
+                  ? "Paste GoCode URL or type 'Use Default'..."
                   : onboardingState.step === 'apiKey'
                   ? "Paste your GoCode Key..."
                   : "Type your response...")

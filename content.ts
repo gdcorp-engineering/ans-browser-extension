@@ -1303,19 +1303,27 @@ if (document.readyState === 'loading') {
 /**
  * Inject floating "Ask GoDaddy ANS" button on web pages
  * Opens the sidebar when clicked
+ * Only shows when sidebar is closed
  */
 let ansFloatingButton: HTMLDivElement | null = null;
+let sidebarOpen = false; // Track sidebar state
 
-function createANSFloatingButton() {
+function showANSFloatingButton() {
+  // Don't show if sidebar is open
+  if (sidebarOpen) return;
+  
   // Don't create duplicate button
-  if (ansFloatingButton) return;
+  if (ansFloatingButton) {
+    ansFloatingButton.style.display = 'block';
+    return;
+  }
 
   // Ensure document.body exists
   if (!document.body) {
     const observer = new MutationObserver(() => {
       if (document.body) {
         observer.disconnect();
-        createANSFloatingButton();
+        showANSFloatingButton();
       }
     });
     observer.observe(document.documentElement, { childList: true });
@@ -1356,6 +1364,7 @@ function createANSFloatingButton() {
     right: 20px;
     z-index: 999997;
     pointer-events: auto;
+    display: block;
   `;
 
   // Add hover effects
@@ -1370,10 +1379,14 @@ function createANSFloatingButton() {
       button.style.boxShadow = '0 4px 12px rgba(0, 177, 64, 0.3)';
     });
     button.addEventListener('click', () => {
+      // Hide button immediately when clicked
+      hideANSFloatingButton();
       // Open sidebar via background script
       chrome.runtime.sendMessage({ type: 'OPEN_SIDEBAR' }, (response) => {
         if (chrome.runtime.lastError) {
           console.error('Error opening sidebar:', chrome.runtime.lastError);
+          // Show button again if sidebar failed to open
+          showANSFloatingButton();
         }
       });
     });
@@ -1382,9 +1395,38 @@ function createANSFloatingButton() {
   document.body.appendChild(ansFloatingButton);
 }
 
-// Create button when page loads
+function hideANSFloatingButton() {
+  if (ansFloatingButton) {
+    ansFloatingButton.style.display = 'none';
+  }
+}
+
+// Listen for sidebar state changes
+chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
+  if (request.type === 'SIDEBAR_OPENED') {
+    sidebarOpen = true;
+    hideANSFloatingButton();
+  } else if (request.type === 'SIDEBAR_CLOSED') {
+    sidebarOpen = false;
+    showANSFloatingButton();
+  }
+});
+
+// Create button when page loads (only if sidebar is not open)
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', createANSFloatingButton, { once: true });
+  document.addEventListener('DOMContentLoaded', () => {
+    // Check sidebar state before showing
+    chrome.runtime.sendMessage({ type: 'CHECK_SIDEBAR_STATE' }, (response) => {
+      if (!response || !response.sidebarOpen) {
+        showANSFloatingButton();
+      }
+    });
+  }, { once: true });
 } else {
-  createANSFloatingButton();
+  // Check sidebar state before showing
+  chrome.runtime.sendMessage({ type: 'CHECK_SIDEBAR_STATE' }, (response) => {
+    if (!response || !response.sidebarOpen) {
+      showANSFloatingButton();
+    }
+  });
 }
