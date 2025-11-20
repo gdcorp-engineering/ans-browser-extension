@@ -184,6 +184,7 @@ function ChatSidebar() {
   // Load trustedAgentOptIn from storage on mount
   useEffect(() => {
     chrome.storage.local.get(['trustedAgentOptIn'], (result) => {
+      console.log('Loading trustedAgentOptIn from storage:', result.trustedAgentOptIn);
       if (result.trustedAgentOptIn !== undefined) {
         setTrustedAgentOptIn(result.trustedAgentOptIn);
       }
@@ -192,6 +193,7 @@ function ChatSidebar() {
 
   // Save trustedAgentOptIn to storage whenever it changes
   useEffect(() => {
+    console.log('Saving trustedAgentOptIn to storage:', trustedAgentOptIn);
     chrome.storage.local.set({ trustedAgentOptIn });
   }, [trustedAgentOptIn]);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -2258,25 +2260,30 @@ GUIDELINES:
       {/* Trusted Agent Badge */}
       <div style={{
         padding: '8px 16px',
-        background: currentSiteAgent ? '#dcfce7' : '#f3f4f6',
-        borderBottom: currentSiteAgent ? '1px solid #86efac' : '1px solid #d1d5db',
+        background: (currentSiteAgent && trustedAgentOptIn) ? '#dcfce7' : '#f3f4f6',
+        borderBottom: (currentSiteAgent && trustedAgentOptIn) ? '1px solid #86efac' : '1px solid #d1d5db',
         fontSize: '13px',
-        color: currentSiteAgent ? '#166534' : '#6b7280',
+        color: (currentSiteAgent && trustedAgentOptIn) ? '#166534' : '#6b7280',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ fontSize: '16px' }}>{currentSiteAgent ? '✓' : '○'}</span>
+          <span style={{ fontSize: '16px' }}>{(currentSiteAgent && trustedAgentOptIn) ? '✓' : '○'}</span>
           <span>
-            {currentSiteAgent
+            {(currentSiteAgent && trustedAgentOptIn)
               ? `Trusted agent available: ${agentNameToDomain(currentSiteAgent.serverName)}`
               : 'Trusted agent not available'}
           </span>
         </div>
         {currentSiteAgent && (
           <button
-            onClick={() => setTrustedAgentOptIn(!trustedAgentOptIn)}
+            onClick={() => {
+              console.log('Opt In button clicked. Current state:', trustedAgentOptIn);
+              const newState = !trustedAgentOptIn;
+              console.log('Setting new state:', newState);
+              setTrustedAgentOptIn(newState);
+            }}
             style={{
               padding: '4px 12px',
               fontSize: '12px',
@@ -2287,7 +2294,7 @@ GUIDELINES:
               cursor: 'pointer',
               fontWeight: '500',
             }}
-            title={trustedAgentOptIn ? 'Click to use Claude/Gemini instead' : 'Click to use trusted agent'}
+            title={trustedAgentOptIn ? 'Click to opt out and use Claude/Gemini instead' : 'Click to opt in and use trusted agent'}
           >
             {trustedAgentOptIn ? 'Opted In' : 'Opt In'}
           </button>
