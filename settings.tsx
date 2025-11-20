@@ -467,8 +467,11 @@ function SettingsPage() {
                 </button>
                 <button
                   onClick={() => {
-                    // Open the extensions management page showing this extension
-                    window.open('chrome://extensions/?id=' + chrome.runtime.id, '_blank');
+                    // Chrome blocks opening chrome:// URLs from JavaScript
+                    // Use chrome.tabs API instead
+                    chrome.tabs.create({
+                      url: 'chrome://extensions/?id=' + chrome.runtime.id
+                    });
                   }}
                   style={{
                     padding: '10px 16px',
