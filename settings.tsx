@@ -467,11 +467,15 @@ function SettingsPage() {
                 </button>
                 <button
                   onClick={() => {
-                    // Chrome blocks opening chrome:// URLs from JavaScript
-                    // Use chrome.tabs API instead
+                    // Open Chrome extensions page to show the path
                     chrome.tabs.create({
                       url: 'chrome://extensions/?id=' + chrome.runtime.id
                     });
+
+                    // Show helpful alert
+                    setTimeout(() => {
+                      alert('📂 Finding Your Install Folder:\n\n1. The Chrome extensions page just opened\n2. Make sure "Developer mode" is enabled (toggle in top-right)\n3. Find "GoDaddy ANS Chat Sidebar" extension\n4. Look for "Loaded from:" - that shows your install folder path\n5. You can click the blue folder path to open it in Finder/Explorer');
+                    }, 500);
                   }}
                   style={{
                     padding: '10px 16px',
