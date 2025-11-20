@@ -16,6 +16,9 @@ const memory: BrowserMemory = {
 // Track if browser operations should be aborted
 let shouldAbortOperations = false;
 
+// Track sidebar state per tab
+const sidebarState: Map<number, boolean> = new Map();
+
 // Set side panel to open automatically on extension icon click
 // The side panel will be per-tab by default when using tabId
 chrome.sidePanel
@@ -83,11 +86,49 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
     return true;
   }
 
+  // Track sidebar opened (from sidepanel visibility change)
+  if (request.type === 'SIDEBAR_OPENED') {
+    if (request.tabId) {
+      sidebarState.set(request.tabId, true);
+      console.log(`Sidebar opened for tab ${request.tabId}`);
+    } else {
+      // Fallback: get current tab
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabs[0] && tabs[0].id) {
+          sidebarState.set(tabs[0].id, true);
+          console.log(`Sidebar opened for tab ${tabs[0].id} (fallback)`);
+        }
+      });
+    }
+    sendResponse({ success: true });
+    return true;
+  }
+
+  // Track sidebar closed (from sidepanel visibility change)
+  if (request.type === 'SIDEBAR_CLOSED') {
+    if (request.tabId) {
+      sidebarState.set(request.tabId, false);
+      console.log(`Sidebar closed for tab ${request.tabId}`);
+    } else {
+      // Fallback: get current tab
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabs[0] && tabs[0].id) {
+          sidebarState.set(tabs[0].id, false);
+          console.log(`Sidebar closed for tab ${tabs[0].id} (fallback)`);
+        }
+      });
+    }
+    sendResponse({ success: true });
+    return true;
+  }
+
   // Open sidebar
   if (request.type === 'OPEN_SIDEBAR') {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       if (tabs[0] && tabs[0].id) {
         chrome.sidePanel.open({ tabId: tabs[0].id }).then(() => {
+          // Track sidebar as open for this tab
+          sidebarState.set(tabs[0].id!, true);
           // Notify content script that sidebar opened
           chrome.tabs.sendMessage(tabs[0].id!, { type: 'SIDEBAR_OPENED' }).catch(() => {
             // Content script might not be ready, ignore error
@@ -109,10 +150,17 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
 
   // Check sidebar state
   if (request.type === 'CHECK_SIDEBAR_STATE') {
-    // Chrome doesn't provide a direct API to check if sidebar is open
-    // We'll assume it's closed by default and let the content script show the button
-    // The sidebar will send a message when it opens
-    sendResponse({ sidebarOpen: false });
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0] && tabs[0].id) {
+        // Check our tracked state for this specific tab
+        const isOpen = sidebarState.get(tabs[0].id) || false;
+        console.log(`Checking sidebar state for tab ${tabs[0].id}: ${isOpen ? 'open' : 'closed'}`);
+        sendResponse({ sidebarOpen: isOpen });
+      } else {
+        console.log('No active tab found, assuming sidebar closed');
+        sendResponse({ sidebarOpen: false });
+      }
+    });
     return true;
   }
 
@@ -120,15 +168,14 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
   if (request.type === 'CLOSE_SIDEBAR') {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       if (tabs[0] && tabs[0].id) {
-        // Note: Chrome doesn't provide a direct API to close the sidebar
-        // The user can close it by clicking the extension icon
-        // We can try to hide it by setting enabled to false temporarily
-        chrome.sidePanel.setOptions({ enabled: false, tabId: tabs[0].id }).then(() => {
-          // Re-enable it so it can be opened again
-          setTimeout(() => {
-            chrome.sidePanel.setOptions({ enabled: true, tabId: tabs[0].id }).catch(() => {});
-          }, 100);
-        }).catch(() => {});
+        // Track sidebar as closed for this tab
+        sidebarState.set(tabs[0].id, false);
+        // Note: Chrome's Side Panel API doesn't provide a reliable way to programmatically close the sidebar
+        // The best we can do is notify the content script that the user wants to close it
+        // The user will need to use Chrome's native close button
+        chrome.tabs.sendMessage(tabs[0].id!, { type: 'SIDEBAR_CLOSED' }).catch(() => {
+          // Content script might not be ready, ignore error
+        });
         sendResponse({ success: true });
       } else {
         sendResponse({ success: true });

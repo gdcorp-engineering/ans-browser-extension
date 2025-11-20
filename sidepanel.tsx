@@ -80,6 +80,8 @@ const LinkComponent = ({ href, children }: { href?: string; children?: React.Rea
 
 // Component to parse and display user messages with page context styling
 const UserMessageParser = ({ content }: { content: string }) => {
+  const [isContextExpanded, setIsContextExpanded] = useState(false);
+  
   // Check if message contains page context
   const contextIndex = content.indexOf('[Current Page Context]');
 
@@ -97,24 +99,54 @@ const UserMessageParser = ({ content }: { content: string }) => {
       {/* User's actual input */}
       <div>{userInput}</div>
 
-      {/* Page context - styled differently and compact */}
+      {/* Page context - collapsible */}
       <div
         style={{
-          padding: '6px 8px',
           backgroundColor: '#1a2332',
           borderLeft: '3px solid #4a7ba7',
           borderRadius: '4px',
-          fontSize: '0.75em',
-          color: '#88aacc',
-          fontFamily: 'monospace',
-          whiteSpace: 'pre-wrap',
-          opacity: 0.7,
-          maxHeight: '80px',
-          overflowY: 'auto',
-          lineHeight: '1.3',
+          overflow: 'hidden',
         }}
       >
-        {pageContext}
+        {/* Clickable header to toggle */}
+        <div
+          onClick={() => setIsContextExpanded(!isContextExpanded)}
+          style={{
+            padding: '6px 8px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            fontSize: '0.75em',
+            color: '#88aacc',
+            fontFamily: 'monospace',
+            userSelect: 'none',
+          }}
+        >
+          <span>[Current Page Context]</span>
+          <span style={{ fontSize: '0.9em', marginLeft: '8px' }}>
+            {isContextExpanded ? '▼' : '▶'}
+          </span>
+        </div>
+
+        {/* Collapsible content */}
+        {isContextExpanded && (
+          <div
+            style={{
+              padding: '6px 8px',
+              paddingTop: '0',
+              fontSize: '0.75em',
+              color: '#88aacc',
+              fontFamily: 'monospace',
+              whiteSpace: 'pre-wrap',
+              lineHeight: '1.3',
+              maxHeight: '400px',
+              overflowY: 'auto',
+            }}
+          >
+            {pageContext.replace('[Current Page Context]', '').trim()}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -770,19 +802,25 @@ function ChatSidebar() {
         setTimeout(() => {
           generateSamplePrompts();
         }, 300);
-        // Notify content script that sidebar opened
+        // Notify background script and content script that sidebar opened
         chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
           if (tabs[0]?.id) {
+            // Update background script state
+            chrome.runtime.sendMessage({ type: 'SIDEBAR_OPENED', tabId: tabs[0].id }).catch(() => {});
+            // Notify content script
             chrome.tabs.sendMessage(tabs[0].id, { type: 'SIDEBAR_OPENED' }).catch(() => {
               // Content script might not be ready, ignore error
             });
           }
         });
       } else {
-        // Sidepanel became hidden - notify content script to show button
+        // Sidepanel became hidden - notify background script and content script
         console.log('📍 Sidepanel became hidden, showing floating button');
         chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
           if (tabs[0]?.id) {
+            // Update background script state
+            chrome.runtime.sendMessage({ type: 'SIDEBAR_CLOSED', tabId: tabs[0].id }).catch(() => {});
+            // Notify content script
             chrome.tabs.sendMessage(tabs[0].id, { type: 'SIDEBAR_CLOSED' }).catch(() => {
               // Content script might not be ready, ignore error
             });

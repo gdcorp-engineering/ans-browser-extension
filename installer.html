@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ANS Browser Extension - Easy Installer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #333;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 40px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 32px;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            opacity: 0.9;
+            font-size: 16px;
+        }
+        
+        .content {
+            padding: 40px;
+        }
+        
+        .step {
+            margin-bottom: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .step-number {
+            display: inline-block;
+            width: 32px;
+            height: 32px;
+            background: #667eea;
+            color: white;
+            border-radius: 50%;
+            text-align: center;
+            line-height: 32px;
+            font-weight: bold;
+            margin-right: 12px;
+        }
+        
+        .step h2 {
+            display: inline-block;
+            font-size: 20px;
+            margin-bottom: 12px;
+        }
+        
+        .step p {
+            margin-left: 44px;
+            line-height: 1.6;
+            color: #555;
+        }
+        
+        .step ul {
+            margin-left: 60px;
+            margin-top: 10px;
+        }
+        
+        .step li {
+            margin-bottom: 8px;
+            line-height: 1.6;
+        }
+        
+        .button {
+            display: inline-block;
+            padding: 12px 24px;
+            background: #667eea;
+            color: white;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: 600;
+            transition: background 0.3s;
+            margin-top: 10px;
+        }
+        
+        .button:hover {
+            background: #5568d3;
+        }
+        
+        .button-secondary {
+            background: #6c757d;
+        }
+        
+        .button-secondary:hover {
+            background: #5a6268;
+        }
+        
+        .code {
+            background: #2d2d2d;
+            color: #f8f8f2;
+            padding: 12px;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            margin: 10px 0;
+            overflow-x: auto;
+        }
+        
+        .warning {
+            background: #fff3cd;
+            border: 1px solid #ffc107;
+            border-radius: 6px;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        
+        .warning strong {
+            color: #856404;
+        }
+        
+        .success {
+            background: #d4edda;
+            border: 1px solid #28a745;
+            border-radius: 6px;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        
+        .success strong {
+            color: #155724;
+        }
+        
+        .download-section {
+            text-align: center;
+            padding: 30px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            margin: 30px 0;
+        }
+        
+        .download-section h2 {
+            margin-bottom: 20px;
+            color: #333;
+        }
+        
+        .note {
+            background: #e7f3ff;
+            border-left: 4px solid #2196F3;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        
+        .note strong {
+            color: #1976D2;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 ANS Browser Extension</h1>
+            <p>Easy Installation Guide</p>
+        </div>
+        
+        <div class="content">
+            <div class="success">
+                <strong>✅ No Technical Skills Required!</strong><br>
+                Follow these simple steps to install the extension in just a few minutes.
+            </div>
+            
+            <div class="step">
+                <span class="step-number">1</span>
+                <h2>Download the Extension</h2>
+                <p>Download the extension ZIP file. It will be saved to your Downloads folder.</p>
+                <div class="download-section">
+                    <h2>📥 Download Extension</h2>
+                    <p style="margin-bottom: 15px;">Click the button below to download (if you have the ZIP file):</p>
+                    <button class="button" onclick="alert('Please download the extension ZIP file from your source (GitHub, email, etc.) and save it to your Downloads folder.')">
+                        📥 I Have the ZIP File
+                    </button>
+                    <p style="margin-top: 15px; font-size: 14px; color: #666;">
+                        Don't have the file? Contact your administrator or check your email.
+                    </p>
+                </div>
+            </div>
+            
+            <div class="step">
+                <span class="step-number">2</span>
+                <h2>Extract the ZIP File</h2>
+                <p><strong>Find the downloaded ZIP file</strong> in your Downloads folder, then:</p>
+                <ul>
+                    <li><strong>Windows:</strong> Right-click the ZIP file → "Extract All" → Choose a location (like Desktop)</li>
+                    <li><strong>Mac:</strong> Double-click the ZIP file (it will extract automatically)</li>
+                    <li><strong>Linux:</strong> Right-click → "Extract Here"</li>
+                </ul>
+                <div class="note">
+                    <strong>💡 Tip:</strong> After extracting, you should see a folder with files like <code>manifest.json</code>, <code>background.js</code>, etc. Remember where this folder is located!
+                </div>
+            </div>
+            
+            <div class="step">
+                <span class="step-number">3</span>
+                <h2>Open Chrome Extensions Page</h2>
+                <p>Open Google Chrome and go to the extensions page:</p>
+                <div class="code">chrome://extensions/</div>
+                <p style="margin-top: 10px;">Or click this button to open it automatically:</p>
+                <a href="chrome://extensions/" class="button">🔗 Open Chrome Extensions</a>
+                <div class="note">
+                    <strong>⚠️ Note:</strong> If the button doesn't work, copy <code>chrome://extensions/</code> and paste it into Chrome's address bar.
+                </div>
+            </div>
+            
+            <div class="step">
+                <span class="step-number">4</span>
+                <h2>Enable Developer Mode</h2>
+                <p>On the extensions page, look for a toggle switch in the <strong>top right corner</strong> that says "Developer mode".</p>
+                <ul>
+                    <li>Click the toggle to turn it <strong>ON</strong> (it should turn blue/highlighted)</li>
+                    <li>You may see some new buttons appear - that's normal!</li>
+                </ul>
+            </div>
+            
+            <div class="step">
+                <span class="step-number">5</span>
+                <h2>Load the Extension</h2>
+                <p>After enabling Developer mode, you'll see a button that says <strong>"Load unpacked"</strong>.</p>
+                <ul>
+                    <li>Click the <strong>"Load unpacked"</strong> button</li>
+                    <li>A file picker window will open</li>
+                    <li>Navigate to the <strong>extracted folder</strong> from Step 2</li>
+                    <li>Select the folder (the one containing <code>manifest.json</code>)</li>
+                    <li>Click "Select Folder" or "Open"</li>
+                </ul>
+                <div class="success" style="margin-top: 15px;">
+                    <strong>🎉 Success!</strong> The extension should now appear in your extensions list and be automatically enabled!
+                </div>
+            </div>
+            
+            <div class="step">
+                <span class="step-number">6</span>
+                <h2>Verify Installation</h2>
+                <p>You should see "Agent Chat Powered by GoDaddy ANS" in your extensions list with a toggle switch turned ON.</p>
+                <p>Look for the extension icon in Chrome's toolbar (top right, near the address bar).</p>
+            </div>
+            
+            <div class="warning">
+                <strong>⚠️ Troubleshooting:</strong>
+                <ul style="margin-top: 10px; margin-left: 20px;">
+                    <li>Can't find "Load unpacked"? Make sure Developer mode is ON</li>
+                    <li>Extension shows as "Off"? Click the toggle switch to turn it ON</li>
+                    <li>Can't find the extracted folder? Check your Downloads or Desktop folder</li>
+                    <li>Still having issues? Contact your IT support team</li>
+                </ul>
+            </div>
+            
+            <div class="note" style="margin-top: 30px;">
+                <strong>📚 Need More Help?</strong><br>
+                Check the full documentation or contact your administrator for assistance.
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // Try to open chrome://extensions/ when button is clicked
+        document.querySelector('a[href="chrome://extensions/"]').addEventListener('click', function(e) {
+            // This will only work if the page is opened in Chrome
+            // Otherwise, show instructions
+            if (!navigator.userAgent.includes('Chrome')) {
+                e.preventDefault();
+                alert('Please open this page in Google Chrome, then copy "chrome://extensions/" into the address bar.');
+            }
+        });
+    </script>
+</body>
+</html>
+

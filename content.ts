@@ -1306,13 +1306,11 @@ if (document.readyState === 'loading') {
  * Only shows when sidebar is closed
  */
 let ansFloatingButton: HTMLDivElement | null = null;
-let sidebarOpen = false; // Track sidebar state
+let sidebarOpen = false; // Track sidebar state - default to false (closed) so button shows by default
 
 function showANSFloatingButton() {
-  // Don't show if sidebar is open
   if (sidebarOpen) return;
   
-  // Don't create duplicate button
   if (ansFloatingButton) {
     ansFloatingButton.style.display = 'block';
     return;
@@ -1412,21 +1410,48 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
   }
 });
 
-// Create button when page loads (only if sidebar is not open)
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', () => {
-    // Check sidebar state before showing
-    chrome.runtime.sendMessage({ type: 'CHECK_SIDEBAR_STATE' }, (response) => {
-      if (!response || !response.sidebarOpen) {
-        showANSFloatingButton();
-      }
-    });
-  }, { once: true });
-} else {
-  // Check sidebar state before showing
+// Simple function to check sidebar state and update button
+function checkSidebarStateAndUpdateButton() {
   chrome.runtime.sendMessage({ type: 'CHECK_SIDEBAR_STATE' }, (response) => {
-    if (!response || !response.sidebarOpen) {
+    const isOpen = response && response.sidebarOpen === true;
+    sidebarOpen = isOpen;
+    
+    if (isOpen) {
+      hideANSFloatingButton();
+    } else {
       showANSFloatingButton();
     }
   });
 }
+
+// Initialize button on page load
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => {
+    checkSidebarStateAndUpdateButton();
+  }, { once: true });
+} else {
+  checkSidebarStateAndUpdateButton();
+}
+
+// Check state on page refresh and navigation
+window.addEventListener('pageshow', () => {
+  checkSidebarStateAndUpdateButton();
+});
+
+// Check state when tab becomes visible
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) {
+    checkSidebarStateAndUpdateButton();
+  }
+});
+
+// Check state when window gains focus
+window.addEventListener('focus', () => {
+  checkSidebarStateAndUpdateButton();
+});
+
+// Additional check on beforeunload to reset state (optional, but helps with cleanup)
+window.addEventListener('beforeunload', () => {
+  // Reset local state on page unload
+  sidebarOpen = false;
+});

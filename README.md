@@ -32,14 +32,18 @@ AI-powered browser automation with GoDaddy Agent Naming System (ANS) integration
    - This step is required to access ANS services
 
 3. **Download and Install Extension**
-   - Download the extension zip file from the latest release
-   - Unzip into a folder named `dist`
 
-4. **Load Extension in Chrome**
-   - Open Chrome and navigate to `chrome://extensions/`
-   - Enable "Developer mode" in the top right corner
+   **Easy Method (Recommended for Non-Technical Users):**
+   - Download the extension ZIP file (from GitHub releases or your administrator)
+   - Extract the ZIP file to a folder (right-click → Extract All on Windows, double-click on Mac)
+   - Open the `INSTALL_INSTRUCTIONS.html` file in Chrome for a visual step-by-step guide
+   - Or follow the simple steps in [INSTALL_GUIDE.md](./INSTALL_GUIDE.md)
+
+   **Quick Steps:**
+   - Open Chrome and go to `chrome://extensions/`
+   - Enable "Developer mode" (toggle in top right)
    - Click "Load unpacked"
-   - Select the `dist` folder
+   - Select the extracted folder (the one containing `manifest.json`)
 
 5. **Configure API Keys**
    - Click the Settings (⚙️) icon in the extension
@@ -82,6 +86,67 @@ BUILD_ENV=prod npm run build
    - Click "Load unpacked"
    - Select the `artifacts/Dev` (or `artifacts/Test` or `artifacts/Prod`) folder
    - Configure your API keys in Settings (⚙️ icon)
+
+#### Package for Distribution
+
+**Create a ZIP file (Recommended for Easy Distribution):**
+
+```bash
+# Package for Dev environment
+npm run package:zip:dev
+
+# Package for Test environment
+npm run package:zip:test
+
+# Package for Prod environment
+npm run package:zip:prod
+
+# Or specify environment manually
+BUILD_ENV=dev npm run package:zip
+```
+
+The ZIP file will be created in the `packages/` directory. Users can:
+1. Download the ZIP file
+2. Extract it to a folder
+3. Open `INSTALL_INSTRUCTIONS.html` in Chrome for visual installation guide
+4. Follow the simple steps to load in Chrome
+
+**Create a .crx file:**
+
+To create a distributable `.crx` file:
+
+```bash
+# Package for Dev environment
+npm run package:crx:dev
+
+# Package for Test environment
+npm run package:crx:test
+
+# Package for Prod environment
+npm run package:crx:prod
+
+# Or specify environment manually
+BUILD_ENV=dev npm run package:crx
+```
+
+The packaged `.crx` file will be created in the `packages/` directory with the name `extension-{env}-v{version}.crx`.
+
+**Note**: The first time you package, a private key (`extension-key.pem`) will be generated. Keep this key file safe - you'll need it for future updates to maintain the same extension ID.
+
+**Installing the .crx file**: When installing a self-signed `.crx` file, Chrome will show a warning: "Chrome can't verify where this extension comes from". This is expected for extensions not published to the Chrome Web Store. 
+
+⚠️ **Important**: Chrome may block unsigned extensions from running even after installation. For local development, use "Load unpacked" instead.
+
+**Options:**
+- **For Development**: Use "Load unpacked" with the `artifacts/{Dev|Test|Prod}` folder (no warnings, works immediately)
+- **For Enterprise**: See [ENTERPRISE_DEPLOYMENT.md](./ENTERPRISE_DEPLOYMENT.md) for Chrome Enterprise Policies
+- **For Public Distribution**: Publish to Chrome Web Store (removes all warnings)
+
+**Installation Helper:**
+```bash
+# Run the installation helper script
+./install-extension.sh
+```
 
 ### Running the Electron Browser
 
