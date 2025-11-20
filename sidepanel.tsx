@@ -180,6 +180,20 @@ function ChatSidebar() {
   const [currentTabId, setCurrentTabId] = useState<number | null>(null);
   const [trustedAgentOptIn, setTrustedAgentOptIn] = useState(true); // User opt-in for trusted agents
   const [currentSiteAgent, setCurrentSiteAgent] = useState<{ serverId: string; serverName: string } | null>(null);
+
+  // Load trustedAgentOptIn from storage on mount
+  useEffect(() => {
+    chrome.storage.local.get(['trustedAgentOptIn'], (result) => {
+      if (result.trustedAgentOptIn !== undefined) {
+        setTrustedAgentOptIn(result.trustedAgentOptIn);
+      }
+    });
+  }, []);
+
+  // Save trustedAgentOptIn to storage whenever it changes
+  useEffect(() => {
+    chrome.storage.local.set({ trustedAgentOptIn });
+  }, [trustedAgentOptIn]);
   const abortControllerRef = useRef<AbortController | null>(null);
   const mcpClientRef = useRef<MCPClient | null>(null);
   const mcpToolsRef = useRef<Record<string, unknown> | null>(null);

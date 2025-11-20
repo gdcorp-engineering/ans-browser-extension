@@ -246,21 +246,31 @@ function SettingsPage() {
   };
 
   const handleToggleServer = (id: string) => {
+    console.log('Toggle server called for id:', id);
+    console.log('Current settings.mcpServers:', settings.mcpServers);
+
     // Create a completely new array to ensure React detects the change
-    const updatedServers = (settings.mcpServers || []).map(s =>
-      s.id === id ? { ...s, enabled: !s.enabled } : { ...s }
-    );
+    const updatedServers = (settings.mcpServers || []).map(s => {
+      if (s.id === id) {
+        console.log('Toggling server:', s.name, 'from', s.enabled, 'to', !s.enabled);
+        return { ...s, enabled: !s.enabled };
+      }
+      return { ...s };
+    });
 
     const newSettings = {
       ...settings,
       mcpServers: updatedServers,
     };
 
+    console.log('New settings:', newSettings);
+
     // Force state update with new reference
     setSettings(newSettings);
 
     // Auto-save and notify sidebar
     chrome.storage.local.set({ atlasSettings: newSettings }, () => {
+      console.log('Settings saved to storage');
       chrome.runtime.sendMessage({ type: 'SETTINGS_UPDATED', action: 'mcp_changed' }, () => {
         if (chrome.runtime.lastError) {
           console.log('Sidebar not active, but settings saved');
