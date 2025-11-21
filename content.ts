@@ -404,31 +404,95 @@ function executePageAction(
           console.log(`📏 Viewport size: ${window.innerWidth}x${window.innerHeight}`);
           console.log(`📏 Device pixel ratio: ${window.devicePixelRatio}`);
           console.log(`📜 Document scroll: x=${window.scrollX}, y=${window.scrollY}`);
+          console.log(`🖥️  Window size: ${window.outerWidth}x${window.outerHeight}`);
+          console.log(`📱 Screen size: ${screen.width}x${screen.height}`);
 
-          // Add visual debug marker at click coordinates
+          // Add visual debug marker at click coordinates with crosshairs
           const debugMarker = document.createElement('div');
           debugMarker.style.cssText = `
             position: fixed;
             left: ${coordinates.x}px;
             top: ${coordinates.y}px;
-            width: 20px;
-            height: 20px;
-            background: red;
-            border: 3px solid yellow;
+            width: 30px;
+            height: 30px;
+            background: rgba(255, 0, 0, 0.3);
+            border: 3px solid red;
             border-radius: 50%;
             z-index: 999999;
             pointer-events: none;
             transform: translate(-50%, -50%);
           `;
           document.body.appendChild(debugMarker);
-          setTimeout(() => debugMarker.remove(), 3000);
+
+          // Add crosshair lines
+          const crosshairV = document.createElement('div');
+          crosshairV.style.cssText = `
+            position: fixed;
+            left: ${coordinates.x}px;
+            top: 0;
+            width: 2px;
+            height: 100vh;
+            background: rgba(255, 0, 0, 0.5);
+            z-index: 999998;
+            pointer-events: none;
+          `;
+          document.body.appendChild(crosshairV);
+
+          const crosshairH = document.createElement('div');
+          crosshairH.style.cssText = `
+            position: fixed;
+            left: 0;
+            top: ${coordinates.y}px;
+            width: 100vw;
+            height: 2px;
+            background: rgba(255, 0, 0, 0.5);
+            z-index: 999998;
+            pointer-events: none;
+          `;
+          document.body.appendChild(crosshairH);
+
+          // Add coordinate label
+          const label = document.createElement('div');
+          label.style.cssText = `
+            position: fixed;
+            left: ${coordinates.x + 20}px;
+            top: ${coordinates.y - 30}px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-family: monospace;
+            z-index: 999999;
+            pointer-events: none;
+          `;
+          label.textContent = `(${coordinates.x}, ${coordinates.y})`;
+          document.body.appendChild(label);
+
+          setTimeout(() => {
+            debugMarker.remove();
+            crosshairV.remove();
+            crosshairH.remove();
+            label.remove();
+          }, 5000);
 
           let element = document.elementFromPoint(coordinates.x, coordinates.y) as HTMLElement;
           console.log(`🎯 Element at coordinates:`, element?.tagName, element?.className);
 
           if (element) {
             const rect = element.getBoundingClientRect();
-            console.log(`📦 Element bounds: left=${Math.round(rect.left)}, top=${Math.round(rect.top)}, width=${Math.round(rect.width)}, height=${Math.round(rect.height)}`);
+            console.log(`📦 Element bounds:`, {
+              left: rect.left,
+              top: rect.top,
+              right: rect.right,
+              bottom: rect.bottom,
+              width: rect.width,
+              height: rect.height
+            });
+            console.log(`📍 Click offset from element center:`, {
+              dx: coordinates.x - (rect.left + rect.width / 2),
+              dy: coordinates.y - (rect.top + rect.height / 2)
+            });
           }
 
           // If element is an input or near an input, try to find the actual input field
