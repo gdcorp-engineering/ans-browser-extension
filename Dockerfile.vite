@@ -1,0 +1,64 @@
+# Multi-stage build for serving the browser extension installer
+FROM node:20-alpine AS builder
+
+# Set working directory
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install dependencies
+RUN npm ci
+
+# Copy source files
+COPY . .
+
+# Build the extension (creates artifacts/Dev)
+ARG BUILD_ENV=dev
+ENV BUILD_ENV=${BUILD_ENV}
+RUN BUILD_ENV=${BUILD_ENV} npm run build
+
+# Install zip utility for creating ZIP file
+RUN apk add --no-cache zip
+
+# Create deployment structure
+RUN mkdir -p /app/deploy/downloads && \
+    cp artifacts/Dev/INSTALL_INSTRUCTIONS.html deploy/index.html && \
+    cd artifacts/Dev && \
+    zip -r /app/deploy/downloads/ans-extension-dev-latest.zip . -x "*.DS_Store" "*.git*" && \
+    cd /app
+
+# Production stage - serve static files with nginx
+FROM nginx:alpine
+
+# Copy the deploy directory to nginx html directory
+COPY --from=builder /app/deploy /usr/share/nginx/html
+
+# Copy nginx configuration if needed (optional)
+# You can customize this to handle the downloads folder properly
+RUN echo 'server { \
+    listen 8443; \
+    server_name _; \
+    root /usr/share/nginx/html; \
+    index index.html; \
+    \
+    location / { \
+        try_files $uri $uri/ /index.html; \
+    } \
+    \
+    location /downloads/ { \
+        alias /usr/share/nginx/html/downloads/; \
+    } \
+    \
+    # Security headers \
+    add_header X-Frame-Options "SAMEORIGIN" always; \
+    add_header X-Content-Type-Options "nosniff" always; \
+    add_header X-XSS-Protection "1; mode=block" always; \
+}' > /etc/nginx/conf.d/default.conf
+
+# Expose port 8443 (as specified in workflow)
+EXPOSE 8443
+
+# Start nginx
+CMD ["nginx", "-g", "daemon off;"]
+
