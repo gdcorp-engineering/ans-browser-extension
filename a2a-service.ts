@@ -72,9 +72,9 @@ export class A2AService {
       throw new Error(`A2A server with ID "${serverId}" is not connected`);
     }
 
-    console.log(`🔧 Executing A2A task on server "${connection.serverName}"`);
-    console.log(`📤 Task: ${task}`);
-    console.log(`📍 URL: ${connection.url}`);
+    console.log('🔧 Executing A2A task on server:', connection.serverName);
+    console.log('📤 Task:', task);
+    console.log('📍 URL:', connection.url);
 
     try {
       const response = await fetch(connection.url, {
@@ -202,11 +202,11 @@ export class A2AService {
       throw new Error(`A2A server with ID "${serverId}" is not connected`);
     }
 
-    console.log(`💬 Sending message to A2A agent "${connection.serverName}"`);
-    console.log(`📤 Message: ${messageText}`);
-    console.log(`📍 Endpoint: ${connection.url}`);
-    console.log(`📍 Endpoint type: ${typeof connection.url}`);
-    console.log(`📍 Endpoint length: ${connection.url?.length}`);
+    console.log('💬 Sending message to A2A agent:', connection.serverName);
+    console.log('📤 Message:', messageText);
+    console.log('📍 Endpoint:', connection.url);
+    console.log('📍 Endpoint type:', typeof connection.url);
+    console.log('📍 Endpoint length:', connection.url?.length);
     console.log(`📍 Connection object:`, JSON.stringify(connection, null, 2));
 
     try {
