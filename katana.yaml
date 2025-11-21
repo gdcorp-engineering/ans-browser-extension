@@ -1,0 +1,7 @@
+# Katana application configuration
+# This file is used by the katana-get-app GitHub Action to identify the app
+# Replace these values with your actual Katana app details
+
+namespace: ansmarketp
+app: ans-browser-extension
+
