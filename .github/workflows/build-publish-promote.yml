@@ -56,19 +56,7 @@ jobs:
           echo "=== Cleanup complete ==="
           docker system df
 
-      # Build extension and create zip
-      - name: Build Extension and Create ZIP
-        run: |
-          npm ci
-          BUILD_ENV=dev npm run build
-          BUILD_ENV=dev npm run package:zip
-          mkdir -p deploy/downloads
-          cp packages/ans-extension-dev-latest.zip deploy/downloads/
-          cp installer.html deploy/index.html
-          ls -la deploy/
-          ls -la deploy/downloads/
-
-      # Build simple Docker image - just serves index.html and zip
+      # Build Docker image that builds extension and serves it
       - name: Build Container
         run: |
           IMAGE_TAG="${{ steps.katana-app.outputs.app }}:${{ github.sha }}"
