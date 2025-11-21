@@ -85,7 +85,13 @@ jobs:
           artifact_kind: ecs
           artifact_options_json: |
             {
-              "ports": [8443],
+              "ports": [
+                {
+                  "containerPort": 8443,
+                  "hostPort": 8443,
+                  "protocol": "tcp"
+                }
+              ],
               "healthcheckPath": "/health",
               "healthcheckGracePeriod": 120,
               "protocol": "https",
