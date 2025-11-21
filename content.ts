@@ -297,11 +297,69 @@ function extractPageContext(): PageContext {
   };
 }
 
+// Helper function to dispatch complete, realistic click event sequence
+function dispatchClickSequence(element: HTMLElement, x: number, y: number): void {
+  console.log('🖱️  Dispatching complete click sequence...');
+
+  const eventOptions = {
+    bubbles: true,
+    cancelable: true,
+    view: window,
+    clientX: x,
+    clientY: y,
+    screenX: x,
+    screenY: y,
+    button: 0,
+    buttons: 1,
+    detail: 1,
+    composed: true
+  };
+
+  const pointerOptions = {
+    ...eventOptions,
+    pointerId: 1,
+    width: 1,
+    height: 1,
+    pressure: 0.5,
+    tangentialPressure: 0,
+    tiltX: 0,
+    tiltY: 0,
+    twist: 0,
+    pointerType: 'mouse',
+    isPrimary: true
+  };
+
+  try {
+    // Complete event sequence
+    element.dispatchEvent(new PointerEvent('pointerenter', { ...pointerOptions, buttons: 0 }));
+    element.dispatchEvent(new PointerEvent('pointerover', { ...pointerOptions, buttons: 0 }));
+    element.dispatchEvent(new MouseEvent('mouseenter', { ...eventOptions, buttons: 0 }));
+    element.dispatchEvent(new MouseEvent('mouseover', { ...eventOptions, buttons: 0 }));
+    element.dispatchEvent(new PointerEvent('pointerdown', pointerOptions));
+    element.dispatchEvent(new MouseEvent('mousedown', eventOptions));
+
+    if (typeof element.focus === 'function') element.focus();
+
+    element.dispatchEvent(new PointerEvent('pointerup', { ...pointerOptions, buttons: 0 }));
+    element.dispatchEvent(new MouseEvent('mouseup', { ...eventOptions, buttons: 0 }));
+    element.dispatchEvent(new PointerEvent('click', { ...pointerOptions, buttons: 0 }));
+    element.dispatchEvent(new MouseEvent('click', { ...eventOptions, buttons: 0 }));
+
+    // Native click as fallback
+    element.click();
+
+    console.log('✅ Complete click sequence dispatched');
+  } catch (error) {
+    console.error('❌ Error dispatching events:', error);
+    element.click();
+  }
+}
+
 // Execute actions on the page
 function executePageAction(
-  action: string, 
-  target?: string, 
-  value?: string, 
+  action: string,
+  target?: string,
+  value?: string,
   selector?: string,
   coordinates?: { x: number; y: number },
   direction?: string,
@@ -373,16 +431,8 @@ function executePageAction(
           const clickX = rect.left + rect.width / 2;
           const clickY = rect.top + rect.height / 2;
 
-          ['mousedown', 'mouseup', 'click'].forEach(eventType => {
-            const event = new MouseEvent(eventType, {
-              bubbles: true,
-              cancelable: true,
-              view: window,
-              clientX: clickX,
-              clientY: clickY
-            });
-            element!.dispatchEvent(event);
-          });
+          // Use complete click sequence for better compatibility
+          dispatchClickSequence(element, clickX, clickY);
 
           // Visual feedback
           highlightElement(element, coordinates || { x: clickX, y: clickY });
@@ -566,24 +616,8 @@ function executePageAction(
             // Get element position for logging
             const rect = element.getBoundingClientRect();
 
-            // Dispatch full mouse event sequence
-            ['mousedown', 'mouseup', 'click'].forEach(eventType => {
-              const event = new MouseEvent(eventType, {
-                bubbles: true,
-                cancelable: true,
-                view: window,
-                clientX: coordinates.x,
-                clientY: coordinates.y
-              });
-              element.dispatchEvent(event);
-            });
-
-            // If it's an input field, explicitly focus it
-            if (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA' ||
-                element.getAttribute('contenteditable') === 'true') {
-              console.log(`💡 Focusing input field: ${element.tagName}`);
-              element.focus();
-            }
+            // Use complete click sequence for better compatibility
+            dispatchClickSequence(element, coordinates.x, coordinates.y);
 
             // Visual feedback
             highlightElement(element, coordinates);
