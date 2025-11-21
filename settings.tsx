@@ -10,6 +10,7 @@ import {
   sortBusinesses,
   type ANSBusinessService,
 } from './trusted-business-service';
+import { useToast, ToastContainer } from './Toast';
 
 const PROVIDER_MODELS = {
   anthropic: [
@@ -50,6 +51,7 @@ function SettingsPage() {
   const [updateAvailable, setUpdateAvailable] = useState<{ version: string; downloadUrl: string; releaseNotes?: string } | null>(null);
   const [updateError, setUpdateError] = useState<string | null>(null);
   const [updateMessage, setUpdateMessage] = useState<string | null>(null);
+  const toast = useToast();
 
   const CURRENT_VERSION = '1.5.4'; // This should match manifest.json version
   const GITHUB_REPO = 'gdcorp-engineering/ans-browser-extension';
@@ -175,11 +177,13 @@ function SettingsPage() {
 
         if (businesses.length === 0) {
           setFetchError('API returned 0 agents - check console for details');
+          toast.info('No agents found in marketplace');
         }
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error);
         addLog(`❌ Error: ${errorMsg}`);
         setFetchError(errorMsg);
+        toast.error(`Failed to load marketplace: ${errorMsg}`);
         console.error('Failed to load trusted businesses:', error);
       } finally {
         setMarketplaceLoading(false);
@@ -286,7 +290,7 @@ function SettingsPage() {
     );
 
     if (isAlreadyConnected) {
-      console.log('Business already connected');
+      toast.info(`${business.name} is already connected`);
       return;
     }
 
@@ -328,11 +332,14 @@ function SettingsPage() {
       });
     });
 
-    console.log(`✅ Connected to ${business.name}`);
+    toast.success(`Connected to ${business.name}`);
   };
 
   // Disconnect from a business
   const handleDisconnectBusiness = (id: string) => {
+    const server = (settings.mcpServers || []).find(s => s.id === id);
+    const serverName = server?.name || 'service';
+
     const newSettings = {
       ...settings,
       mcpServers: (settings.mcpServers || []).filter(s => s.id !== id),
@@ -349,7 +356,7 @@ function SettingsPage() {
       });
     });
 
-    console.log(`✅ Disconnected from service`);
+    toast.success(`Disconnected from ${serverName}`);
   };
 
   // Check if business is connected
@@ -361,6 +368,7 @@ function SettingsPage() {
     chrome.storage.local.set({ atlasSettings: settings }, () => {
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
+      toast.success('Settings saved successfully');
 
       // Send message to sidebar to refresh
       chrome.runtime.sendMessage({ type: 'SETTINGS_UPDATED' }, () => {
@@ -1102,6 +1110,8 @@ function SettingsPage() {
           <p>Your API keys are stored locally in your browser and only sent to the respective AI providers. Never shared with third parties.</p>
         </div>
       </div>
+
+      <ToastContainer toasts={toast.toasts} onDismiss={toast.dismissToast} />
     </div>
   );
 }
