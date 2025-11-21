@@ -51,46 +51,47 @@ COPY --from=builder /app/deploy /usr/share/nginx/html
 
 # Remove default nginx config and create our custom one
 # Note: ECS/ALB handles HTTPS termination, so nginx listens on HTTP
-RUN rm -f /etc/nginx/conf.d/default.conf && \
-    echo 'server { \
-    listen 8443; \
-    server_name _; \
-    root /usr/share/nginx/html; \
-    index index.html; \
-    \
-    # Health check endpoint - must return 200 for ALB health checks \
-    location /health { \
-        access_log off; \
-        default_type text/plain; \
-        return 200 "healthy\n"; \
-    } \
-    \
-    # Root location \
-    location / { \
-        try_files $uri $uri/ /index.html; \
-    } \
-    \
-    # Downloads location \
-    location /downloads/ { \
-        alias /usr/share/nginx/html/downloads/; \
-    } \
-    \
-    # Security headers \
-    add_header X-Frame-Options "SAMEORIGIN" always; \
-    add_header X-Content-Type-Options "nosniff" always; \
-    add_header X-XSS-Protection "1; mode=block" always; \
-    \
-    # Logging for debugging \
-    access_log /var/log/nginx/access.log; \
-    error_log /var/log/nginx/error.log warn; \
-}' > /etc/nginx/conf.d/default.conf && \
-    # Verify files exist \
-    echo "=== Verifying deployment files ===" && \
-    ls -la /usr/share/nginx/html/ && \
-    test -f /usr/share/nginx/html/index.html && echo "✓ index.html exists" || echo "✗ index.html missing" && \
-    ls -la /usr/share/nginx/html/downloads/ 2>/dev/null && echo "✓ downloads directory exists" || echo "✗ downloads directory missing" && \
-    # Test nginx configuration \
-    nginx -t && \
+RUN rm -f /etc/nginx/conf.d/default.conf /etc/nginx/conf.d/default.conf.bak 2>/dev/null || true
+
+# Create nginx configuration file
+RUN cat > /etc/nginx/conf.d/default.conf << 'EOF'
+server {
+    listen 8443;
+    server_name _;
+    root /usr/share/nginx/html;
+    index index.html;
+    
+    # Health check endpoint - must return 200 for ALB health checks
+    location /health {
+        access_log off;
+        default_type text/plain;
+        return 200 "healthy\n";
+        add_header Content-Type text/plain;
+    }
+    
+    # Root location
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+    
+    # Downloads location
+    location /downloads/ {
+        alias /usr/share/nginx/html/downloads/;
+    }
+    
+    # Security headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    
+    # Logging for debugging
+    access_log /var/log/nginx/access.log;
+    error_log /var/log/nginx/error.log warn;
+}
+EOF
+
+# Verify nginx configuration and files
+RUN nginx -t && \
     echo "=== Nginx configuration is valid ==="
 
 # Expose port 8443 (as specified in workflow)
