@@ -67,10 +67,10 @@ server {
     # Health check endpoint - must return 200 for ALB health checks
     # ALB health checks are simple - just need 200 OK response
     # Using exact match (=) for fastest response, minimal processing
+    # No headers, no logging, just return 200
     location = /health {
         access_log off;
         return 200 "OK";
-        add_header Content-Type text/plain;
     }
     
     # Root location
@@ -113,14 +113,7 @@ RUN echo '#!/bin/sh' > /docker-entrypoint.sh && \
     echo 'test -d /usr/share/nginx/html/downloads && echo "✓ downloads directory exists" || (echo "✗ downloads directory missing" && exit 1)' >> /docker-entrypoint.sh && \
     echo 'echo "Testing nginx config..."' >> /docker-entrypoint.sh && \
     echo 'nginx -t || (echo "✗ Nginx config test failed" && exit 1)' >> /docker-entrypoint.sh && \
-    echo 'echo "Starting nginx in background to verify it works..."' >> /docker-entrypoint.sh && \
-    echo 'nginx -g "daemon on;"' >> /docker-entrypoint.sh && \
-    echo 'sleep 1' >> /docker-entrypoint.sh && \
-    echo 'echo "Verifying nginx is responding..."' >> /docker-entrypoint.sh && \
-    echo 'wget -q -O- http://localhost:8443/health > /dev/null || (echo "✗ Health check failed during startup" && exit 1)' >> /docker-entrypoint.sh && \
-    echo 'echo "✓ Nginx is ready and responding"' >> /docker-entrypoint.sh && \
-    echo 'echo "Switching to foreground mode..."' >> /docker-entrypoint.sh && \
-    echo 'nginx -s stop' >> /docker-entrypoint.sh && \
+    echo 'echo "Starting nginx..."' >> /docker-entrypoint.sh && \
     echo 'exec nginx -g "daemon off;"' >> /docker-entrypoint.sh && \
     chmod +x /docker-entrypoint.sh
 
