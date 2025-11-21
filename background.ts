@@ -210,38 +210,102 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
   // Helper function to ensure content script is injected
   async function ensureContentScript(tabId: number): Promise<void> {
     try {
-      // Try to ping the content script
-      await chrome.tabs.sendMessage(tabId, { type: 'PING' });
-    } catch (error) {
+      // Check if tab URL is accessible first
+      const tab = await chrome.tabs.get(tabId);
+      if (tab.url && (tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://') || tab.url.startsWith('edge://') || tab.url.startsWith('about:'))) {
+        throw new Error(`Cannot access a ${tab.url.split(':')[0]}:// URL`);
+      }
+      
+      // Try to ping the content script (with timeout)
       try {
+        await Promise.race([
+          chrome.tabs.sendMessage(tabId, { type: 'PING' }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Ping timeout')), 1000))
+        ]);
+        // Content script is already loaded
+        return;
+      } catch (pingError) {
+        // Content script not loaded, inject it
+        console.log(`📦 Injecting content script into tab ${tabId}`);
         await chrome.scripting.executeScript({
           target: { tabId },
           files: ['content.js']
         });
-        // Wait a bit for the script to initialize
-        await new Promise(resolve => setTimeout(resolve, 200));
-      } catch (injectError) {
-        throw injectError;
+        // Wait for script to initialize and be ready
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // Verify it's ready by pinging again
+        let retries = 3;
+        while (retries > 0) {
+          try {
+            await chrome.tabs.sendMessage(tabId, { type: 'PING' });
+            console.log(`✅ Content script ready in tab ${tabId}`);
+            return;
+          } catch (e) {
+            retries--;
+            if (retries > 0) {
+              await new Promise(resolve => setTimeout(resolve, 200));
+            } else {
+              throw new Error('Content script failed to initialize');
+            }
+          }
+        }
       }
+    } catch (error: any) {
+      console.error(`❌ Error ensuring content script for tab ${tabId}:`, error.message);
+      throw error;
     }
   }
 
   if (request.type === 'GET_PAGE_CONTEXT') {
+    // Use async handler pattern that properly handles sendResponse
     (async () => {
       try {
-        const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+        // Try to get active tab in current window first
+        let tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+        
+        // If no active tab in current window, try to get any tab in current window
+        if (!tabs[0]?.id) {
+          tabs = await chrome.tabs.query({ currentWindow: true });
+        }
+        
+        // If still no tab, try to get the most recently active tab across all windows
+        if (!tabs[0]?.id) {
+          tabs = await chrome.tabs.query({ active: true });
+        }
+        
         if (tabs[0]?.id) {
-          await ensureContentScript(tabs[0].id);
-          const response = await chrome.tabs.sendMessage(tabs[0].id, { type: 'GET_PAGE_CONTEXT' });
-          sendResponse(response); // Return response directly, not wrapped
+          try {
+            await ensureContentScript(tabs[0].id);
+            
+            // Send message to content script with timeout
+            const response = await Promise.race([
+              chrome.tabs.sendMessage(tabs[0].id, { type: 'GET_PAGE_CONTEXT' }),
+              new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('Content script response timeout')), 5000)
+              )
+            ]) as any;
+            
+            if (response && !response.error && response.success !== false) {
+              sendResponse(response);
+            } else {
+              sendResponse({ success: false, error: response?.error || 'Invalid response from content script' });
+            }
+          } catch (contentError: any) {
+            const errorMsg = contentError?.message || 'Unknown error';
+            console.error('❌ Error getting page context:', errorMsg);
+            sendResponse({ success: false, error: errorMsg });
+          }
         } else {
           sendResponse({ success: false, error: 'No active tab found' });
         }
-      } catch (error) {
-        sendResponse({ success: false, error: (error as Error).message });
+      } catch (error: any) {
+        const errorMsg = (error as Error)?.message || 'Unknown error';
+        console.error('❌ Error in GET_PAGE_CONTEXT:', errorMsg);
+        sendResponse({ success: false, error: errorMsg });
       }
     })();
-    return true;
+    return true; // Keep channel open for async response
   }
 
   // Abort all browser operations

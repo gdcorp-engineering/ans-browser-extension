@@ -331,7 +331,25 @@ function ChatSidebar() {
           amount: parameters.amount
         }, handleResponse);
       } else if (toolName === 'getPageContext') {
-        chrome.runtime.sendMessage({ type: 'GET_PAGE_CONTEXT' }, handleResponse);
+        chrome.runtime.sendMessage({ type: 'GET_PAGE_CONTEXT' }, (response) => {
+          // Handle Chrome extension API errors
+          if (chrome.runtime.lastError) {
+            console.error('❌ getPageContext error:', chrome.runtime.lastError.message);
+            handleResponse({ error: chrome.runtime.lastError.message, success: false });
+            return;
+          }
+          
+          // Check if response is valid
+          if (!response) {
+            // No response received - might be timing issue
+            console.warn('⚠️ getPageContext: No response received');
+            handleResponse({ error: 'No response from background script', success: false });
+            return;
+          }
+          
+          // Response received - process it
+          handleResponse(response);
+        });
       } else if (toolName === 'navigate') {
         chrome.runtime.sendMessage({ type: 'NAVIGATE', url: parameters.url }, handleResponse);
       } else if (toolName === 'getBrowserHistory') {
@@ -765,12 +783,114 @@ function ChatSidebar() {
   // Generate sample prompts based on comprehensive page analysis
   const generateSamplePrompts = async () => {
     try {
+      console.log('🎯 Generating sample prompts...');
+      
+      // Get current tab info first to check URL
+      let currentTab: chrome.tabs.Tab | null = null;
+      try {
+        const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+        currentTab = tabs[0] || null;
+        
+        // Check if we're on a restricted URL
+        if (currentTab?.url && (
+          currentTab.url.startsWith('chrome://') || 
+          currentTab.url.startsWith('chrome-extension://') || 
+          currentTab.url.startsWith('edge://') ||
+          currentTab.url.startsWith('about:')
+        )) {
+          console.warn('⚠️ Restricted URL, showing generic prompts');
+          setSamplePrompts([
+            'What is the purpose of this page?',
+            'Summarize the main content',
+            'Help me understand this page better'
+          ]);
+          return;
+        }
+      } catch (e) {
+        console.warn('⚠️ Could not get current tab:', e);
+        // Continue anyway - might still work
+      }
+      
+      // Wait a bit for page to be ready
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
       const context: any = await executeTool('getPageContext', {});
+      
+      console.log('📄 Raw context received:', context);
+      
       if (!context) {
-        setSamplePrompts([]);
+        console.warn('⚠️ No page context returned');
+        setSamplePrompts([
+          'What is the purpose of this page?',
+          'Summarize the main content',
+          'Help me understand this page better'
+        ]);
         return;
       }
 
+      // Check if context has error - must check this FIRST before using context properties
+      // A valid context from content script will have url, title, textContent properties
+      // An error response will have error or success: false
+      if (context.error || context.success === false) {
+        const errorMsg = context.error || 'Unknown error';
+        console.warn('⚠️ Page context error:', errorMsg);
+        
+        // If it's a chrome:// URL error, that's expected - show generic prompts
+        if (errorMsg.includes('chrome://') || errorMsg.includes('Cannot access')) {
+          setSamplePrompts([
+            'What is the purpose of this page?',
+            'Summarize the main content',
+            'Help me understand this page better'
+          ]);
+          return;
+        }
+        
+        // For other errors, retry once after a delay
+        console.log('🔄 Retrying page context after delay...');
+        setTimeout(async () => {
+          try {
+            const retryContext: any = await executeTool('getPageContext', {});
+            console.log('📄 Retry context received:', retryContext);
+            if (retryContext && !retryContext.error && retryContext.success !== false && retryContext.url !== undefined) {
+              // Success on retry - regenerate prompts with the context
+              await generateSamplePromptsWithContext(retryContext);
+            } else {
+              // Still failed - show generic prompts
+              setSamplePrompts([
+                'What is the purpose of this page?',
+                'Summarize the main content',
+                'Help me understand this page better'
+              ]);
+            }
+          } catch (retryError) {
+            console.error('❌ Retry failed:', retryError);
+            setSamplePrompts([
+              'What is the purpose of this page?',
+              'Summarize the main content',
+              'Help me understand this page better'
+            ]);
+          }
+        }, 2000);
+        return;
+      }
+      
+      // Success - generate prompts with context
+      // If we got here, context should be valid (no error, no success: false)
+      // Even if url is empty or undefined, try to use the context
+      await generateSamplePromptsWithContext(context);
+    } catch (error) {
+      console.error('❌ Error generating sample prompts:', error);
+      setSamplePrompts([
+        'What is the purpose of this page?',
+        'Summarize the main content',
+        'Help me understand this page better'
+      ]);
+    }
+  };
+  
+  // Helper function to generate prompts once we have context
+  const generateSamplePromptsWithContext = async (context: any) => {
+    try {
       const prompts: string[] = [];
       const textContent = context.textContent || '';
       const mainTopics = extractMainTopics(textContent);
@@ -782,6 +902,8 @@ function ChatSidebar() {
       // Debug logging for page analysis
       console.log('🔍 Page analysis:', {
         pageType,
+        url: context.url,
+        title: context.title,
         hasArticleTag: characteristics.hasArticleTag,
         hasMainTag: characteristics.hasMainTag,
         hasStructuredContent: characteristics.hasStructuredContent,
@@ -791,6 +913,12 @@ function ChatSidebar() {
         urlHasProduct: characteristics.urlHasProduct,
         hasPriceKeywords: characteristics.hasPriceKeywords,
         contentLength: characteristics.contentLength,
+        hasLongContent: characteristics.hasLongContent,
+        hasManyLinks: characteristics.hasManyLinks,
+        hasManyImages: characteristics.hasManyImages,
+        hasSearchBox: characteristics.hasSearchBox,
+        mainTopicsCount: mainTopics.length,
+        mainTopics: mainTopics.slice(0, 3),
       });
 
       // Generate prompts based on page type and characteristics
@@ -853,12 +981,20 @@ function ChatSidebar() {
 
         default: // generic
           // Generate prompts based on content characteristics
-          if (characteristics.hasLongContent) {
-            prompts.push(`Summarize the main content of this page`);
-            if (mainTopics.length > 0) {
-              prompts.push(`Tell me more about ${mainTopics[0]}`);
+          // Prioritize main topics even for generic pages
+          if (mainTopics.length > 0) {
+            const topic = mainTopics[0]; // Already formatted with original capitalization
+            prompts.push(`Tell me more about ${topic}`);
+            prompts.push(`What information is available about ${topic}?`);
+            if (mainTopics.length > 1) {
+              prompts.push(`What can you tell me about ${mainTopics[1]}?`);
+            } else {
+              prompts.push(`Help me understand ${topic} on this page`);
             }
+          } else if (characteristics.hasLongContent) {
+            prompts.push(`Summarize the main content of this page`);
             prompts.push(`What are the key points or takeaways?`);
+            prompts.push(`What is the main purpose of this page?`);
           } else if (characteristics.hasManyLinks) {
             prompts.push(`What links or resources are available on this page?`);
             prompts.push(`Help me navigate to relevant sections`);
@@ -871,11 +1007,12 @@ function ChatSidebar() {
             prompts.push(`What images or media are on this page?`);
             prompts.push(`Describe the visual content`);
             prompts.push(`What is the purpose of this page?`);
-          } else if (mainTopics.length > 0) {
-            const topic = mainTopics[0]; // Already formatted with original capitalization
-            prompts.push(`Tell me more about ${topic}`);
-            prompts.push(`What information is available about ${topic}?`);
-            prompts.push(`Help me understand ${topic} on this page`);
+          } else if (context.title && context.title.length > 10) {
+            // Use page title if available
+            const pageTitle = context.title.length > 50 ? context.title.substring(0, 50) + '...' : context.title;
+            prompts.push(`Tell me more about "${pageTitle}"`);
+            prompts.push(`What is this page about?`);
+            prompts.push(`Help me understand this page better`);
           } else {
             // Generic fallback prompts
             prompts.push(`What is the purpose of this page?`);
@@ -890,10 +1027,16 @@ function ChatSidebar() {
         prompts.push(`Help me understand this page better`);
       }
 
-      setSamplePrompts(prompts.slice(0, 3));
+      const finalPrompts = prompts.slice(0, 3);
+      console.log('✅ Generated sample prompts:', finalPrompts);
+      setSamplePrompts(finalPrompts);
     } catch (error) {
-      console.log('Could not generate sample prompts:', error);
-      setSamplePrompts([]);
+      console.error('❌ Error in generateSamplePromptsWithContext:', error);
+      setSamplePrompts([
+        'What is the purpose of this page?',
+        'Summarize the main content',
+        'Help me understand this page better'
+      ]);
     }
   };
 
@@ -904,6 +1047,7 @@ function ChatSidebar() {
       if (tab.id) {
         console.log('📍 Current tab ID:', tab.id);
         setCurrentTabId(tab.id);
+        currentTabIdRef.current = tab.id; // Sync ref immediately
 
         // Load messages for this tab
         if (tabMessagesRef.current[tab.id]) {
@@ -915,8 +1059,10 @@ function ChatSidebar() {
         // Check for trusted agent on this site
         checkForTrustedAgent();
         
-        // Generate sample prompts for current tab
-        generateSamplePrompts();
+        // Generate sample prompts for current tab (with delay to ensure page is ready)
+        setTimeout(() => {
+          generateSamplePrompts();
+        }, 500);
       }
     };
 
@@ -934,6 +1080,7 @@ function ChatSidebar() {
 
       // Load new tab's messages
       setCurrentTabId(activeInfo.tabId);
+      currentTabIdRef.current = activeInfo.tabId; // Sync ref immediately
       if (tabMessagesRef.current[activeInfo.tabId]) {
         setMessages(tabMessagesRef.current[activeInfo.tabId]);
       } else {
@@ -943,8 +1090,10 @@ function ChatSidebar() {
       // Check for trusted agent on new tab
       checkForTrustedAgent();
       
-      // Generate sample prompts for new tab
-      generateSamplePrompts();
+      // Generate sample prompts for new tab (with delay to ensure page is ready)
+      setTimeout(() => {
+        generateSamplePrompts();
+      }, 500);
     };
 
     chrome.tabs.onActivated.addListener(handleTabChange);
@@ -965,13 +1114,13 @@ function ChatSidebar() {
         // status === 'complete' means the page has finished loading
         if (changeInfo.status === 'complete' && tab.url) {
           console.log('📍 Page finished loading:', tab.url);
-          // Small delay to ensure DOM is fully ready
+          // Delay to ensure DOM is fully ready and content script is loaded
           setTimeout(() => {
             // Regenerate prompts when page loads/refreshes (UI will show/hide based on messages)
             if (tabId === currentTabIdRef.current) {
               generateSamplePrompts();
             }
-          }, 500);
+          }, 800);
         }
       }
     };
@@ -985,7 +1134,7 @@ function ChatSidebar() {
         console.log('📍 Sidepanel became visible, regenerating prompts');
         setTimeout(() => {
           generateSamplePrompts();
-        }, 300);
+        }, 600);
         // Notify background script and content script that sidebar opened
         chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
           if (tabs[0]?.id) {

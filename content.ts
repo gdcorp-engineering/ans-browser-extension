@@ -275,6 +275,7 @@ function extractPageContext(): PageContext {
 
   const mainContentText = mainContent?.textContent?.slice(0, 5000) || '';
   const mainContentLength = mainContentText.length;
+  const totalTextLength = document.body.innerText.length;
 
   // Analyze content structure
   const hasArticleStructure = !!document.querySelector('article, [role="article"]');
