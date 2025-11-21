@@ -11,6 +11,7 @@ import { getMCPService, resetMCPService } from './mcp-service';
 import { getA2AService, resetA2AService } from './a2a-service';
 import { getToolDescription, mergeToolDefinitions } from './mcp-tool-router';
 import { findAgentForCurrentSite, agentNameToDomain } from './site-detector';
+import { useToast, ToastContainer } from './Toast';
 
 // Model ID to display name mapping
 const MODEL_DISPLAY_NAMES: Record<string, string> = {
@@ -209,6 +210,7 @@ function ChatSidebar() {
   const currentTabIdRef = useRef<number | null>(null);
   const messagesRef = useRef<Message[]>([]);
   const lastTypedSelectorRef = useRef<string | null>(null); // Store last typed selector for Enter key
+  const toast = useToast();
 
   const executeTool = async (toolName: string, parameters: any, retryCount = 0): Promise<any> => {
     const MAX_RETRIES = 3;
@@ -344,6 +346,7 @@ function ChatSidebar() {
             });
           } catch (error) {
             console.error('Failed to initialize Composio:', error);
+            toast.error('Failed to initialize Composio tool router');
           }
         }
 
@@ -359,6 +362,7 @@ function ChatSidebar() {
             setTimeout(() => checkForTrustedAgent(), 500);
           } catch (error) {
             console.error('❌ Failed to initialize A2A service:', error);
+            toast.error('Failed to initialize A2A service');
           }
         }
       } else {
@@ -683,6 +687,7 @@ function ChatSidebar() {
         console.log('Session ID:', toolRouterSession.sessionId);
       } catch (error) {
         console.error('Failed to create new Composio session:', error);
+        toast.error('Failed to create new Composio session');
       }
     }
   };
@@ -2376,6 +2381,8 @@ GUIDELINES:
           </button>
         )}
       </form>
+
+      <ToastContainer toasts={toast.toasts} onDismiss={toast.dismissToast} />
     </div>
   );
 }
