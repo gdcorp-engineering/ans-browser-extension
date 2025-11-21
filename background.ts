@@ -168,14 +168,60 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
   if (request.type === 'CLOSE_SIDEBAR') {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       if (tabs[0] && tabs[0].id) {
+        const tabId = tabs[0].id;
         // Track sidebar as closed for this tab
-        sidebarState.set(tabs[0].id, false);
-        // Note: Chrome's Side Panel API doesn't provide a reliable way to programmatically close the sidebar
-        // The best we can do is notify the content script that the user wants to close it
-        // The user will need to use Chrome's native close button
-        chrome.tabs.sendMessage(tabs[0].id!, { type: 'SIDEBAR_CLOSED' }).catch(() => {
+        sidebarState.set(tabId, false);
+        
+        // Attempt to programmatically close the side panel using Chrome's Side Panel API
+        // Try multiple methods in sequence for best compatibility
+        
+        // Method 1: Try disabling the side panel (Chrome 116+)
+        // This should cause the panel to close
+        chrome.sidePanel.setOptions({
+          tabId: tabId,
+          enabled: false
+        }).then(() => {
+          // Re-enable after a short delay to allow panel to close
+          // This ensures the panel can be opened again later
+          setTimeout(() => {
+            chrome.sidePanel.setOptions({
+              tabId: tabId,
+              enabled: true
+            }).catch(() => {
+              // Ignore errors on re-enable - panel may have closed successfully
+              // or the tab may have been closed
+            });
+          }, 150);
+        }).catch((error) => {
+          // If disabling doesn't work, try alternative method
+          console.log('Method 1 (enabled: false) failed, trying alternative:', error);
+          
+          // Method 2: Try setting empty path (may work in some Chrome versions)
+          chrome.sidePanel.setOptions({
+            tabId: tabId,
+            path: ''
+          }).then(() => {
+            // Restore path after delay
+            setTimeout(() => {
+              chrome.sidePanel.setOptions({
+                tabId: tabId,
+                path: 'sidepanel.html'
+              }).catch(() => {
+                // Ignore errors
+              });
+            }, 150);
+          }).catch(() => {
+            // If both methods fail, we'll rely on content script notification
+            // The user may need to use Chrome's native close button
+            console.log('Both methods failed - user may need to use Chrome\'s native close button');
+          });
+        });
+        
+        // Notify content script that sidebar should be closed
+        chrome.tabs.sendMessage(tabId, { type: 'SIDEBAR_CLOSED' }).catch(() => {
           // Content script might not be ready, ignore error
         });
+        
         sendResponse({ success: true });
       } else {
         sendResponse({ success: true });

@@ -3700,25 +3700,6 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
           >
             <span className="material-symbols-outlined" style={{ fontSize: '20px', lineHeight: '1' }}>edit_note</span>
           </button>
-          <button
-            onClick={() => {
-              // Close sidebar by sending message to background
-              chrome.runtime.sendMessage({ type: 'CLOSE_SIDEBAR' });
-              // Notify content script that sidebar closed
-              chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-                if (tabs[0]?.id) {
-                  chrome.tabs.sendMessage(tabs[0].id, { type: 'SIDEBAR_CLOSED' }).catch(() => {
-                    // Content script might not be ready, ignore error
-                  });
-                }
-              });
-            }}
-            className="settings-icon-btn"
-            title="Close"
-            style={{ fontSize: '18px', lineHeight: '1' }}
-          >
-            ×
-          </button>
         </div>
       </div>
 
