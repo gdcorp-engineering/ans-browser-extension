@@ -78,8 +78,8 @@ jobs:
           artifact_options_json: |
             {
               "ports": [8443],
-              "healthcheckPath": "/",
-              "healthcheckGracePeriod": 30,
+              "healthcheckPath": "/health",
+              "healthcheckGracePeriod": 60,
               "protocol": "https",
               "environment": [
                 {
