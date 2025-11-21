@@ -300,7 +300,60 @@ function extractPageContext(): PageContext {
 // Helper function to dispatch complete, realistic click event sequence
 function dispatchClickSequence(element: HTMLElement, x: number, y: number): void {
   console.log('🖱️  Dispatching complete click sequence...');
+  console.log('🎯 Target element:', {
+    tag: element.tagName,
+    id: element.id,
+    className: element.className,
+    type: (element as any).type,
+    disabled: (element as any).disabled,
+    readOnly: (element as any).readOnly,
+    'pointer-events': window.getComputedStyle(element).pointerEvents,
+    visibility: window.getComputedStyle(element).visibility,
+    display: window.getComputedStyle(element).display,
+    zIndex: window.getComputedStyle(element).zIndex
+  });
 
+  // Check if element is actually clickable at this position
+  const topElement = document.elementFromPoint(x, y);
+  if (topElement !== element) {
+    console.warn('⚠️  Element at coordinates is different from target!');
+    console.warn('   Target:', element.tagName, element.className);
+    console.warn('   Actual top element:', topElement?.tagName, (topElement as HTMLElement)?.className);
+    console.warn('   There might be an overlay or the element is not the topmost at these coordinates');
+  }
+
+  // Check for click event listeners
+  const hasClickListeners = (element as any).onclick ||
+                           element.getAttribute('onclick') ||
+                           element.hasAttribute('ng-click') ||
+                           element.hasAttribute('@click') ||
+                           element.hasAttribute('v-on:click');
+  console.log('🎧 Has click listeners/handlers:', hasClickListeners ? 'Yes' : 'Unknown (may use addEventListener)');
+
+  // Try NATIVE click first (generates trusted events)
+  console.log('1️⃣ Attempting native element.click()...');
+  try {
+    element.click();
+    console.log('✅ Native click executed');
+  } catch (error) {
+    console.error('❌ Native click failed:', error);
+  }
+
+  // If it's a clickable parent, try clicking the actual interactive child
+  const interactiveChild = element.querySelector('button, a, input, [role="button"], [onclick]') as HTMLElement;
+  if (interactiveChild && interactiveChild !== element) {
+    console.log('2️⃣ Found interactive child, clicking it...');
+    console.log('   Child:', interactiveChild.tagName, interactiveChild.className);
+    try {
+      interactiveChild.click();
+      console.log('✅ Child click executed');
+    } catch (error) {
+      console.error('❌ Child click failed:', error);
+    }
+  }
+
+  // Dispatch synthetic events as additional attempt
+  console.log('3️⃣ Dispatching synthetic events...');
   const eventOptions = {
     bubbles: true,
     cancelable: true,
@@ -330,28 +383,28 @@ function dispatchClickSequence(element: HTMLElement, x: number, y: number): void
   };
 
   try {
-    // Complete event sequence
-    element.dispatchEvent(new PointerEvent('pointerenter', { ...pointerOptions, buttons: 0 }));
-    element.dispatchEvent(new PointerEvent('pointerover', { ...pointerOptions, buttons: 0 }));
-    element.dispatchEvent(new MouseEvent('mouseenter', { ...eventOptions, buttons: 0 }));
-    element.dispatchEvent(new MouseEvent('mouseover', { ...eventOptions, buttons: 0 }));
+    // Complete event sequence on the element
     element.dispatchEvent(new PointerEvent('pointerdown', pointerOptions));
     element.dispatchEvent(new MouseEvent('mousedown', eventOptions));
 
-    if (typeof element.focus === 'function') element.focus();
+    // Small delay to simulate real mouse timing
+    setTimeout(() => {
+      element.dispatchEvent(new PointerEvent('pointerup', { ...pointerOptions, buttons: 0 }));
+      element.dispatchEvent(new MouseEvent('mouseup', { ...eventOptions, buttons: 0 }));
+      element.dispatchEvent(new PointerEvent('click', { ...pointerOptions, buttons: 0 }));
+      element.dispatchEvent(new MouseEvent('click', { ...eventOptions, buttons: 0 }));
+      console.log('✅ Synthetic events dispatched with delay');
+    }, 50);
 
-    element.dispatchEvent(new PointerEvent('pointerup', { ...pointerOptions, buttons: 0 }));
-    element.dispatchEvent(new MouseEvent('mouseup', { ...eventOptions, buttons: 0 }));
-    element.dispatchEvent(new PointerEvent('click', { ...pointerOptions, buttons: 0 }));
-    element.dispatchEvent(new MouseEvent('click', { ...eventOptions, buttons: 0 }));
+    // Also try dispatching on the top element if different
+    if (topElement && topElement !== element) {
+      console.log('4️⃣ Also trying to click top element at coordinates...');
+      (topElement as HTMLElement).click();
+    }
 
-    // Native click as fallback
-    element.click();
-
-    console.log('✅ Complete click sequence dispatched');
+    console.log('✅ All click attempts completed');
   } catch (error) {
     console.error('❌ Error dispatching events:', error);
-    element.click();
   }
 }
 
