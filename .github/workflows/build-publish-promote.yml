@@ -9,7 +9,7 @@ on:
         type: boolean
         default: false
       promote_to_katana:
-        description: 'Promote artifact to dev-private-ecs environment'
+        description: 'Promote artifact to dev-private environment'
         required: true
         type: boolean
         default: false
@@ -81,14 +81,14 @@ jobs:
               "protocol": "https"
             }
 
-      # Promote the published artifact to the `dev` environment with the katana-promote-artifact GitHub Action
+      # Promote the published artifact to the `dev-private` environment with the katana-promote-artifact GitHub Action
       # Note: Promotion requires publish to run first, as it depends on the artifact_id
-      - name: Promote to dev-private-ecs Environment
+      - name: Promote to dev-private Environment
         if: ${{ inputs.promote_to_katana && inputs.publish_to_katana && steps.katana-publish.outcome == 'success' }}
         uses: gdcorp-actions/katana-promote-artifact@v1
         with:
           namespace: ${{ steps.katana-app.outputs.namespace }}
           app: ${{ steps.katana-app.outputs.app }}
-          environment: dev-private-ecs
+          environment: dev-private
           artifact_id: ${{ steps.katana-publish.outputs.artifact_id }}
 
