@@ -63,11 +63,13 @@ server {
     
     # Health check endpoint - must return 200 for ALB health checks
     # This is checked by ECS/ALB, so it must respond quickly
+    # Using exact match (=) for fastest response
     location = /health {
         access_log off;
         default_type text/plain;
-        return 200 "healthy";
         add_header Content-Type text/plain always;
+        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+        return 200 "healthy\n";
     }
     
     # Root location

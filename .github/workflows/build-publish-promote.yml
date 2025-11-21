@@ -60,6 +60,7 @@ jobs:
       - name: Build Container
         run: |
           docker build --platform linux/amd64 \
+            --build-arg BUILD_ENV=dev \
             --build-arg CACHE_BUST=${{ github.sha }}_${{ github.run_number }} \
             --build-arg BUILD_DATE=$(date -u +%Y%m%d_%H%M%S) \
             -f Dockerfile.vite \
