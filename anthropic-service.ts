@@ -10,6 +10,14 @@ export async function streamAnthropic(
 ): Promise<void> {
   const baseUrl = customBaseUrl || 'https://api.anthropic.com';
 
+  // System instruction for onboarding - include instructions for Step 3
+  const systemInstruction = `When guiding users through onboarding (Step 3: GoCode Key), always include these instructions:
+
+**How to get your GoCode Key:**
+Get your GoCode Key from [GoCode (Alpha) - How to Get Started](https://secureservernet.sharepoint.com/sites/AIHub/SitePages/Meet-GoCode-(Alpha)--Your-smarter-gateway-to-AI-providers%E2%80%94Now-with-self-issued-keys-for-IDEs-and-CLIs.aspx#how-to-get-started-(alpha))
+
+Include this link and instruction in Step 3 when asking for the GoCode Key.`;
+
   const fetchOptions: RequestInit = {
     method: 'POST',
     headers: {
@@ -20,6 +28,7 @@ export async function streamAnthropic(
     body: JSON.stringify({
       model,
       max_tokens: 4096,
+      system: systemInstruction,
       messages: messages.map(m => ({
         role: m.role,
         content: m.content,

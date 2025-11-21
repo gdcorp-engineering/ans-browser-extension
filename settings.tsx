@@ -402,6 +402,16 @@ function SettingsPage() {
               {showApiKey ? '👁️' : '👁️‍🗨️'}
             </button>
           </div>
+          <p className="help-text">
+            Get your GoCode Key from{' '}
+            <a 
+              href="https://secureservernet.sharepoint.com/sites/AIHub/SitePages/Meet-GoCode-(Alpha)--Your-smarter-gateway-to-AI-providers%E2%80%94Now-with-self-issued-keys-for-IDEs-and-CLIs.aspx#how-to-get-started-(alpha)" 
+              target="_blank" 
+              rel="noopener noreferrer"
+            >
+              GoCode (Alpha) - How to Get Started
+            </a>
+          </p>
         </div>
 
         <div className="setting-group">

@@ -7,6 +7,7 @@ import { GeminiResponseSchema } from './types';
 import { experimental_createMCPClient, stepCountIs } from 'ai';
 import { streamAnthropic } from './anthropic-service';
 import { streamAnthropicWithBrowserTools } from './anthropic-browser-tools';
+import { streamOpenAI } from './openai-service';
 import { getMCPService, resetMCPService } from './mcp-service';
 import { getA2AService, resetA2AService } from './a2a-service';
 import { getToolDescription, mergeToolDefinitions } from './mcp-tool-router';
@@ -54,6 +55,17 @@ const PROVIDER_MODELS = {
     { id: 'gpt-4-turbo', name: 'GPT-4 Turbo', description: 'Previous generation' },
   ],
 };
+
+// Onboarding Step 3 message template with instructions for getting GoCode Key
+// This template should be used when generating the Step 3 onboarding message
+const ONBOARDING_STEP_3_MESSAGE = `Step 3: GoCode Key
+
+Please provide your GoCode Key. This is your API key for the GoCode service.
+
+**How to get your GoCode Key:**
+Get your GoCode Key from [GoCode (Alpha) - How to Get Started](https://secureservernet.sharepoint.com/sites/AIHub/SitePages/Meet-GoCode-(Alpha)--Your-smarter-gateway-to-AI-providers%E2%80%94Now-with-self-issued-keys-for-IDEs-and-CLIs.aspx#how-to-get-started-(alpha))
+
+Paste your GoCode Key here:`;
 
 // Custom component to handle link clicks - opens in new tab
 const LinkComponent = ({ href, children }: { href?: string; children?: React.ReactNode }) => {
@@ -2462,6 +2474,14 @@ GUIDELINES:
       headers['Authorization'] = `Bearer ${apiKey}`;
     }
 
+    // System instruction for onboarding - include instructions for Step 3
+    const systemInstruction = `When guiding users through onboarding (Step 3: GoCode Key), always include these instructions:
+
+**How to get your GoCode Key:**
+Get your GoCode Key from [GoCode (Alpha) - How to Get Started](https://secureservernet.sharepoint.com/sites/AIHub/SitePages/Meet-GoCode-(Alpha)--Your-smarter-gateway-to-AI-providers%E2%80%94Now-with-self-issued-keys-for-IDEs-and-CLIs.aspx#how-to-get-started-(alpha))
+
+Include this link and instruction in Step 3 when asking for the GoCode Key.`;
+
     const response = await fetch(url, {
       method: 'POST',
       headers,
@@ -2470,6 +2490,9 @@ GUIDELINES:
           role: m.role === 'user' ? 'user' : 'model',
           parts: [{ text: m.content || '' }],
         })),
+        systemInstruction: {
+          parts: [{ text: systemInstruction }],
+        },
       }),
       signal,
     });
@@ -3075,6 +3098,35 @@ GUIDELINES:
           }
         } else if (settings.provider === 'google') {
           await streamGoogle(newMessages, abortControllerRef.current.signal);
+        } else if (settings.provider === 'openai') {
+          const assistantMessage: Message = {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: '',
+          };
+          setMessages(prev => [...prev, assistantMessage]);
+
+          const modelToUse = settings.model === 'custom' && settings.customModelName
+            ? settings.customModelName
+            : settings.model;
+
+          await streamOpenAI(
+            newMessages,
+            settings.apiKey,
+            modelToUse,
+            settings.customBaseUrl,
+            (text: string) => {
+              setMessages(prev => {
+                const updated = [...prev];
+                const lastMsg = updated[updated.length - 1];
+                if (lastMsg && lastMsg.role === 'assistant') {
+                  lastMsg.content += text;
+                }
+                return updated;
+              });
+            },
+            abortControllerRef.current.signal
+          );
         } else {
           throw new Error(`Provider ${settings.provider} not yet implemented`);
         }
