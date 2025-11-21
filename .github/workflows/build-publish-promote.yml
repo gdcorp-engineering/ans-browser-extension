@@ -60,8 +60,10 @@ jobs:
       - name: Build Container
         run: |
           ECR_REGISTRY=764525110978.dkr.ecr.us-west-2.amazonaws.com
-          IMAGE_TAG=${{ steps.katana-app.outputs.app }}:${{ github.sha }}
-          ECR_IMAGE=${ECR_REGISTRY}/${IMAGE_TAG}
+          IMAGE_TAG="${{ steps.katana-app.outputs.app }}:${{ github.sha }}"
+          ECR_IMAGE="${ECR_REGISTRY}/${IMAGE_TAG}"
+          
+          echo "Building image: ${ECR_IMAGE}"
           
           docker build --platform linux/amd64 \
             --build-arg BUILD_ENV=dev \
@@ -73,11 +75,13 @@ jobs:
           
           echo "IMAGE_TAG=${IMAGE_TAG}" >> $GITHUB_ENV
           echo "ECR_IMAGE=${ECR_IMAGE}" >> $GITHUB_ENV
+          echo "ECR_REGISTRY=${ECR_REGISTRY}" >> $GITHUB_ENV
 
       # Push Docker image to ECR
       - name: Push Container to ECR
         run: |
-          docker push ${ECR_IMAGE}
+          echo "Pushing image to ECR: ${{ env.ECR_IMAGE }}"
+          docker push ${{ env.ECR_IMAGE }}
 
       # Publish the built container image to Katana with the katana-publish-artifact GitHub Action
       - id: katana-publish
