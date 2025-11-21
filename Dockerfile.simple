@@ -1,6 +1,9 @@
 # Build stage - build extension and create zip
 FROM node:20-alpine AS builder
 
+# Install zip utility
+RUN apk add --no-cache zip
+
 WORKDIR /app
 
 # Copy package files
