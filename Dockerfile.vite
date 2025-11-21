@@ -56,17 +56,18 @@ RUN rm -f /etc/nginx/conf.d/default.conf /etc/nginx/conf.d/default.conf.bak 2>/d
 # Create nginx configuration file
 RUN cat > /etc/nginx/conf.d/default.conf << 'EOF'
 server {
-    listen 8443;
+    listen 0.0.0.0:8443;
     server_name _;
     root /usr/share/nginx/html;
     index index.html;
     
     # Health check endpoint - must return 200 for ALB health checks
-    location /health {
+    # This is checked by ECS/ALB, so it must respond quickly
+    location = /health {
         access_log off;
         default_type text/plain;
-        return 200 "healthy\n";
-        add_header Content-Type text/plain;
+        return 200 "healthy";
+        add_header Content-Type text/plain always;
     }
     
     # Root location
@@ -98,14 +99,17 @@ RUN nginx -t && \
 EXPOSE 8443
 
 # Create a startup script to ensure nginx starts correctly
+# This script ensures nginx is ready before health checks begin
 RUN echo '#!/bin/sh' > /docker-entrypoint.sh && \
-    echo 'echo "Starting nginx..."' >> /docker-entrypoint.sh && \
+    echo 'set -e' >> /docker-entrypoint.sh && \
+    echo 'echo "=== Container startup ==="' >> /docker-entrypoint.sh && \
     echo 'echo "Checking files..."' >> /docker-entrypoint.sh && \
     echo 'ls -la /usr/share/nginx/html/' >> /docker-entrypoint.sh && \
-    echo 'test -f /usr/share/nginx/html/index.html && echo "✓ index.html exists" || echo "✗ index.html missing"' >> /docker-entrypoint.sh && \
+    echo 'test -f /usr/share/nginx/html/index.html && echo "✓ index.html exists" || (echo "✗ index.html missing" && exit 1)' >> /docker-entrypoint.sh && \
+    echo 'test -d /usr/share/nginx/html/downloads && echo "✓ downloads directory exists" || (echo "✗ downloads directory missing" && exit 1)' >> /docker-entrypoint.sh && \
     echo 'echo "Testing nginx config..."' >> /docker-entrypoint.sh && \
-    echo 'nginx -t' >> /docker-entrypoint.sh && \
-    echo 'echo "Starting nginx in foreground..."' >> /docker-entrypoint.sh && \
+    echo 'nginx -t || (echo "✗ Nginx config test failed" && exit 1)' >> /docker-entrypoint.sh && \
+    echo 'echo "Starting nginx..."' >> /docker-entrypoint.sh && \
     echo 'exec nginx -g "daemon off;"' >> /docker-entrypoint.sh && \
     chmod +x /docker-entrypoint.sh
 

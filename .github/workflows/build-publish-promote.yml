@@ -79,7 +79,7 @@ jobs:
             {
               "ports": [8443],
               "healthcheckPath": "/health",
-              "healthcheckGracePeriod": 60,
+              "healthcheckGracePeriod": 120,
               "protocol": "https",
               "environment": [
                 {
