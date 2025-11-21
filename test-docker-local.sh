@@ -5,17 +5,24 @@
 
 set -e
 
-# Find Docker binary
+# Find Docker binary and set PATH for credential helper
 if command -v docker &> /dev/null; then
     DOCKER_CMD="docker"
 elif [ -f "/usr/local/bin/docker" ]; then
     DOCKER_CMD="/usr/local/bin/docker"
 elif [ -f "/Applications/Docker.app/Contents/Resources/bin/docker" ]; then
     DOCKER_CMD="/Applications/Docker.app/Contents/Resources/bin/docker"
+    # Add Docker's bin directory to PATH for credential helper
+    export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH"
 else
     echo "❌ Docker not found. Please ensure Docker Desktop is installed and running."
     echo "   On macOS, Docker Desktop should be in /Applications/Docker.app"
     exit 1
+fi
+
+# Ensure Docker credential helper is in PATH
+if [ -d "/Applications/Docker.app/Contents/Resources/bin" ]; then
+    export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH"
 fi
 
 echo "🐳 Testing Docker build locally..."
