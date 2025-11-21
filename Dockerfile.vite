@@ -10,7 +10,18 @@ COPY package*.json ./
 # Install dependencies
 RUN npm ci
 
-# Copy source files (excluding deploy directory - we'll create it fresh)
+# Copy source files
+# Copy manifest.json and other essential files first to ensure they're available
+COPY manifest.json ./
+COPY package*.json ./
+COPY tsconfig*.json ./
+COPY vite.config.ts ./
+COPY icons/ ./icons/
+COPY *.ts ./
+COPY *.tsx ./
+COPY *.html ./
+COPY *.css ./
+# Copy remaining source files
 COPY . .
 
 # Build the extension (creates artifacts/Dev)

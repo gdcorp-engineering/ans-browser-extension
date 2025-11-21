@@ -26,11 +26,22 @@ export default defineConfig({
     {
       name: 'copy-manifest',
       closeBundle() {
+        // Ensure output directory exists first
+        const outputDirPath = resolve(__dirname, outDir);
+        if (!existsSync(outputDirPath)) {
+          mkdirSync(outputDirPath, { recursive: true });
+        }
+        
         // Copy manifest.json to output directory
-        copyFileSync(
-          resolve(__dirname, 'manifest.json'),
-          resolve(__dirname, outDir, 'manifest.json')
-        );
+        const manifestPath = resolve(__dirname, 'manifest.json');
+        const outputManifestPath = resolve(outputDirPath, 'manifest.json');
+        
+        if (existsSync(manifestPath)) {
+          copyFileSync(manifestPath, outputManifestPath);
+        } else {
+          console.error(`❌ Error: manifest.json not found at ${manifestPath}`);
+          throw new Error(`manifest.json not found at ${manifestPath}`);
+        }
 
         // Copy icons folder
         const iconsDir = resolve(__dirname, 'icons');
