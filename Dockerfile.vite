@@ -10,7 +10,7 @@ COPY package*.json ./
 # Install dependencies
 RUN npm ci
 
-# Copy source files
+# Copy source files (excluding deploy directory - we'll create it fresh)
 COPY . .
 
 # Build the extension (creates artifacts/Dev)
@@ -23,10 +23,25 @@ RUN apk add --no-cache zip
 
 # Create deployment structure
 RUN mkdir -p /app/deploy/downloads && \
-    cp artifacts/Dev/INSTALL_INSTRUCTIONS.html deploy/index.html && \
+    if [ -f "artifacts/Dev/INSTALL_INSTRUCTIONS.html" ]; then \
+        cp artifacts/Dev/INSTALL_INSTRUCTIONS.html deploy/index.html && \
+        echo "✓ Copied INSTALL_INSTRUCTIONS.html to index.html"; \
+    elif [ -f "deploy/index.html" ]; then \
+        echo "✓ Using existing deploy/index.html"; \
+    else \
+        echo "Creating index.html from deploy/index.html if available"; \
+        if [ -f "deploy/index.html" ]; then \
+            echo "✓ Using deploy/index.html"; \
+        else \
+            echo "Warning: No installer HTML found, creating basic placeholder"; \
+            echo '<!DOCTYPE html><html><head><title>Extension Installer</title></head><body><h1>ANS Browser Extension</h1><p>Download the extension ZIP file from the downloads folder.</p></body></html>' > deploy/index.html; \
+        fi; \
+    fi && \
     cd artifacts/Dev && \
     zip -r /app/deploy/downloads/ans-extension-dev-latest.zip . -x "*.DS_Store" "*.git*" && \
-    cd /app
+    echo "✓ Created ZIP file" && \
+    cd /app && \
+    ls -la deploy/
 
 # Production stage - serve static files with nginx
 FROM nginx:alpine
