@@ -35,6 +35,26 @@ const getModelDisplayName = (modelId: string | undefined): string => {
   return MODEL_DISPLAY_NAMES[modelId] || modelId;
 };
 
+// Provider models configuration
+const PROVIDER_MODELS = {
+  google: [
+    { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', description: '1M token context' },
+    { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', description: 'Fast and efficient' },
+    { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash Lite', description: 'Optimized for speed' },
+  ],
+  anthropic: [
+    { id: 'claude-sonnet-4-5-20250929', name: 'Claude Sonnet 4.5', description: 'Latest and most capable' },
+    { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', description: 'Most intelligent model' },
+    { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku', description: 'Fastest model' },
+    { id: 'claude-3-opus-20240229', name: 'Claude 3 Opus', description: 'Previous generation' },
+  ],
+  openai: [
+    { id: 'gpt-4o', name: 'GPT-4o', description: 'Most capable' },
+    { id: 'gpt-4o-mini', name: 'GPT-4o Mini', description: 'Fast and affordable' },
+    { id: 'gpt-4-turbo', name: 'GPT-4 Turbo', description: 'Previous generation' },
+  ],
+};
+
 // Custom component to handle link clicks - opens in new tab
 const LinkComponent = ({ href, children }: { href?: string; children?: React.ReactNode }) => {
   const handleLinkClick = (e: React.MouseEvent) => {
@@ -60,6 +80,8 @@ const LinkComponent = ({ href, children }: { href?: string; children?: React.Rea
 
 // Component to parse and display user messages with page context styling
 const UserMessageParser = ({ content }: { content: string }) => {
+  const [isContextExpanded, setIsContextExpanded] = useState(false);
+  
   // Check if message contains page context
   const contextIndex = content.indexOf('[Current Page Context]');
 
@@ -77,24 +99,54 @@ const UserMessageParser = ({ content }: { content: string }) => {
       {/* User's actual input */}
       <div>{userInput}</div>
 
-      {/* Page context - styled differently and compact */}
+      {/* Page context - collapsible */}
       <div
         style={{
-          padding: '6px 8px',
           backgroundColor: '#1a2332',
           borderLeft: '3px solid #4a7ba7',
           borderRadius: '4px',
-          fontSize: '0.75em',
-          color: '#88aacc',
-          fontFamily: 'monospace',
-          whiteSpace: 'pre-wrap',
-          opacity: 0.7,
-          maxHeight: '80px',
-          overflowY: 'auto',
-          lineHeight: '1.3',
+          overflow: 'hidden',
         }}
       >
-        {pageContext}
+        {/* Clickable header to toggle */}
+        <div
+          onClick={() => setIsContextExpanded(!isContextExpanded)}
+          style={{
+            padding: '6px 8px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            fontSize: '0.75em',
+            color: '#88aacc',
+            fontFamily: 'monospace',
+            userSelect: 'none',
+          }}
+        >
+          <span>[Current Page Context]</span>
+          <span style={{ fontSize: '0.9em', marginLeft: '8px' }}>
+            {isContextExpanded ? '▼' : '▶'}
+          </span>
+        </div>
+
+        {/* Collapsible content */}
+        {isContextExpanded && (
+          <div
+            style={{
+              padding: '6px 8px',
+              paddingTop: '0',
+              fontSize: '0.75em',
+              color: '#88aacc',
+              fontFamily: 'monospace',
+              whiteSpace: 'pre-wrap',
+              lineHeight: '1.3',
+              maxHeight: '400px',
+              overflowY: 'auto',
+            }}
+          >
+            {pageContext.replace('[Current Page Context]', '').trim()}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -178,8 +230,24 @@ function ChatSidebar() {
   const [showBrowserToolsWarning, setShowBrowserToolsWarning] = useState(false);
   const [isUserScrolled, setIsUserScrolled] = useState(false);
   const [currentTabId, setCurrentTabId] = useState<number | null>(null);
+  const [showMenu, setShowMenu] = useState(false);
+  const [showModelMenu, setShowModelMenu] = useState(false);
+  const [showChatMenu, setShowChatMenu] = useState(false);
+  const [onboardingState, setOnboardingState] = useState<{
+    active: boolean;
+    step: 'provider' | 'gocodeUrl' | 'apiKey' | 'optional' | 'complete';
+    tempSettings: Partial<Settings>;
+    waitingFor?: 'businessServices' | 'ans' | 'customMCP';
+  } | null>(null);
+  
+  // Use ref to track latest onboarding state for async operations
+  const onboardingStateRef = useRef(onboardingState);
+  useEffect(() => {
+    onboardingStateRef.current = onboardingState;
+  }, [onboardingState]);
   const [trustedAgentOptIn, setTrustedAgentOptIn] = useState(true); // User opt-in for trusted agents
   const [currentSiteAgent, setCurrentSiteAgent] = useState<{ serverId: string; serverName: string } | null>(null);
+  const [samplePrompts, setSamplePrompts] = useState<string[]>([]);
   const abortControllerRef = useRef<AbortController | null>(null);
   const mcpClientRef = useRef<MCPClient | null>(null);
   const mcpToolsRef = useRef<Record<string, unknown> | null>(null);
@@ -369,6 +437,454 @@ function ChatSidebar() {
     }
   };
 
+  // Comprehensive page analysis based on content, structure, and semantic HTML
+  const analyzePageCharacteristics = (context: any) => {
+    const title = context.title || '';
+    const url = (context.url || '').toLowerCase();
+    const textContent = context.textContent || '';
+    const lowerContent = textContent.toLowerCase();
+    const links = context.links || [];
+    const forms = context.forms || [];
+    const interactiveElements = context.interactiveElements || [];
+    const metadata = context.metadata || {};
+    const images = context.images || [];
+    const structure = context.structure || {};
+
+    // Analyze content structure (semantic HTML is most reliable)
+    const hasArticleTag = structure.hasArticleStructure || false;
+    const hasMainTag = structure.hasMainStructure || false;
+    const paragraphCount = structure.paragraphCount || 0;
+    const sectionCount = structure.sectionCount || 0;
+    const mainContentRatio = structure.mainContentRatio || 0;
+    const hasStructuredContent = paragraphCount > 3 || sectionCount > 1;
+
+    // Content density analysis
+    const contentLength = textContent.length;
+    const wordsPerParagraph = paragraphCount > 0 ? contentLength / paragraphCount : 0;
+    // Dense content: either high words per paragraph OR many paragraphs with substantial content
+    const isContentDense = wordsPerParagraph > 100 || (paragraphCount > 10 && contentLength > 2000);
+
+    // Analyze interactive elements for purpose
+    const buttonTexts = interactiveElements
+      .filter((el: any) => el.tag === 'button')
+      .map((el: any) => (el.text || el.ariaLabel || '').toLowerCase())
+      .join(' ');
+    
+    const hasCartButtons = /\b(add to cart|add to bag|checkout|view cart|shopping cart)\b/i.test(buttonTexts);
+    const hasPurchaseButtons = /\b(buy now|purchase|order now|add to cart)\b/i.test(buttonTexts);
+
+    const characteristics = {
+      // Content characteristics
+      contentLength,
+      hasLongContent: contentLength > 2000,
+      hasMediumContent: contentLength > 500 && contentLength <= 2000,
+      hasShortContent: contentLength < 500,
+      
+      // Structural characteristics (most reliable indicators)
+      hasArticleTag,
+      hasMainTag,
+      hasStructuredContent,
+      paragraphCount,
+      sectionCount,
+      mainContentRatio,
+      isContentDense,
+      
+      // Link and media analysis
+      linkCount: links.length,
+      formCount: forms.length,
+      imageCount: images.length,
+      hasManyLinks: links.length > 10,
+      hasManyImages: images.length > 5,
+      
+      // URL and title for detection
+      url,
+      title: title.toLowerCase(),
+      
+      // E-commerce detection (very specific patterns)
+      hasCartButtons,
+      hasPurchaseButtons,
+      hasStrongEcommerceIndicators: hasCartButtons || hasPurchaseButtons,
+      hasPriceKeywords: /\$\d+\.?\d*|\d+\.?\d*\s*(dollars?|euros?|pounds?|USD|EUR|GBP|per month|per year)\b/i.test(textContent),
+      urlHasProduct: /\/product\/|\/item\/|\/shop\/|\/buy\/|\/cart\//i.test(url),
+      
+      // Content type patterns (less reliable, used as secondary indicators)
+      hasArticleKeywords: /\b(article|story|news|report|analysis|opinion|editorial|published|byline)\b/i.test(title + ' ' + textContent),
+      hasDocumentationKeywords: /\b(guide|tutorial|documentation|api|reference|docs|getting started|how to)\b/i.test(title + ' ' + textContent),
+      hasSearchKeywords: /\b(search|results|query|find)\b/i.test(title + ' ' + url),
+      hasSocialKeywords: /\b(profile|follow|like|share|comment|post)\b/i.test(title + ' ' + url),
+      hasVideoKeywords: /\b(video|watch|play|stream|youtube|vimeo)\b/i.test(title + ' ' + url + ' ' + textContent),
+      
+      // URL patterns (secondary indicators)
+      urlHasArticle: /\/article\/|\/post\/|\/blog\/|\/news\/|\/story\//i.test(url),
+      urlHasSearch: /\/search\/|\/results\//i.test(url),
+      urlHasProfile: /\/profile\/|\/user\/|\/account\//i.test(url),
+      
+      // Form analysis
+      hasPrimaryForms: forms.some((f: any) => 
+        f.action?.match(/(contact|register|signup|submit|apply)/i) ||
+        f.inputs?.some((input: any) => 
+          input.name?.match(/(name|email|phone|message|subject)/i)
+        )
+      ),
+      hasSecondaryForms: forms.some((f: any) => 
+        f.action?.match(/(newsletter|subscribe|search)/i) ||
+        f.inputs?.length === 1 && f.inputs[0]?.type === 'search'
+      ),
+      
+      // Interactive elements
+      hasSearchBox: interactiveElements.some((el: any) => 
+        el.type === 'search' || 
+        el.text?.toLowerCase().includes('search') || 
+        el.ariaLabel?.toLowerCase().includes('search')
+      ),
+      hasManyButtons: interactiveElements.filter((el: any) => 
+        el.tag === 'button' || el.tag === 'a'
+      ).length > 5,
+      
+      // Metadata
+      hasDescription: !!metadata.description,
+      hasKeywords: !!metadata.keywords,
+      hasAuthor: !!metadata.author,
+      ogType: metadata.ogType,
+    };
+
+    return characteristics;
+  };
+
+  // Determine page type based on comprehensive analysis
+  // Priority: URL patterns > Article > Documentation > Video > Search > E-commerce > Generic
+  const detectPageType = (characteristics: any, context?: any): string => {
+    const url = characteristics.url || (context?.url || '').toLowerCase();
+    const title = characteristics.title || (context?.title || '').toLowerCase();
+    
+    // Check URL patterns first (most reliable)
+    const urlHasDocs = /\/docs\/|\/documentation\/|\/guide\/|\/tutorial\//i.test(url) ||
+                      /developer\.|docs\.|documentation\./i.test(url) ||
+                      /react\.dev|vuejs\.org|developer\.mozilla/i.test(url);
+    const urlHasVideo = /youtube\.com|vimeo\.com|twitch\.tv/i.test(url);
+    const urlHasSearch = /\/search\/|\/results\//i.test(url) || /google\.com\/search|bing\.com\/search/i.test(url);
+    const urlHasArticle = /\/article\/|\/post\/|\/blog\/|\/news\/|\/story\//i.test(url);
+    const urlHasBlog = /medium\.com|dev\.to|wordpress\.com/i.test(url);
+    const urlIsHomepage = /^https?:\/\/(www\.)?[^\/]+\/?$/.test(url) || /^https?:\/\/(www\.)?[^\/]+\/index\.(html|php)?$/.test(url);
+    const urlHasForm = /\/contact|\/signup|\/register|\/apply|\/form\//i.test(url);
+    const urlHasProduct = /\/product\/|\/item\/|\/shop\/|\/buy\/|\/cart\/|\/dp\//i.test(url);
+    
+    // Priority order: Form (URL) > Search > Video (domain) > Documentation (URL) > Article (URL) > Blog > News > Article (structure) > E-commerce > Generic
+    
+    // 1. Form pages (check URL FIRST - forms are very specific)
+    // If URL pattern matches, trust it even if form detection fails
+    if (urlHasForm) {
+      // Prefer form if primary forms detected, but also accept if it's a form URL with short content
+      if (characteristics.hasPrimaryForms || 
+          (characteristics.hasShortContent && !characteristics.hasLongContent)) {
+        return 'form';
+      }
+    }
+    
+    // 2. Search results (URL pattern is most reliable)
+    if (urlHasSearch) {
+      return 'search';
+    }
+    
+    // 3. Video sites (ONLY on video domains - avoid false positives)
+    if (urlHasVideo) {
+      return 'video';
+    }
+    
+    // 4. Documentation (check URL BEFORE article tags - docs often use article tags)
+    if (urlHasDocs) {
+      return 'documentation';
+    }
+    
+    // 5. Article URL patterns (blog posts, news articles)
+    if (urlHasArticle) {
+      return 'article';
+    }
+    
+    // 6. Blog platforms (Medium, Dev.to) - even if content is minimal
+    if (urlHasBlog) {
+      return 'article';
+    }
+    
+    // 7. News site detection - detect by domain and content structure
+    const isNewsDomain = /(cnn|bbc|nytimes|washingtonpost|theguardian|reuters|npr|ap|wsj|bloomberg)\.(com|org)/i.test(url);
+    if (isNewsDomain && 
+        characteristics.hasStructuredContent &&
+        (characteristics.hasLongContent || characteristics.paragraphCount > 5) &&
+        !characteristics.hasStrongEcommerceIndicators) {
+      return 'article';
+    }
+    
+    // 8. Documentation by keywords (but NOT if it has article tags - docs use article tags)
+    if (characteristics.hasDocumentationKeywords &&
+        !characteristics.hasArticleTag &&
+        !urlIsHomepage &&
+        characteristics.hasStructuredContent && 
+        characteristics.hasManyLinks && 
+        (characteristics.isContentDense || characteristics.hasLongContent)) {
+      return 'documentation';
+    }
+    
+    // 9. Article detection by structure (but exclude homepages, docs URLs, and form URLs)
+    if (!urlIsHomepage && !urlHasDocs && !urlHasForm &&
+        characteristics.hasArticleTag &&
+        (characteristics.hasLongContent || characteristics.paragraphCount > 5)) {
+      return 'article';
+    }
+    
+    // 10. Strong content structure indicators for articles (but not homepages, docs, or forms)
+    // Also handle Wikipedia and educational sites
+    const isWikipedia = /wikipedia\.org/i.test(url);
+    const isEducational = /khanacademy|wikipedia|edu/i.test(url);
+    
+    if (!urlIsHomepage && !urlHasDocs && !urlHasForm &&
+        characteristics.hasStructuredContent && 
+        (characteristics.isContentDense || characteristics.paragraphCount > 10) && 
+        !characteristics.hasStrongEcommerceIndicators &&
+        (characteristics.hasLongContent || characteristics.paragraphCount > 5) &&
+        (characteristics.hasArticleKeywords || !characteristics.hasDocumentationKeywords)) {
+      return 'article';
+    }
+    
+    // Wikipedia and educational sites with structured content
+    if ((isWikipedia || isEducational) && 
+        characteristics.hasStructuredContent &&
+        (characteristics.hasLongContent || characteristics.paragraphCount > 5)) {
+      if (isEducational && characteristics.hasDocumentationKeywords) {
+        return 'documentation';
+      }
+      return 'article';
+    }
+    
+    // 11. E-commerce product pages (URL pattern is strongest signal)
+    if (urlHasProduct && 
+        (characteristics.hasStrongEcommerceIndicators || characteristics.hasPriceKeywords) &&
+        !characteristics.hasArticleTag) {
+      return 'ecommerce';
+    }
+    
+    // 12. E-commerce by cart buttons + price keywords (but not content pages)
+    const hasEcommerceEvidence = characteristics.hasStrongEcommerceIndicators && (
+      characteristics.urlHasProduct || 
+      characteristics.hasPriceKeywords
+    );
+    const isContentPage = characteristics.hasArticleTag || 
+                         (characteristics.hasStructuredContent && characteristics.isContentDense && characteristics.mainContentRatio > 0.5);
+    if (hasEcommerceEvidence && !isContentPage && !urlIsHomepage) {
+      return 'ecommerce';
+    }
+    
+    // 13. Form pages by form detection (if URL pattern didn't match)
+    if (characteristics.hasPrimaryForms && 
+        characteristics.hasShortContent &&
+        !characteristics.hasLongContent &&
+        !urlIsHomepage) {
+      return 'form';
+    }
+    
+    // 14. Social / Profile pages
+    if (characteristics.hasSocialKeywords || characteristics.urlHasProfile) {
+      return 'social';
+    }
+    
+    return 'generic';
+  };
+
+  // Helper function to find original capitalization of a word in text
+  const findOriginalCapitalization = (word: string, textContent: string): string => {
+    if (!word || !textContent) return word;
+    const lowerWord = word.toLowerCase();
+    
+    // Try to find the word in the original text with its original capitalization
+    const regex = new RegExp(`\\b${lowerWord.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi');
+    const matches = textContent.match(regex);
+    
+    if (matches && matches.length > 0) {
+      // Return the most common capitalization, or first match if all different
+      const capitalizations: Record<string, number> = {};
+      matches.forEach(match => {
+        capitalizations[match] = (capitalizations[match] || 0) + 1;
+      });
+      
+      // Find most common capitalization
+      const mostCommon = Object.entries(capitalizations)
+        .sort(([, a], [, b]) => b - a)[0]?.[0];
+      
+      if (mostCommon) return mostCommon;
+    }
+    
+    // Fallback: capitalize first letter if not found
+    return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+  };
+
+  // Helper function to format nouns/topics properly (preserve original capitalization)
+  const formatNoun = (word: string, textContent: string): string => {
+    if (!word) return word;
+    // Try to find original capitalization in the text
+    return findOriginalCapitalization(word, textContent);
+  };
+
+  // Helper function to extract main topics from text content
+  const extractMainTopics = (textContent: string): string[] => {
+    if (!textContent || textContent.length < 50) return [];
+    
+    // Extract words that appear frequently (simple approach)
+    const words = textContent.toLowerCase()
+      .replace(/[^\w\s]/g, ' ')
+      .split(/\s+/)
+      .filter(word => word.length > 4);
+    
+    const wordCount: Record<string, number> = {};
+    words.forEach(word => {
+      wordCount[word] = (wordCount[word] || 0) + 1;
+    });
+
+    // Get top words (excluding common stop words)
+    const stopWords = new Set(['about', 'after', 'before', 'could', 'every', 'first', 'might', 'never', 'other', 'should', 'their', 'there', 'these', 'those', 'which', 'would']);
+    const topWords = Object.entries(wordCount)
+      .filter(([word]) => !stopWords.has(word))
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 3)
+      .map(([word]) => formatNoun(word, textContent)); // Format nouns with original capitalization
+
+    return topWords;
+  };
+
+  // Generate sample prompts based on comprehensive page analysis
+  const generateSamplePrompts = async () => {
+    try {
+      const context: any = await executeTool('getPageContext', {});
+      if (!context) {
+        setSamplePrompts([]);
+        return;
+      }
+
+      const prompts: string[] = [];
+      const textContent = context.textContent || '';
+      const mainTopics = extractMainTopics(textContent);
+      
+      // Comprehensive page analysis
+      const characteristics = analyzePageCharacteristics(context);
+      const pageType = detectPageType(characteristics, context);
+
+      // Debug logging for page analysis
+      console.log('🔍 Page analysis:', {
+        pageType,
+        hasArticleTag: characteristics.hasArticleTag,
+        hasMainTag: characteristics.hasMainTag,
+        hasStructuredContent: characteristics.hasStructuredContent,
+        isContentDense: characteristics.isContentDense,
+        paragraphCount: characteristics.paragraphCount,
+        hasStrongEcommerceIndicators: characteristics.hasStrongEcommerceIndicators,
+        urlHasProduct: characteristics.urlHasProduct,
+        hasPriceKeywords: characteristics.hasPriceKeywords,
+        contentLength: characteristics.contentLength,
+      });
+
+      // Generate prompts based on page type and characteristics
+      switch (pageType) {
+        case 'ecommerce':
+          prompts.push(`What products or services are available on this page?`);
+          if (characteristics.hasManyImages) {
+            prompts.push(`Show me product details and pricing information`);
+          }
+          prompts.push(`Help me find the best deals or offers`);
+          break;
+
+        case 'article':
+          // Content-focused prompts for articles (even if they have forms)
+          prompts.push(`Summarize the main points of this article`);
+          prompts.push(`What are the key takeaways from this content?`);
+          if (mainTopics.length > 0) {
+            prompts.push(`Tell me more about ${mainTopics[0]}`);
+          } else if (characteristics.hasManyLinks) {
+            prompts.push(`Find related topics or links on this page`);
+          } else {
+            prompts.push(`What is the main topic or theme?`);
+          }
+          break;
+
+        case 'documentation':
+          prompts.push(`Explain the main concepts on this page`);
+          prompts.push(`What are the key features or APIs documented here?`);
+          if (characteristics.hasManyLinks) {
+            prompts.push(`Show me related documentation or examples`);
+          } else {
+            prompts.push(`Help me understand how to use this`);
+          }
+          break;
+
+        case 'search':
+          prompts.push(`What search results are shown on this page?`);
+          prompts.push(`Help me refine or improve my search`);
+          prompts.push(`What are the most relevant results here?`);
+          break;
+
+        case 'social':
+          prompts.push(`What information is available on this profile?`);
+          prompts.push(`Show me recent activity or posts`);
+          prompts.push(`What can I learn about this user or page?`);
+          break;
+
+        case 'video':
+          prompts.push(`What is this video about?`);
+          prompts.push(`Summarize the key points or topics`);
+          prompts.push(`What information is available about this content?`);
+          break;
+
+        case 'form':
+          // Only show form prompts if forms are the primary purpose
+          prompts.push(`Help me fill out the form on this page`);
+          prompts.push(`What information is required in this form?`);
+          prompts.push(`Guide me through submitting this form`);
+          break;
+
+        default: // generic
+          // Generate prompts based on content characteristics
+          if (characteristics.hasLongContent) {
+            prompts.push(`Summarize the main content of this page`);
+            if (mainTopics.length > 0) {
+              prompts.push(`Tell me more about ${mainTopics[0]}`);
+            }
+            prompts.push(`What are the key points or takeaways?`);
+          } else if (characteristics.hasManyLinks) {
+            prompts.push(`What links or resources are available on this page?`);
+            prompts.push(`Help me navigate to relevant sections`);
+            prompts.push(`What is the main purpose of this page?`);
+          } else if (characteristics.hasSearchBox) {
+            prompts.push(`Help me search for something on this page`);
+            prompts.push(`What can I search for here?`);
+            prompts.push(`Guide me to use the search functionality`);
+          } else if (characteristics.hasManyImages) {
+            prompts.push(`What images or media are on this page?`);
+            prompts.push(`Describe the visual content`);
+            prompts.push(`What is the purpose of this page?`);
+          } else if (mainTopics.length > 0) {
+            const topic = mainTopics[0]; // Already formatted with original capitalization
+            prompts.push(`Tell me more about ${topic}`);
+            prompts.push(`What information is available about ${topic}?`);
+            prompts.push(`Help me understand ${topic} on this page`);
+          } else {
+            // Generic fallback prompts
+            prompts.push(`What is the purpose of this page?`);
+            prompts.push(`Summarize the main content`);
+            prompts.push(`Help me understand this page better`);
+          }
+          break;
+      }
+
+      // Ensure we have exactly 3 prompts (pad with generic ones if needed)
+      while (prompts.length < 3) {
+        prompts.push(`Help me understand this page better`);
+      }
+
+      setSamplePrompts(prompts.slice(0, 3));
+    } catch (error) {
+      console.log('Could not generate sample prompts:', error);
+      setSamplePrompts([]);
+    }
+  };
+
   // Get current tab ID and load its messages
   useEffect(() => {
     const getCurrentTab = async () => {
@@ -386,6 +902,9 @@ function ChatSidebar() {
 
         // Check for trusted agent on this site
         checkForTrustedAgent();
+        
+        // Generate sample prompts for current tab
+        generateSamplePrompts();
       }
     };
 
@@ -411,25 +930,83 @@ function ChatSidebar() {
 
       // Check for trusted agent on new tab
       checkForTrustedAgent();
+      
+      // Generate sample prompts for new tab
+      generateSamplePrompts();
     };
 
     chrome.tabs.onActivated.addListener(handleTabChange);
 
-    // Listen for URL changes within the current tab (e.g., navigation via browser tools)
+    // Listen for URL changes and page refreshes within the current tab
     const handleTabUpdate = (tabId: number, changeInfo: chrome.tabs.TabChangeInfo, tab: chrome.tabs.Tab) => {
-      // Only react to URL changes on the current tab
-      if (changeInfo.url && tabId === currentTabIdRef.current) {
-        console.log('📍 Tab URL changed to:', changeInfo.url);
-        // Check for trusted agent on the new URL
-        checkForTrustedAgent();
+      // Only react to changes on the current tab
+      if (tabId === currentTabIdRef.current) {
+        // Handle URL changes (navigation)
+        if (changeInfo.url) {
+          console.log('📍 Tab URL changed to:', changeInfo.url);
+          // Check for trusted agent on the new URL
+          checkForTrustedAgent();
+          // Regenerate sample prompts for new URL
+          generateSamplePrompts();
+        }
+        // Handle page refresh/load completion
+        // status === 'complete' means the page has finished loading
+        if (changeInfo.status === 'complete' && tab.url) {
+          console.log('📍 Page finished loading:', tab.url);
+          // Small delay to ensure DOM is fully ready
+          setTimeout(() => {
+            // Regenerate prompts when page loads/refreshes (UI will show/hide based on messages)
+            if (tabId === currentTabIdRef.current) {
+              generateSamplePrompts();
+            }
+          }, 500);
+        }
       }
     };
 
     chrome.tabs.onUpdated.addListener(handleTabUpdate);
 
+    // Listen for sidepanel visibility changes (when user opens/closes sidepanel)
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        // Sidepanel became visible - regenerate prompts in case page changed
+        console.log('📍 Sidepanel became visible, regenerating prompts');
+        setTimeout(() => {
+          generateSamplePrompts();
+        }, 300);
+        // Notify background script and content script that sidebar opened
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+          if (tabs[0]?.id) {
+            // Update background script state
+            chrome.runtime.sendMessage({ type: 'SIDEBAR_OPENED', tabId: tabs[0].id }).catch(() => {});
+            // Notify content script
+            chrome.tabs.sendMessage(tabs[0].id, { type: 'SIDEBAR_OPENED' }).catch(() => {
+              // Content script might not be ready, ignore error
+            });
+          }
+        });
+      } else {
+        // Sidepanel became hidden - notify background script and content script
+        console.log('📍 Sidepanel became hidden, showing floating button');
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+          if (tabs[0]?.id) {
+            // Update background script state
+            chrome.runtime.sendMessage({ type: 'SIDEBAR_CLOSED', tabId: tabs[0].id }).catch(() => {});
+            // Notify content script
+            chrome.tabs.sendMessage(tabs[0].id, { type: 'SIDEBAR_CLOSED' }).catch(() => {
+              // Content script might not be ready, ignore error
+            });
+          }
+        });
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
     return () => {
       chrome.tabs.onActivated.removeListener(handleTabChange);
       chrome.tabs.onUpdated.removeListener(handleTabUpdate);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, []); // Empty array - only run once on mount
 
@@ -442,6 +1019,27 @@ function ChatSidebar() {
     messagesRef.current = messages;
   }, [messages]);
 
+  // Close menu when clicking outside
+  useEffect(() => {
+    if (!showMenu) {
+      setShowModelMenu(false);
+      setShowChatMenu(false);
+      return;
+    }
+    
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (!target.closest('#ans-menu-button') && !target.closest('#ans-menu-dropdown')) {
+        setShowMenu(false);
+        setShowModelMenu(false);
+        setShowChatMenu(false);
+      }
+    };
+    
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showMenu]);
+
   // Save messages whenever they change
   useEffect(() => {
     if (currentTabId !== null && messages.length > 0) {
@@ -453,6 +1051,15 @@ function ChatSidebar() {
   useEffect(() => {
     // Load settings on mount
     loadSettings();
+    
+    // Notify content script that sidebar opened
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0]?.id) {
+        chrome.tabs.sendMessage(tabs[0].id, { type: 'SIDEBAR_OPENED' }).catch(() => {
+          // Content script might not be ready, ignore error
+        });
+      }
+    });
 
     // Attach settings update listener only once to prevent duplicates
     if (!listenerAttachedRef.current) {
@@ -497,6 +1104,355 @@ function ChatSidebar() {
 
   const openSettings = () => {
     chrome.runtime.openOptionsPage();
+  };
+
+  const selectProvider = async (provider: Provider) => {
+    if (!onboardingState || onboardingState.step !== 'provider') return;
+    
+    const providerName = provider === 'google' ? 'Google' : provider === 'anthropic' ? 'Anthropic' : 'OpenAI';
+    await processOnboardingInput(providerName);
+  };
+
+  const startOnboarding = () => {
+    setOnboardingState({
+      active: true,
+      step: 'provider',
+      tempSettings: {}
+    });
+    setShowSettings(false);
+    setMessages([
+      {
+        id: '1',
+        role: 'assistant',
+        content: `Welcome! Let's get you set up. I'll guide you through the configuration.\n\n**Step 1: Choose your AI Provider**\n\nWhich AI provider would you like to use?\n\n• **Google** - Gemini models (recommended for browser automation)\n\n• **Anthropic** - Claude models\n\n• **OpenAI** - GPT models\n\nClick one of the options below or type "Google", "Anthropic", or "OpenAI" to continue.`
+      }
+    ]);
+  };
+
+  const processOnboardingInput = async (userInput: string) => {
+    // Get latest state from ref to avoid stale closure issues
+    const currentOnboardingState = onboardingStateRef.current;
+    if (!currentOnboardingState) return;
+
+    const input = userInput.trim().toLowerCase();
+    const currentStep = currentOnboardingState.step;
+    const tempSettings = { ...currentOnboardingState.tempSettings };
+
+    if (currentStep === 'provider') {
+      let provider: Provider | null = null;
+      if (input.includes('google') || input === 'g') {
+        provider = 'google';
+      } else if (input.includes('anthropic') || input.includes('claude') || input === 'a') {
+        provider = 'anthropic';
+      } else if (input.includes('openai') || input.includes('gpt') || input === 'o') {
+        provider = 'openai';
+      }
+
+      if (provider) {
+        const defaultModel = PROVIDER_MODELS[provider][0].id;
+        tempSettings.provider = provider;
+        tempSettings.model = defaultModel;
+        
+        setOnboardingState({
+          active: true,
+          step: 'apiKey',
+          tempSettings
+        });
+
+        const providerName = provider === 'google' ? 'Google' : provider === 'anthropic' ? 'Anthropic' : 'OpenAI';
+
+        setOnboardingState({
+          active: true,
+          step: 'gocodeUrl',
+          tempSettings
+        });
+
+        setMessages(prev => [...prev, {
+          id: Date.now().toString(),
+          role: 'user',
+          content: userInput
+        }, {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: `Great! You've selected **${providerName}**.\n\n**Step 2: GoCode URL**\n\nPlease provide your GoCode URL. This is the endpoint for your GoCode service.\n\nDefault: \`https://caas-gocode-prod.caas-prod.prod.onkatana.net\`\n\nPaste your GoCode URL, or type **"Use Default"** to continue with the default:`
+        }]);
+      } else {
+        setMessages(prev => [...prev, {
+          id: Date.now().toString(),
+          role: 'user',
+          content: userInput
+        }, {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: `I didn't recognize that provider. Please type **"Google"**, **"Anthropic"**, or **"OpenAI"** to continue.`
+        }]);
+      }
+    } else if (currentStep === 'gocodeUrl') {
+      // Handle GoCode URL input
+      let gocodeUrl = '';
+      if (input.includes('use default') || input.includes('default')) {
+        gocodeUrl = 'https://caas-gocode-prod.caas-prod.prod.onkatana.net';
+      } else if (userInput.trim().length > 0) {
+        gocodeUrl = userInput.trim();
+        // Basic URL validation
+        if (!gocodeUrl.startsWith('http://') && !gocodeUrl.startsWith('https://')) {
+          setMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            role: 'user',
+            content: userInput
+          }, {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: `Please enter a valid URL starting with http:// or https://, or type **"Use Default"** to use the default GoCode URL.`
+          }]);
+          return;
+        }
+      } else {
+        // Empty input, use default
+        gocodeUrl = 'https://caas-gocode-prod.caas-prod.prod.onkatana.net';
+      }
+
+      tempSettings.customBaseUrl = gocodeUrl;
+      
+      setOnboardingState({
+        active: true,
+        step: 'apiKey',
+        tempSettings
+      });
+
+      setMessages(prev => [...prev, {
+        id: Date.now().toString(),
+        role: 'user',
+        content: input.includes('use default') || input.includes('default') ? 'Use Default' : userInput
+      }, {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: `GoCode URL saved! ✅\n\n**Step 3: GoCode Key**\n\nPlease provide your GoCode Key. This is your API key for the GoCode service.\n\nPaste your GoCode Key here:`
+      }]);
+    } else if (currentStep === 'apiKey') {
+      if (input.length > 10) { // Basic validation - API keys are usually longer
+        tempSettings.apiKey = userInput.trim();
+        
+        // Save required settings with GoCode URL
+        const finalSettings: Settings = {
+          provider: tempSettings.provider!,
+          apiKey: tempSettings.apiKey,
+          model: tempSettings.model!,
+          customBaseUrl: tempSettings.customBaseUrl || 'https://caas-gocode-prod.caas-prod.prod.onkatana.net'
+        };
+
+        chrome.storage.local.set({ atlasSettings: finalSettings }, () => {
+          setSettings(finalSettings);
+          setOnboardingState({
+            active: true,
+            step: 'optional',
+            tempSettings: finalSettings
+          });
+
+          setMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            role: 'user',
+            content: '••••••••' // Hide the API key
+          }, {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: `Perfect! Your GoCode Key has been saved. ✅\n\n**Step 4: Optional Configuration**\n\nWould you like to configure optional features now?\n\n• **Enable Business Services** - Access 115 Million verified GoDaddy customer services through AI chat (requires ANS API Token)\n\n• **Custom MCP Servers** - Add custom Model Context Protocol servers\n\nType **"Yes"** to configure these, or **"No"** to skip and start chatting.`
+          }]);
+        });
+      } else {
+        setMessages(prev => [...prev, {
+          id: Date.now().toString(),
+          role: 'user',
+          content: userInput
+        }, {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: `That doesn't look like a valid GoCode Key. Please paste your full GoCode Key.`
+        }]);
+      }
+    } else if (currentStep === 'optional') {
+      // Check waitingFor state first before general yes/no responses
+      if (currentOnboardingState.waitingFor === 'businessServices') {
+        if (input.includes('skip')) {
+          setMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            role: 'user',
+            content: userInput
+          }, {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: `Business Services skipped. ✅\n\n**Custom MCP Servers** (optional)\n\nAdd custom Model Context Protocol servers for additional integrations.\n\nWould you like to add a custom MCP server? Type **"Yes"** to add one, or **"Skip"** to finish:`
+          }]);
+          setOnboardingState({
+            active: true,
+            step: 'optional',
+            tempSettings: { ...currentOnboardingState.tempSettings, mcpEnabled: false },
+            waitingFor: 'customMCP'
+          });
+        } else if (input.includes('yes') || input.includes('y') || input === 'y') {
+          // Enable Business Services
+          const updatedTempSettings = { ...currentOnboardingState.tempSettings, mcpEnabled: true };
+          setMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            role: 'user',
+            content: userInput
+          }, {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: `Business Services enabled! ✅\n\n**ANS API Token** (required for Business Services)\n\n🔑 Required for ANS API access. Format: \`Authorization: Bearer eyJraWQiOi...\`\n\nPaste just the token part (without "Bearer"). Token typically starts with "eyJ".\n\nPaste your ANS token, or type **"Skip"** to continue without ANS token:`
+          }]);
+          setOnboardingState({
+            active: true,
+            step: 'optional',
+            tempSettings: updatedTempSettings,
+            waitingFor: 'ans'
+          });
+        } else {
+          // User didn't say yes or skip, ask again
+          setMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            role: 'user',
+            content: userInput
+          }, {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: `Would you like to enable Business Services? Type **"Yes"** to enable, or **"Skip"** to continue:`
+          }]);
+        }
+      } else if (currentOnboardingState.waitingFor === 'ans') {
+        if (input.includes('skip')) {
+          // Save settings with Business Services enabled but no ANS token
+          const updatedSettings = { ...currentOnboardingState.tempSettings, mcpEnabled: true, ansApiToken: undefined };
+          chrome.storage.local.set({ atlasSettings: updatedSettings }, () => {
+            setSettings(updatedSettings as Settings);
+            setMessages(prev => [...prev, {
+              id: Date.now().toString(),
+              role: 'user',
+              content: userInput
+            }, {
+              id: (Date.now() + 1).toString(),
+              role: 'assistant',
+              content: `ANS token skipped. Business Services enabled without ANS token. ✅\n\n**Custom MCP Servers** (optional)\n\nAdd custom Model Context Protocol servers for additional integrations.\n\nWould you like to add a custom MCP server? Type **"Yes"** to add one, or **"Skip"** to finish:`
+            }]);
+            setOnboardingState({
+              active: true,
+              step: 'optional',
+              tempSettings: updatedSettings,
+              waitingFor: 'customMCP'
+            });
+          });
+        } else if (input.length > 5) {
+          // Remove "Bearer " prefix if present
+          let token = userInput.trim();
+          if (token.startsWith('Bearer ')) {
+            token = token.substring(7);
+          }
+          const updatedSettings = { ...currentOnboardingState.tempSettings, mcpEnabled: true, ansApiToken: token };
+          chrome.storage.local.set({ atlasSettings: updatedSettings }, () => {
+            setSettings(updatedSettings as Settings);
+            setMessages(prev => [...prev, {
+              id: Date.now().toString(),
+              role: 'user',
+              content: '••••••••'
+            }, {
+              id: (Date.now() + 1).toString(),
+              role: 'assistant',
+              content: `ANS token saved! ✅\n\n**Custom MCP Servers** (optional)\n\nAdd custom Model Context Protocol servers for additional integrations.\n\nWould you like to add a custom MCP server? Type **"Yes"** to add one, or **"Skip"** to finish:`
+            }]);
+            setOnboardingState({
+              active: true,
+              step: 'optional',
+              tempSettings: updatedSettings,
+              waitingFor: 'customMCP'
+            });
+          });
+        } else {
+          // User didn't provide valid token or skip, ask again
+          setMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            role: 'user',
+            content: userInput
+          }, {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: `Please paste your ANS token (starts with "eyJ"), or type **"Skip"** to continue without ANS token:`
+          }]);
+        }
+      } else if (currentOnboardingState.waitingFor === 'customMCP') {
+        if (input.includes('skip') || input.includes('no') || input === 'n') {
+          // Save final settings and complete onboarding
+          chrome.storage.local.set({ atlasSettings: currentOnboardingState.tempSettings }, () => {
+            setSettings(currentOnboardingState.tempSettings as Settings);
+            setOnboardingState(null);
+            setMessages(prev => [...prev, {
+              id: Date.now().toString(),
+              role: 'user',
+              content: userInput
+            }, {
+              id: (Date.now() + 1).toString(),
+              role: 'assistant',
+              content: `Setup complete! 🎉\n\nYou're all set to start using the extension. You can configure custom MCP servers anytime from the Settings menu (accessible from the menu ⋯ button).\n\nWhat would you like to do?`
+            }]);
+          });
+        } else if (input.includes('yes') || input.includes('y') || input === 'y') {
+          // Direct user to Settings for custom MCP server configuration
+          setMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            role: 'user',
+            content: userInput
+          }, {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: `Great! To add custom MCP servers, you'll need to use the Settings menu. Here's how:\n\n1. Click the menu button (⋯) in the top right\n2. Select "Settings"\n3. Enable "Business Services" if not already enabled\n4. Go to the "Custom" tab\n5. Add your custom MCP server details\n\nFor now, let's complete the basic setup.\n\nSetup complete! 🎉\n\nYou're all set to start using the extension. What would you like to do?`
+          }]);
+          // Save final settings and complete onboarding
+          chrome.storage.local.set({ atlasSettings: currentOnboardingState.tempSettings }, () => {
+            setSettings(currentOnboardingState.tempSettings as Settings);
+            setOnboardingState(null);
+          });
+        } else {
+          // User didn't say yes or skip, ask again
+          setMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            role: 'user',
+            content: userInput
+          }, {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: `Would you like to add a custom MCP server? Type **"Yes"** to learn how, or **"Skip"** to finish setup:`
+          }]);
+        }
+      } else if (input.includes('yes') || input.includes('y') || input === 'y') {
+        // Initial yes to configure optional features
+        setMessages(prev => [...prev, {
+          id: Date.now().toString(),
+          role: 'user',
+          content: userInput
+        }, {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: `Great! Let's set up optional features.\n\n**Enable Business Services**\n\n🌐 Access 115 Million verified GoDaddy customer services through AI chat. Book appointments, place orders, and interact with businesses naturally.\n\nWould you like to enable Business Services? Type **"Yes"** to enable, or **"Skip"** to continue:`
+        }]);
+        setOnboardingState({
+          active: true,
+          step: 'optional',
+          tempSettings: { ...currentOnboardingState.tempSettings },
+          waitingFor: 'businessServices'
+        });
+      } else if (input.includes('no') || input === 'n') {
+        // Complete onboarding
+        setOnboardingState(null);
+        setMessages(prev => [...prev, {
+          id: Date.now().toString(),
+          role: 'user',
+          content: userInput
+        }, {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: `Perfect! You're all set. 🎉\n\nYou can start chatting now. If you want to configure optional features later, you can access Settings from the menu (⋯) button.\n\nWhat would you like to do?`
+        }]);
+      }
+    }
   };
 
   const isComposioSessionExpired = (): boolean => {
@@ -616,6 +1572,46 @@ function ChatSidebar() {
     } catch (error) {
       console.warn('Failed to hide browser automation overlay:', error);
     }
+  };
+
+  const switchModel = async (modelId: string) => {
+    if (!settings) return;
+    const updatedSettings = { ...settings, model: modelId };
+    setSettings(updatedSettings);
+    chrome.storage.local.set({ atlasSettings: updatedSettings });
+    setShowModelMenu(false);
+    setShowMenu(false);
+  };
+
+  const switchChat = (tabId: number) => {
+    if (tabMessagesRef.current[tabId]) {
+      setMessages(tabMessagesRef.current[tabId]);
+      setCurrentTabId(tabId);
+      setShowChatMenu(false);
+      setShowMenu(false);
+      // Scroll to bottom
+      setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, 100);
+    }
+  };
+
+  const getChatHistory = () => {
+    const history: Array<{ tabId: number; title: string; preview: string; messageCount: number }> = [];
+    Object.entries(tabMessagesRef.current).forEach(([tabIdStr, msgs]) => {
+      const tabId = parseInt(tabIdStr);
+      if (msgs && msgs.length > 0) {
+        const firstUserMessage = msgs.find(m => m.role === 'user');
+        const preview = firstUserMessage?.content?.slice(0, 50) || 'New chat';
+        history.push({
+          tabId,
+          title: `Chat ${tabId}`,
+          preview,
+          messageCount: msgs.length
+        });
+      }
+    });
+    return history.sort((a, b) => b.tabId - a.tabId); // Most recent first
   };
 
   const newChat = async () => {
@@ -1549,9 +2545,9 @@ GUIDELINES:
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!input.trim() || isLoading || !settings) return;
+  // Helper function to submit a message (can be called with prompt text directly)
+  const submitMessage = async (messageText: string) => {
+    if (!messageText.trim() || isLoading || !settings) return;
 
     // Get page context to include with the message
     let pageContext = '';
@@ -1569,12 +2565,12 @@ GUIDELINES:
     const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
-      content: input + pageContext,
+      content: messageText + pageContext,
     };
 
     const newMessages = [...messages, userMessage];
     setMessages(newMessages);
-    setInput('');
+    setInput(''); // Clear input field
     setIsLoading(true);
     setIsUserScrolled(false); // Reset scroll state when user sends message
 
@@ -1602,7 +2598,7 @@ GUIDELINES:
         try {
           const a2aService = getA2AService();
           // Send message to A2A agent using SDK
-          const response = await a2aService.sendMessage(currentSiteAgent.serverId, input);
+          const response = await a2aService.sendMessage(currentSiteAgent.serverId, messageText);
 
           // Update assistant message with response
           setMessages(prev => {
@@ -2116,6 +3112,24 @@ GUIDELINES:
     }
   };
 
+  // Form submit handler (calls submitMessage with input value)
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!input.trim() || isLoading) return;
+    
+    // Check if we're in onboarding mode
+    if (onboardingState?.active) {
+      const userInput = input;
+      setInput('');
+      await processOnboardingInput(userInput);
+      return;
+    }
+    
+    // Normal chat flow
+    if (!settings) return;
+    await submitMessage(input);
+  };
+
   // Check if user is scrolled to bottom
   const isAtBottom = () => {
     if (!messagesContainerRef.current) return true;
@@ -2162,18 +3176,63 @@ GUIDELINES:
     };
   }, []);
 
-  if (showSettings && !settings) {
+  if (!settings && !onboardingState?.active) {
     return (
       <div className="chat-container">
         <div className="welcome-message" style={{ padding: '40px 20px' }}>
-          <h2>Welcome to GoDaddy ANS</h2>
-          <p style={{ marginBottom: '20px' }}>Please configure your AI provider to get started.</p>
+          <h2>Welcome! Get Ready to Harness the Agentic Web</h2>
+          <div style={{
+            marginBottom: '24px',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '6px 12px',
+            borderRadius: '6px',
+            backgroundColor: 'rgba(0, 177, 64, 0.1)',
+            border: '1px solid rgba(0, 177, 64, 0.3)'
+          }}>
+            <span style={{
+              fontSize: '11px',
+              fontWeight: 600,
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px',
+              color: '#00B140'
+            }}>Powered by</span>
+            <span style={{
+              fontSize: '12px',
+              fontWeight: 600,
+              color: '#00B140'
+            }}>GoDaddy Agent Name Service</span>
+          </div>
+          <p style={{ marginBottom: '8px', fontSize: '16px', fontWeight: 500 }}>Let's get your new companion tailored for you.</p>
           <button
-            onClick={openSettings}
-            className="settings-icon-btn"
-            style={{ width: 'auto', padding: '12px 24px' }}
+            onClick={startOnboarding}
+            style={{ 
+              width: 'auto', 
+              padding: '12px 24px',
+              marginTop: '16px',
+              fontSize: '15px',
+              fontWeight: 600,
+              background: 'linear-gradient(90deg, #0066CC, #1BA87E, #6B46C1, #9333EA)',
+              backgroundSize: '200% 100%',
+              color: '#ffffff',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+              animation: 'godaddy-gradient 4s ease-in-out infinite',
+              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = 'scale(1.05)';
+              e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.15)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.1)';
+            }}
           >
-            Open Settings
+            Get Started
           </button>
         </div>
       </div>
@@ -2185,21 +3244,21 @@ GUIDELINES:
       <div className="chat-header">
         <div style={{ flex: 1 }}>
           <h1>GoDaddy ANS</h1>
-          <p>
-            {(settings?.provider
-              ? settings.provider.charAt(0).toUpperCase() + settings.provider.slice(1)
-              : 'Unknown')} · {browserToolsEnabled
-                ? (settings?.provider === 'google'
+          {settings?.provider && settings?.model && (
+            <p>
+              {settings.provider.charAt(0).toUpperCase() + settings.provider.slice(1)} · {browserToolsEnabled
+                ? (settings.provider === 'google'
                   ? getModelDisplayName('gemini-2.5-computer-use-preview-10-2025')
-                  : (settings?.model === 'custom' && settings?.customModelName
+                  : (settings.model === 'custom' && settings.customModelName
                     ? settings.customModelName
-                    : getModelDisplayName(settings?.model)) + ' (Browser Tools)')
-                : (settings?.model === 'custom' && settings?.customModelName
+                    : getModelDisplayName(settings.model)) + ' (Browser Tools)')
+                : (settings.model === 'custom' && settings.customModelName
                   ? settings.customModelName
-                  : getModelDisplayName(settings?.model))}
-          </p>
+                  : getModelDisplayName(settings.model))}
+            </p>
+          )}
         </div>
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', position: 'relative' }}>
           <button
             onClick={toggleBrowserTools}
             className={`settings-icon-btn ${browserToolsEnabled ? 'active' : ''}`}
@@ -2209,19 +3268,255 @@ GUIDELINES:
             {browserToolsEnabled ? '◉' : '○'}
           </button>
           <button
+            id="ans-menu-button"
+            onClick={() => setShowMenu(!showMenu)}
+            className="settings-icon-btn"
+            title="Open chat menu"
+            style={{ position: 'relative' }}
+          >
+            ⋯
+          </button>
+          {showMenu && (
+            <div id="ans-menu-dropdown" style={{
+              position: 'absolute',
+              top: '100%',
+              right: 0,
+              marginTop: '8px',
+              backgroundColor: '#1a1a1a',
+              border: '1px solid #333',
+              borderRadius: '8px',
+              padding: '8px 0',
+              minWidth: '220px',
+              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+              zIndex: 1000
+            }}>
+              {/* Model Selection */}
+              <div style={{ position: 'relative' }}>
+                <button
+                  onClick={() => {
+                    setShowModelMenu(!showModelMenu);
+                    setShowChatMenu(false);
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '10px 16px',
+                    background: 'transparent',
+                    border: 'none',
+                    color: '#ffffff',
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    fontFamily: 'inherit',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center'
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#2a2a2a'}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                >
+                  <span>Model</span>
+                  <span style={{ fontSize: '12px' }}>▶</span>
+                </button>
+                {showModelMenu && settings && (
+                  <div style={{
+                    position: 'absolute',
+                    right: '100%',
+                    top: 0,
+                    marginRight: '4px',
+                    backgroundColor: '#1a1a1a',
+                    border: '1px solid #333',
+                    borderRadius: '8px',
+                    padding: '8px 0',
+                    minWidth: '200px',
+                    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+                    maxHeight: '300px',
+                    overflowY: 'auto'
+                  }}>
+                    {PROVIDER_MODELS[settings.provider]?.map((model) => (
+                      <button
+                        key={model.id}
+                        onClick={() => switchModel(model.id)}
+                        style={{
+                          width: '100%',
+                          padding: '10px 16px',
+                          background: settings.model === model.id ? '#00B140' : 'transparent',
+                          border: 'none',
+                          color: '#ffffff',
+                          textAlign: 'left',
+                          cursor: 'pointer',
+                          fontSize: '13px',
+                          fontFamily: 'inherit'
+                        }}
+                        onMouseEnter={(e) => {
+                          if (settings.model !== model.id) {
+                            e.currentTarget.style.backgroundColor = '#2a2a2a';
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (settings.model !== model.id) {
+                            e.currentTarget.style.backgroundColor = 'transparent';
+                          }
+                        }}
+                      >
+                        <div style={{ fontWeight: settings.model === model.id ? 600 : 400 }}>
+                          {model.name}
+                        </div>
+                        <div style={{ fontSize: '11px', color: '#d1d5db', marginTop: '2px' }}>
+                          {model.description}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Switch Chat */}
+              <div style={{ position: 'relative' }}>
+                <button
+                  onClick={() => {
+                    setShowChatMenu(!showChatMenu);
+                    setShowModelMenu(false);
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '10px 16px',
+                    background: 'transparent',
+                    border: 'none',
+                    color: '#ffffff',
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    fontFamily: 'inherit',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center'
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#2a2a2a'}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                >
+                  <span>Switch Chat</span>
+                  <span style={{ fontSize: '12px' }}>▶</span>
+                </button>
+                {showChatMenu && (
+                  <div style={{
+                    position: 'absolute',
+                    right: '100%',
+                    top: 0,
+                    marginRight: '4px',
+                    backgroundColor: '#1a1a1a',
+                    border: '1px solid #333',
+                    borderRadius: '8px',
+                    padding: '8px 0',
+                    minWidth: '250px',
+                    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+                    maxHeight: '300px',
+                    overflowY: 'auto'
+                  }}>
+                    {getChatHistory().length > 0 ? (
+                      getChatHistory().map((chat) => (
+                        <button
+                          key={chat.tabId}
+                          onClick={() => switchChat(chat.tabId)}
+                          style={{
+                            width: '100%',
+                            padding: '10px 16px',
+                            background: currentTabId === chat.tabId ? '#00B140' : 'transparent',
+                            border: 'none',
+                            color: '#ffffff',
+                            textAlign: 'left',
+                            cursor: 'pointer',
+                            fontSize: '13px',
+                            fontFamily: 'inherit'
+                          }}
+                          onMouseEnter={(e) => {
+                            if (currentTabId !== chat.tabId) {
+                              e.currentTarget.style.backgroundColor = '#2a2a2a';
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            if (currentTabId !== chat.tabId) {
+                              e.currentTarget.style.backgroundColor = 'transparent';
+                            }
+                          }}
+                        >
+                          <div style={{ fontWeight: currentTabId === chat.tabId ? 600 : 400 }}>
+                            {chat.preview}...
+                          </div>
+                          <div style={{ fontSize: '11px', color: '#d1d5db', marginTop: '2px' }}>
+                            {chat.messageCount} messages
+                          </div>
+                        </button>
+                      ))
+                    ) : (
+                      <div style={{
+                        padding: '10px 16px',
+                        color: '#d1d5db',
+                        fontSize: '13px',
+                        textAlign: 'center'
+                      }}>
+                        No chat history
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div style={{
+                height: '1px',
+                backgroundColor: '#333',
+                margin: '8px 0'
+              }} />
+
+              <button
+                onClick={() => {
+                  setShowMenu(false);
+                  openSettings();
+                }}
+                style={{
+                  width: '100%',
+                  padding: '10px 16px',
+                  background: 'transparent',
+                  border: 'none',
+                  color: '#ffffff',
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  fontFamily: 'inherit'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#2a2a2a'}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+              >
+                Settings
+              </button>
+            </div>
+          )}
+          <button
             onClick={newChat}
             className="settings-icon-btn"
             title="New Chat"
             disabled={isLoading}
+            style={{ fontSize: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
           >
-            +
+            <span className="material-symbols-outlined" style={{ fontSize: '20px', lineHeight: '1' }}>edit_note</span>
           </button>
           <button
-            onClick={openSettings}
+            onClick={() => {
+              // Close sidebar by sending message to background
+              chrome.runtime.sendMessage({ type: 'CLOSE_SIDEBAR' });
+              // Notify content script that sidebar closed
+              chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+                if (tabs[0]?.id) {
+                  chrome.tabs.sendMessage(tabs[0].id, { type: 'SIDEBAR_CLOSED' }).catch(() => {
+                    // Content script might not be ready, ignore error
+                  });
+                }
+              });
+            }}
             className="settings-icon-btn"
-            title="Settings"
+            title="Close"
+            style={{ fontSize: '18px', lineHeight: '1' }}
           >
-            ⋯
+            ×
           </button>
         </div>
       </div>
@@ -2242,49 +3537,49 @@ GUIDELINES:
       )}
 
       {/* Trusted Agent Badge */}
-      <div style={{
-        padding: '8px 16px',
-        background: currentSiteAgent ? '#dcfce7' : '#f3f4f6',
-        borderBottom: currentSiteAgent ? '1px solid #86efac' : '1px solid #d1d5db',
-        fontSize: '13px',
-        color: currentSiteAgent ? '#166534' : '#6b7280',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ fontSize: '16px' }}>{currentSiteAgent ? '✓' : '○'}</span>
-          <span>
-            {currentSiteAgent
-              ? `Trusted agent available: ${agentNameToDomain(currentSiteAgent.serverName)}`
-              : 'Trusted agent not available'}
-          </span>
+      {settings?.provider && settings?.model && (
+        <div style={{
+          padding: '8px 16px',
+          background: currentSiteAgent ? '#dcfce7' : '#f3f4f6',
+          borderBottom: currentSiteAgent ? '1px solid #86efac' : '1px solid #d1d5db',
+          fontSize: '13px',
+          color: currentSiteAgent ? '#166534' : '#6b7280',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '16px' }}>{currentSiteAgent ? '✓' : '○'}</span>
+            <span>
+              {currentSiteAgent
+                ? `Trusted agent available: ${agentNameToDomain(currentSiteAgent.serverName)}`
+                : 'Trusted agent not available'}
+            </span>
+          </div>
+          {currentSiteAgent && (
+            <button
+              onClick={() => setTrustedAgentOptIn(!trustedAgentOptIn)}
+              style={{
+                padding: '4px 12px',
+                fontSize: '12px',
+                background: trustedAgentOptIn ? '#16a34a' : '#9ca3af',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontWeight: '500',
+              }}
+              title={trustedAgentOptIn ? 'Click to use Claude/Gemini instead' : 'Click to use trusted agent'}
+            >
+              {trustedAgentOptIn ? 'Opted In' : 'Opt In'}
+            </button>
+          )}
         </div>
-        {currentSiteAgent && (
-          <button
-            onClick={() => setTrustedAgentOptIn(!trustedAgentOptIn)}
-            style={{
-              padding: '4px 12px',
-              fontSize: '12px',
-              background: trustedAgentOptIn ? '#16a34a' : '#9ca3af',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontWeight: '500',
-            }}
-            title={trustedAgentOptIn ? 'Click to use Claude/Gemini instead' : 'Click to use trusted agent'}
-          >
-            {trustedAgentOptIn ? 'Opted In' : 'Opt In'}
-          </button>
-        )}
-      </div>
+      )}
 
       <div className="messages-container" ref={messagesContainerRef}>
         {messages.length === 0 ? (
           <div className="welcome-message">
-            <h2>How can I help you today?</h2>
-            <p>I'm GoDaddy ANS, your AI assistant. I can help you browse the web, analyze content, and perform various tasks.</p>
           </div>
         ) : (
           messages.map((message) => (
@@ -2295,7 +3590,96 @@ GUIDELINES:
               <div className="message-content">
                 {message.content ? (
                   message.role === 'assistant' ? (
-                    <MessageParser content={message.content} />
+                    <>
+                      <MessageParser content={message.content} />
+                      {onboardingState?.active && onboardingState.step === 'provider' && message.id === '1' && (
+                        <div style={{ 
+                          marginTop: '16px', 
+                          display: 'flex', 
+                          flexDirection: 'column', 
+                          gap: '10px' 
+                        }}>
+                          <button
+                            onClick={() => selectProvider('google')}
+                            style={{
+                              padding: '12px 16px',
+                              background: 'rgba(255, 255, 255, 0.05)',
+                              border: '1px solid rgba(255, 255, 255, 0.2)',
+                              borderRadius: '8px',
+                              color: 'inherit',
+                              cursor: 'pointer',
+                              textAlign: 'left',
+                              fontSize: '14px',
+                              fontWeight: 500,
+                              transition: 'all 0.2s',
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+                              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.3)';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
+                              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+                            }}
+                          >
+                            <div style={{ fontWeight: 600, marginBottom: '4px' }}>Google</div>
+                            <div style={{ fontSize: '12px', opacity: 0.8 }}>Gemini models (recommended for browser automation)</div>
+                          </button>
+                          <button
+                            onClick={() => selectProvider('anthropic')}
+                            style={{
+                              padding: '12px 16px',
+                              background: 'rgba(255, 255, 255, 0.05)',
+                              border: '1px solid rgba(255, 255, 255, 0.2)',
+                              borderRadius: '8px',
+                              color: 'inherit',
+                              cursor: 'pointer',
+                              textAlign: 'left',
+                              fontSize: '14px',
+                              fontWeight: 500,
+                              transition: 'all 0.2s',
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+                              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.3)';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
+                              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+                            }}
+                          >
+                            <div style={{ fontWeight: 600, marginBottom: '4px' }}>Anthropic</div>
+                            <div style={{ fontSize: '12px', opacity: 0.8 }}>Claude models</div>
+                          </button>
+                          <button
+                            onClick={() => selectProvider('openai')}
+                            style={{
+                              padding: '12px 16px',
+                              background: 'rgba(255, 255, 255, 0.05)',
+                              border: '1px solid rgba(255, 255, 255, 0.2)',
+                              borderRadius: '8px',
+                              color: 'inherit',
+                              cursor: 'pointer',
+                              textAlign: 'left',
+                              fontSize: '14px',
+                              fontWeight: 500,
+                              transition: 'all 0.2s',
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+                              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.3)';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
+                              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+                            }}
+                          >
+                            <div style={{ fontWeight: 600, marginBottom: '4px' }}>OpenAI</div>
+                            <div style={{ fontSize: '12px', opacity: 0.8 }}>GPT models</div>
+                          </button>
+                        </div>
+                      )}
+                    </>
                   ) : (
                     <UserMessageParser content={message.content} />
                   )
@@ -2316,13 +3700,43 @@ GUIDELINES:
         <div ref={messagesEndRef} />
       </div>
 
+      {/* Sample Prompts */}
+      {samplePrompts.length > 0 && messages.length === 0 && !isLoading && (
+        <div className="sample-prompts-container">
+          {samplePrompts.map((prompt, index) => (
+            <button
+              key={index}
+              type="button"
+              className="sample-prompt-button"
+              onClick={() => {
+                submitMessage(prompt);
+              }}
+            >
+              {prompt}
+            </button>
+          ))}
+        </div>
+      )}
+
       <form className="input-form" onSubmit={handleSubmit}>
         <input
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder={!settings ? "Loading settings..." : "Message GoDaddy ANS..."}
-          disabled={isLoading || !settings}
+          placeholder={
+            onboardingState?.active 
+              ? (onboardingState.step === 'provider' 
+                  ? "Type Google, Anthropic, or OpenAI..." 
+                  : onboardingState.step === 'gocodeUrl'
+                  ? "Paste GoCode URL or type 'Use Default'..."
+                  : onboardingState.step === 'apiKey'
+                  ? "Paste your GoCode Key..."
+                  : "Type your response...")
+              : !settings 
+              ? "Loading settings..." 
+              : "Ask me anything"
+          }
+          disabled={isLoading || (!settings && !onboardingState?.active)}
           className="chat-input"
         />
         {isLoading ? (
@@ -2336,10 +3750,11 @@ GUIDELINES:
         ) : (
           <button
             type="submit"
-            disabled={!input.trim() || !settings}
+            disabled={!input.trim() || (!settings && !onboardingState?.active)}
             className="send-button"
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
           >
-            ⏎
+            <span className="material-symbols-outlined" style={{ fontSize: '20px', lineHeight: '1' }}>send</span>
           </button>
         )}
       </form>

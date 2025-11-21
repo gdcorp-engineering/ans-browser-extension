@@ -2,7 +2,7 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'node:url';
-import { copyFileSync, mkdirSync, existsSync, readdirSync } from 'node:fs';
+import { copyFileSync, mkdirSync, existsSync, readdirSync, writeFileSync } from 'node:fs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -54,6 +54,16 @@ export default defineConfig({
           console.log(`✓ Copied manifest.json and icons to ${outDir}/`);
         } else {
           console.log(`✓ Copied manifest.json to ${outDir}/`);
+        }
+
+        // Copy installer.html to output directory for easy distribution
+        const installerPath = resolve(__dirname, 'installer.html');
+        if (existsSync(installerPath)) {
+          copyFileSync(
+            installerPath,
+            resolve(__dirname, outDir, 'INSTALL_INSTRUCTIONS.html')
+          );
+          console.log(`✓ Copied installation instructions to ${outDir}/`);
         }
       }
     }

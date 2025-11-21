@@ -182,6 +182,17 @@ interface PageContext {
     description?: string;
     keywords?: string;
     author?: string;
+    ogType?: string;
+  };
+  structure?: {
+    headings: Array<{ level: string; text: string }>;
+    hasArticleStructure: boolean;
+    hasMainStructure: boolean;
+    hasNavigation: boolean;
+    sectionCount: number;
+    paragraphCount: number;
+    mainContentLength: number;
+    mainContentRatio: number;
   };
   viewport: {
     width: number;
@@ -249,6 +260,31 @@ function extractPageContext(): PageContext {
     return meta?.getAttribute('content') || undefined;
   };
 
+  // Extract structural information for better page type detection
+  const headings = Array.from(document.querySelectorAll('h1, h2, h3')).slice(0, 10).map(h => ({
+    level: h.tagName.toLowerCase(),
+    text: h.textContent?.trim() || ''
+  }));
+
+  // Detect main content area (article, main, or largest content container)
+  const mainContent = document.querySelector('article, main, [role="main"]') || 
+                     Array.from(document.querySelectorAll('div')).reduce((largest, div) => {
+                       const text = div.textContent || '';
+                       return text.length > (largest?.textContent?.length || 0) ? div : largest;
+                     }, null as Element | null);
+
+  const mainContentText = mainContent?.textContent?.slice(0, 5000) || '';
+  const mainContentLength = mainContentText.length;
+
+  // Analyze content structure
+  const hasArticleStructure = !!document.querySelector('article, [role="article"]');
+  const hasMainStructure = !!document.querySelector('main, [role="main"]');
+  const hasNavigation = !!document.querySelector('nav, [role="navigation"]');
+  
+  // Count semantic elements
+  const sectionCount = document.querySelectorAll('section, article').length;
+  const paragraphCount = document.querySelectorAll('p').length;
+
   return {
     url: window.location.href,
     title: document.title,
@@ -256,11 +292,22 @@ function extractPageContext(): PageContext {
     links,
     images,
     forms,
-    interactiveElements, // NEW: List of clickable elements with selectors
+    interactiveElements,
     metadata: {
       description: getMetaContent('description') || getMetaContent('og:description'),
       keywords: getMetaContent('keywords'),
-      author: getMetaContent('author')
+      author: getMetaContent('author'),
+      ogType: getMetaContent('og:type')
+    },
+    structure: {
+      headings,
+      hasArticleStructure,
+      hasMainStructure,
+      hasNavigation,
+      sectionCount,
+      paragraphCount,
+      mainContentLength,
+      mainContentRatio: mainContentLength / Math.max(totalTextLength, 1) // Ratio of main content to total
     },
     viewport: {
       width: window.innerWidth,
@@ -1299,3 +1346,159 @@ if (document.readyState === 'loading') {
   // DOM is already interactive or complete
   sendPageLoadMessage();
 }
+
+/**
+ * Inject floating "Ask GoDaddy ANS" button on web pages
+ * Opens the sidebar when clicked
+ * Only shows when sidebar is closed
+ */
+let ansFloatingButton: HTMLDivElement | null = null;
+let sidebarOpen = false; // Track sidebar state - default to false (closed) so button shows by default
+
+function showANSFloatingButton() {
+  if (sidebarOpen) return;
+  
+  if (ansFloatingButton) {
+    ansFloatingButton.style.display = 'block';
+    return;
+  }
+
+  // Ensure document.body exists
+  if (!document.body) {
+    const observer = new MutationObserver(() => {
+      if (document.body) {
+        observer.disconnect();
+        showANSFloatingButton();
+      }
+    });
+    observer.observe(document.documentElement, { childList: true });
+    return;
+  }
+
+  // Get extension icon URL
+  const iconUrl = chrome.runtime.getURL('icons/icon.png');
+
+  // Create button container
+  ansFloatingButton = document.createElement('div');
+  ansFloatingButton.id = 'ans-floating-button';
+  ansFloatingButton.innerHTML = `
+    <button id="ans-floating-btn" style="
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: linear-gradient(135deg, #00B140 0%, #008A32 100%);
+      color: white;
+      border: none;
+      padding: 10px 16px;
+      font-size: 14px;
+      font-weight: 600;
+      border-radius: 24px;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(0, 177, 64, 0.3);
+      transition: all 0.2s ease;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      white-space: nowrap;
+    ">
+      <img src="${iconUrl}" alt="GoDaddy ANS" style="width: 20px; height: 20px; object-fit: contain; display: block;" onerror="this.style.display='none';" />
+      Ask GoDaddy ANS
+    </button>
+  `;
+  ansFloatingButton.style.cssText = `
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 999997;
+    pointer-events: auto;
+    display: block;
+  `;
+
+  // Add hover effects
+  const button = ansFloatingButton.querySelector('#ans-floating-btn') as HTMLButtonElement;
+  if (button) {
+    button.addEventListener('mouseenter', () => {
+      button.style.transform = 'translateY(-2px)';
+      button.style.boxShadow = '0 6px 16px rgba(0, 177, 64, 0.4)';
+    });
+    button.addEventListener('mouseleave', () => {
+      button.style.transform = 'translateY(0)';
+      button.style.boxShadow = '0 4px 12px rgba(0, 177, 64, 0.3)';
+    });
+    button.addEventListener('click', () => {
+      // Hide button immediately when clicked
+      hideANSFloatingButton();
+      // Open sidebar via background script
+      chrome.runtime.sendMessage({ type: 'OPEN_SIDEBAR' }, (response) => {
+        if (chrome.runtime.lastError) {
+          console.error('Error opening sidebar:', chrome.runtime.lastError);
+          // Show button again if sidebar failed to open
+          showANSFloatingButton();
+        }
+      });
+    });
+  }
+
+  document.body.appendChild(ansFloatingButton);
+}
+
+function hideANSFloatingButton() {
+  if (ansFloatingButton) {
+    ansFloatingButton.style.display = 'none';
+  }
+}
+
+// Listen for sidebar state changes
+chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
+  if (request.type === 'SIDEBAR_OPENED') {
+    sidebarOpen = true;
+    hideANSFloatingButton();
+  } else if (request.type === 'SIDEBAR_CLOSED') {
+    sidebarOpen = false;
+    showANSFloatingButton();
+  }
+});
+
+// Simple function to check sidebar state and update button
+function checkSidebarStateAndUpdateButton() {
+  chrome.runtime.sendMessage({ type: 'CHECK_SIDEBAR_STATE' }, (response) => {
+    const isOpen = response && response.sidebarOpen === true;
+    sidebarOpen = isOpen;
+    
+    if (isOpen) {
+      hideANSFloatingButton();
+    } else {
+      showANSFloatingButton();
+    }
+  });
+}
+
+// Initialize button on page load
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => {
+    checkSidebarStateAndUpdateButton();
+  }, { once: true });
+} else {
+  checkSidebarStateAndUpdateButton();
+}
+
+// Check state on page refresh and navigation
+window.addEventListener('pageshow', () => {
+  checkSidebarStateAndUpdateButton();
+});
+
+// Check state when tab becomes visible
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) {
+    checkSidebarStateAndUpdateButton();
+  }
+});
+
+// Check state when window gains focus
+window.addEventListener('focus', () => {
+  checkSidebarStateAndUpdateButton();
+});
+
+// Additional check on beforeunload to reset state (optional, but helps with cleanup)
+window.addEventListener('beforeunload', () => {
+  // Reset local state on page unload
+  sidebarOpen = false;
+});

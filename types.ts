@@ -76,6 +76,17 @@ export interface PageContext {
     description?: string;
     keywords?: string;
     author?: string;
+    ogType?: string;
+  };
+  structure?: {
+    headings: Array<{ level: string; text: string }>;
+    hasArticleStructure: boolean;
+    hasMainStructure: boolean;
+    hasNavigation: boolean;
+    sectionCount: number;
+    paragraphCount: number;
+    mainContentLength: number;
+    mainContentRatio: number;
   };
   viewport?: {
     width: number;

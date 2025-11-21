@@ -1,0 +1,18 @@
+{
+  "ExtensionInstallForcelist": [
+    {
+      "extension_id": "YOUR_EXTENSION_ID_HERE",
+      "update_url": "https://your-update-server.com/updates.xml"
+    }
+  ],
+  "ExtensionInstallAllowlist": [
+    "*"
+  ],
+  "ExtensionInstallBlocklist": [
+    "*"
+  ],
+  "ExtensionInstallSources": [
+    "https://your-domain.com/*"
+  ]
+}
+
