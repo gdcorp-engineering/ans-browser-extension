@@ -49,9 +49,10 @@ FROM nginx:alpine
 # Copy the deploy directory to nginx html directory
 COPY --from=builder /app/deploy /usr/share/nginx/html
 
-# Copy nginx configuration
+# Remove default nginx config and create our custom one
 # Note: ECS/ALB handles HTTPS termination, so nginx listens on HTTP
-RUN echo 'server { \
+RUN rm -f /etc/nginx/conf.d/default.conf && \
+    echo 'server { \
     listen 8443; \
     server_name _; \
     root /usr/share/nginx/html; \
@@ -60,8 +61,8 @@ RUN echo 'server { \
     # Health check endpoint - must return 200 for ALB health checks \
     location /health { \
         access_log off; \
+        default_type text/plain; \
         return 200 "healthy\n"; \
-        add_header Content-Type text/plain always; \
     } \
     \
     # Root location \
@@ -81,15 +82,16 @@ RUN echo 'server { \
     \
     # Logging for debugging \
     access_log /var/log/nginx/access.log; \
-    error_log /var/log/nginx/error.log; \
+    error_log /var/log/nginx/error.log warn; \
 }' > /etc/nginx/conf.d/default.conf && \
-    # Remove default nginx config that listens on port 80 \
-    rm -f /etc/nginx/conf.d/default.conf.bak 2>/dev/null || true && \
+    # Verify files exist \
+    echo "=== Verifying deployment files ===" && \
+    ls -la /usr/share/nginx/html/ && \
+    test -f /usr/share/nginx/html/index.html && echo "✓ index.html exists" || echo "✗ index.html missing" && \
+    ls -la /usr/share/nginx/html/downloads/ 2>/dev/null && echo "✓ downloads directory exists" || echo "✗ downloads directory missing" && \
     # Test nginx configuration \
     nginx -t && \
-    # Verify files exist \
-    ls -la /usr/share/nginx/html/ && \
-    ls -la /usr/share/nginx/html/downloads/ 2>/dev/null || echo "Downloads directory will be created"
+    echo "=== Nginx configuration is valid ==="
 
 # Expose port 8443 (as specified in workflow)
 EXPOSE 8443
