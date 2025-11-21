@@ -88,9 +88,7 @@ jobs:
               "ports": [8443],
               "healthcheckPath": "/health",
               "healthcheckGracePeriod": 180,
-              "protocol": "https",
-              "targetGroupProtocol": "HTTP",
-              "targetGroupPort": 8443
+              "protocol": "https"
             }
 
       # Promote the published artifact to the `dev` environment with the katana-promote-artifact GitHub Action
