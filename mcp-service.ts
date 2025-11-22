@@ -31,7 +31,7 @@ export class MCPService {
       try {
         await this.connectToServer(server);
       } catch (error) {
-        console.error(`❌ Failed to connect to MCP server "${server.name}":`, error);
+        console.error(`❌ Failed to connect to MCP server "${server.name}" at ${server.url}:`, error);
       }
     });
 
@@ -44,12 +44,14 @@ export class MCPService {
    * Connect to a single MCP server
    */
   private async connectToServer(config: MCPServerConfig): Promise<void> {
+    // Log connection attempt with URL
+    console.log(`🔗 Attempting MCP connection to "${config.name}" at ${config.url}`);
+
     // Log trust status
     if (config.isTrusted) {
-      console.log(`✓ Connecting to verified business: "${config.name}"`);
+      console.log(`   ✓ Verified business`);
     } else if (config.isCustom) {
-      console.warn(`⚠️  Connecting to custom (unverified) server: "${config.name}"`);
-      console.warn(`   Use only services you trust. URL: ${config.url}`);
+      console.warn(`   ⚠️  Custom (unverified) server - use only services you trust`);
     }
 
     try {
