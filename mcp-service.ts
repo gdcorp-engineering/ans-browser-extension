@@ -102,11 +102,12 @@ export class MCPService {
       });
 
     } catch (error) {
-      console.error(`❌ Error connecting to "${config.name}":`, error);
+      console.error(`❌ Error connecting to "${config.name}" at ${config.url}:`, error);
 
       const errorConnection: MCPConnection = {
         serverId: config.id,
         serverName: config.name,
+        serverUrl: config.url,
         client: null as any,
         tools: {},
         connected: false,
