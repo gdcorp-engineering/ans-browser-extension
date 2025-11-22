@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import type { Settings, MCPClient, Message } from './types';
+import type { Settings, MCPClient, Message, ChatHistory } from './types';
 import { GeminiResponseSchema } from './types';
 import { experimental_createMCPClient, stepCountIs } from 'ai';
 import { streamAnthropic } from './anthropic-service';
@@ -66,6 +66,119 @@ Please provide your GoCode Key. This is your API key for the GoCode service.
 Get your GoCode Key from [GoCode (Alpha) - How to Get Started](https://secureservernet.sharepoint.com/sites/AIHub/SitePages/Meet-GoCode-(Alpha)--Your-smarter-gateway-to-AI-providers%E2%80%94Now-with-self-issued-keys-for-IDEs-and-CLIs.aspx#how-to-get-started-(alpha))
 
 Paste your GoCode Key here:`;
+
+// Chat History Storage Configuration
+const CHAT_HISTORY_KEY = 'atlasChatHistory';
+const MAX_CHATS = 20;
+
+// Generate UUID v4
+function generateUUID(): string {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
+
+// Generate chat title from first user message
+function generateChatTitle(messages: Message[]): string {
+  const firstUserMessage = messages.find(m => m.role === 'user');
+  if (firstUserMessage) {
+    const preview = firstUserMessage.content.slice(0, 50).trim();
+    return preview || 'New Chat';
+  }
+  return 'New Chat';
+}
+
+// Load chat history from storage
+async function loadChatHistory(): Promise<ChatHistory[]> {
+  return new Promise((resolve) => {
+    chrome.storage.local.get([CHAT_HISTORY_KEY], (result) => {
+      const chats = result[CHAT_HISTORY_KEY] || [];
+      resolve(Array.isArray(chats) ? chats : []);
+    });
+  });
+}
+
+// Save chat history to storage with LRU cleanup
+async function saveChatHistory(chat: ChatHistory): Promise<void> {
+  const chats = await loadChatHistory();
+  
+  // Remove existing chat with same ID if it exists (update case)
+  const filteredChats = chats.filter(c => c.id !== chat.id);
+  
+  // Add new/updated chat at the beginning (most recent first)
+  filteredChats.unshift(chat);
+  
+  // LRU cleanup: remove oldest chats if over limit
+  if (filteredChats.length > MAX_CHATS) {
+    // Sort by updatedAt to ensure we keep most recently updated
+    filteredChats.sort((a, b) => b.updatedAt - a.updatedAt);
+    // Keep only the most recent MAX_CHATS
+    const trimmedChats = filteredChats.slice(0, MAX_CHATS);
+    
+    chrome.storage.local.set({ [CHAT_HISTORY_KEY]: trimmedChats }, () => {
+      console.log(`💾 Saved chat history (trimmed to ${MAX_CHATS} chats)`);
+    });
+  } else {
+    chrome.storage.local.set({ [CHAT_HISTORY_KEY]: filteredChats }, () => {
+      console.log(`💾 Saved chat history (${filteredChats.length} chats)`);
+    });
+  }
+}
+
+// Delete a chat from history
+async function deleteChatHistory(chatId: string): Promise<void> {
+  const chats = await loadChatHistory();
+  const filteredChats = chats.filter(c => c.id !== chatId);
+  chrome.storage.local.set({ [CHAT_HISTORY_KEY]: filteredChats }, () => {
+    console.log(`🗑️ Deleted chat ${chatId}`);
+  });
+}
+
+// Save current chat to history
+async function saveCurrentChat(
+  messages: Message[],
+  tabId: number | null,
+  url?: string,
+  existingChatId?: string | null
+): Promise<string | null> {
+  if (messages.length === 0) {
+    return null;
+  }
+
+  // Use existing chat ID if provided, otherwise generate new one
+  const chatId = existingChatId || generateUUID();
+  const now = Date.now();
+  const title = generateChatTitle(messages);
+  const firstUserMessage = messages.find(m => m.role === 'user');
+  const preview = firstUserMessage?.content.slice(0, 100) || 'New Chat';
+
+  // If updating existing chat, preserve original createdAt
+  let createdAt = now;
+  if (existingChatId) {
+    const existingChats = await loadChatHistory();
+    const existingChat = existingChats.find(c => c.id === existingChatId);
+    if (existingChat) {
+      createdAt = existingChat.createdAt;
+    }
+  }
+
+  const chat: ChatHistory = {
+    id: chatId,
+    title,
+    createdAt,
+    updatedAt: now,
+    tabId: tabId || undefined,
+    url: url || undefined,
+    messageCount: messages.length,
+    preview,
+    messages: [...messages] // Copy messages array
+  };
+
+  await saveChatHistory(chat);
+  return chatId;
+}
 
 // Custom component to handle link clicks - opens in new tab
 const LinkComponent = ({ href, children }: { href?: string; children?: React.ReactNode }) => {
@@ -166,15 +279,60 @@ const UserMessageParser = ({ content }: { content: string }) => {
 
 // Component to parse and display assistant messages with better formatting
 const MessageParser = ({ content }: { content: string }) => {
+  // Helper function to clean up XML-like tool descriptions
+  const cleanToolDescription = (text: string): string => {
+    // Match patterns like <click_element>...</click_element> with nested tags
+    // This handles both single-line and multi-line XML-like tool descriptions
+    const xmlToolPattern = /<(\w+)>[\s\S]*?<description>(.*?)<\/description>[\s\S]*?<\/\1>/gi;
+    
+    let cleaned = text.replace(xmlToolPattern, (match, toolName, description) => {
+      // Extract and clean the description
+      if (description && description.trim()) {
+        return description.trim();
+      }
+      // Fallback: try to extract selector if no description
+      const selectorMatch = match.match(/<selector>(.*?)<\/selector>/i);
+      if (selectorMatch && selectorMatch[1]) {
+        const selector = selectorMatch[1].trim();
+        // Make selector more readable
+        const readableSelector = selector
+          .replace(/button:has-text\(["'](.*?)["']\)/i, '$1 button')
+          .replace(/:/g, ' ')
+          .replace(/#/g, 'ID: ')
+          .replace(/\./g, ' class: ');
+        return `Clicking the ${readableSelector}`;
+      }
+      // Last resort: use tool name
+      const friendlyName = toolName.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+      return `Executing ${friendlyName}`;
+    });
+    
+    // Also handle cases without description tag
+    cleaned = cleaned.replace(/<(\w+)>[\s\S]*?<selector>(.*?)<\/selector>[\s\S]*?<\/\1>/gi, (match, toolName, selector) => {
+      const readableSelector = selector.trim()
+        .replace(/button:has-text\(["'](.*?)["']\)/i, '$1 button')
+        .replace(/:/g, ' ')
+        .replace(/#/g, 'ID: ')
+        .replace(/\./g, ' class: ');
+      return `Clicking the ${readableSelector}`;
+    });
+    
+    return cleaned;
+  };
+
   // Helper function to detect if a line is a tool execution line
   const isToolExecution = (text: string) => {
     return text.startsWith('[Executing:') ||
            (text.startsWith('{') && text.endsWith('}') && text.includes(':')) ||
-           (text.startsWith('{"') && text.includes('":'));
+           (text.startsWith('{"') && text.includes('":')) ||
+           /<\w+>.*?<\/\w+>/.test(text); // Also detect XML-like tool descriptions
   };
 
+  // Clean the content first to remove XML-like tool descriptions
+  const cleanedContent = cleanToolDescription(content);
+
   // Split by lines and group tool execution lines separately from regular text
-  const lines = content.split('\n');
+  const lines = cleanedContent.split('\n');
   const groups: Array<{ type: 'tool' | 'text', content: string }> = [];
   let currentTextGroup: string[] = [];
 
@@ -187,8 +345,9 @@ const MessageParser = ({ content }: { content: string }) => {
         groups.push({ type: 'text', content: currentTextGroup.join('\n') });
         currentTextGroup = [];
       }
-      // Add tool execution line
-      groups.push({ type: 'tool', content: trimmed });
+      // Add tool execution line (clean it if it's XML-like)
+      const cleanedLine = cleanToolDescription(trimmed);
+      groups.push({ type: 'tool', content: cleanedLine });
     } else {
       // Accumulate regular text
       currentTextGroup.push(line);
@@ -272,6 +431,24 @@ function ChatSidebar() {
   const tabMessagesRef = useRef<Record<number, Message[]>>({});
   const currentTabIdRef = useRef<number | null>(null);
   const messagesRef = useRef<Message[]>([]);
+  const [persistedChatHistory, setPersistedChatHistory] = useState<ChatHistory[]>([]);
+  const currentChatIdRef = useRef<string | null>(null); // Track current chat ID for updates
+  const activeStreamTabIdRef = useRef<number | null>(null); // Track which tab has an active stream
+  const streamMessagesRef = useRef<Message[]>([]); // Track messages during streaming
+  const streamAbortControllerRef = useRef<Record<number, AbortController>>({}); // Track abort controllers per tab
+
+  // Helper function to notify background script about agent mode status
+  const notifyAgentModeStatus = (isActive: boolean, tabId: number | null) => {
+    if (tabId !== null) {
+      chrome.runtime.sendMessage({
+        type: isActive ? 'AGENT_MODE_START' : 'AGENT_MODE_STOP',
+        tabId: tabId
+      }).catch((error) => {
+        // Silently fail if background script is not available
+        console.debug('Could not notify agent mode status:', error);
+      });
+    }
+  };
 
   const executeTool = async (toolName: string, parameters: any, retryCount = 0): Promise<any> => {
     const MAX_RETRIES = 3;
@@ -387,6 +564,15 @@ function ChatSidebar() {
           action: 'drag_drop',
           coordinates: { x: parameters.x, y: parameters.y },
           destination: { x: parameters.destination_x, y: parameters.destination_y }
+        }, handleResponse);
+      } else if (toolName === 'waitForModal') {
+        chrome.runtime.sendMessage({ 
+          type: 'WAIT_FOR_MODAL',
+          timeout: parameters.timeout || 5000
+        }, handleResponse);
+      } else if (toolName === 'closeModal') {
+        chrome.runtime.sendMessage({ 
+          type: 'CLOSE_MODAL'
         }, handleResponse);
       } else {
         reject(new Error(`Unknown tool: ${toolName}`));
@@ -1040,6 +1226,47 @@ function ChatSidebar() {
     }
   };
 
+  // Load persisted chat history on mount
+  useEffect(() => {
+    const loadHistory = async () => {
+      const chats = await loadChatHistory();
+      setPersistedChatHistory(chats);
+      console.log(`📚 Loaded ${chats.length} persisted chats`);
+    };
+    loadHistory();
+  }, []);
+
+  // Continuously sync messages from streamMessagesRef to UI when on active stream tab
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const activeStreamTabId = activeStreamTabIdRef.current;
+      const currentTabId = currentTabIdRef.current;
+      
+      // If we're on the tab with an active stream, sync messages
+      if (activeStreamTabId !== null && activeStreamTabId === currentTabId && streamMessagesRef.current.length > 0) {
+        // Only update if messages have changed (avoid unnecessary re-renders)
+        const currentMessages = messages;
+        const streamMessages = streamMessagesRef.current;
+        
+        // Check if messages are different (compare by length and last message content)
+        const lastCurrentContent = currentMessages.length > 0 ? currentMessages[currentMessages.length - 1]?.content : '';
+        const lastStreamContent = streamMessages.length > 0 ? streamMessages[streamMessages.length - 1]?.content : '';
+        
+        if (currentMessages.length !== streamMessages.length || lastCurrentContent !== lastStreamContent) {
+          console.log('🔄 Syncing stream messages to UI:', streamMessages.length, 'messages', 'last content length:', lastStreamContent.length);
+          setMessages([...streamMessages]);
+          messagesRef.current = [...streamMessages];
+          // Also update tabMessagesRef
+          if (currentTabId !== null) {
+            tabMessagesRef.current[currentTabId] = [...streamMessages];
+          }
+        }
+      }
+    }, 200); // Check every 200ms for more responsive updates
+    
+    return () => clearInterval(interval);
+  }, [messages]); // Include messages in dependencies to ensure we compare against latest state
+
   // Get current tab ID and load its messages
   useEffect(() => {
     const getCurrentTab = async () => {
@@ -1049,11 +1276,92 @@ function ChatSidebar() {
         setCurrentTabId(tab.id);
         currentTabIdRef.current = tab.id; // Sync ref immediately
 
-        // Load messages for this tab
-        if (tabMessagesRef.current[tab.id]) {
-          setMessages(tabMessagesRef.current[tab.id]);
+        // Check if this tab has an active stream
+        const hasActiveStream = activeStreamTabIdRef.current === tab.id;
+        
+        // First check in-memory storage (only if it has messages)
+        let inMemoryMessages = tabMessagesRef.current[tab.id];
+        
+        // If there's an active stream for this tab, use the stream messages (they're more up-to-date)
+        if (hasActiveStream && streamMessagesRef.current.length > 0) {
+          inMemoryMessages = streamMessagesRef.current;
+          console.log('🔄 Using active stream messages for tab:', tab.id, `${streamMessagesRef.current.length} messages`);
+          // Also sync tabMessagesRef with stream messages
+          tabMessagesRef.current[tab.id] = streamMessagesRef.current;
+        }
+        
+        if (inMemoryMessages && inMemoryMessages.length > 0) {
+          console.log('📂 Loading from in-memory storage for tab:', tab.id, `${inMemoryMessages.length} messages`);
+          setMessages(inMemoryMessages);
+          // If this tab has an active stream, restore loading state and overlay
+          if (hasActiveStream) {
+            setIsLoading(true);
+            console.log('🔄 Restoring active stream for tab:', tab.id);
+            // Immediately sync messages from streamMessagesRef (they're the most up-to-date)
+            if (streamMessagesRef.current.length > 0) {
+              setMessages([...streamMessagesRef.current]);
+              messagesRef.current = [...streamMessagesRef.current];
+              tabMessagesRef.current[tab.id] = [...streamMessagesRef.current];
+            }
+            // Show overlay for this tab since it has active stream
+            await showBrowserAutomationOverlay(tab.id);
+            // Notify background script that agent mode is active for this tab
+            notifyAgentModeStatus(true, tab.id);
+          } else {
+            // Hide overlay if no active stream
+            await hideBrowserAutomationOverlay(tab.id);
+          }
+          // Try to find the persisted chat ID for this tab
+          const chats = await loadChatHistory();
+          const tabChat = chats.find(c => c.tabId === tab.id);
+          currentChatIdRef.current = tabChat?.id || null;
         } else {
-          setMessages([]);
+          // Check persisted storage for this tab
+          try {
+            const chats = await loadChatHistory();
+            console.log('🔍 Looking for chats for tab:', tab.id, `Found ${chats.length} total chats`);
+            // Find the most recent chat for this tab
+            const tabChats = chats.filter(c => c.tabId === tab.id);
+            console.log('🔍 Tab-specific chats:', tabChats.length, tabChats.map(c => ({ id: c.id, messages: c.messageCount, updated: new Date(c.updatedAt).toLocaleString() })));
+            
+            if (tabChats.length > 0) {
+              // Sort by updatedAt, get most recent
+              const mostRecentChat = tabChats.sort((a, b) => b.updatedAt - a.updatedAt)[0];
+              console.log('📚 Loading persisted chat for tab:', tab.id, mostRecentChat.id, `${mostRecentChat.messageCount} messages`);
+              setMessages(mostRecentChat.messages);
+              currentChatIdRef.current = mostRecentChat.id;
+              // Also update in-memory storage for quick access
+              tabMessagesRef.current[tab.id] = mostRecentChat.messages;
+              // Check if this tab has an active stream
+              if (activeStreamTabIdRef.current === tab.id) {
+                setIsLoading(true);
+                console.log('🔄 Restoring active stream for tab:', tab.id);
+                // Restore stream messages if available (they're more up-to-date than persisted)
+                if (streamMessagesRef.current.length > 0) {
+                  setMessages(streamMessagesRef.current);
+                  tabMessagesRef.current[tab.id] = [...streamMessagesRef.current];
+                }
+                // Show overlay for this tab since it has active stream
+                await showBrowserAutomationOverlay(tab.id);
+                // Notify background script that agent mode is active for this tab
+                notifyAgentModeStatus(true, tab.id);
+              } else {
+                // Hide overlay if no active stream
+                await hideBrowserAutomationOverlay(tab.id);
+              }
+            } else {
+              // No chat history for this tab, start fresh
+              console.log('🆕 Starting new chat for tab:', tab.id);
+              setMessages([]);
+              currentChatIdRef.current = null;
+              // Clear in-memory storage for this tab
+              tabMessagesRef.current[tab.id] = [];
+            }
+          } catch (error) {
+            console.error('❌ Error loading chat on mount:', error);
+            setMessages([]);
+            currentChatIdRef.current = null;
+          }
         }
 
         // Check for trusted agent on this site
@@ -1069,22 +1377,144 @@ function ChatSidebar() {
     getCurrentTab();
 
     // Listen for tab switches
-    const handleTabChange = (activeInfo: chrome.tabs.TabActiveInfo) => {
+    const handleTabChange = async (activeInfo: chrome.tabs.TabActiveInfo) => {
       console.log('📍 Tab switched to:', activeInfo.tabId);
 
       // Save current tab's messages before switching (use refs to get current values)
       const currentId = currentTabIdRef.current;
-      if (currentId !== null) {
-        tabMessagesRef.current[currentId] = messagesRef.current;
+      if (currentId !== null && currentId !== activeInfo.tabId) {
+        // Only save if we're actually switching to a different tab
+        // Check if there's an active stream for this tab - use stream messages if available
+        const hasActiveStream = activeStreamTabIdRef.current === currentId;
+        const messagesToSave = hasActiveStream && streamMessagesRef.current.length > 0 
+          ? streamMessagesRef.current 
+          : messagesRef.current;
+        
+        if (messagesToSave.length > 0) {
+          // Save to in-memory storage
+          tabMessagesRef.current[currentId] = messagesToSave;
+          
+          // Also save to persisted storage if we have messages
+          try {
+            const [tab] = await chrome.tabs.get(currentId).catch(() => [null]);
+            const url = tab?.url;
+            console.log('💾 Saving chat for tab:', currentId, `${messagesToSave.length} messages`, 'hasActiveStream:', hasActiveStream, 'existing chatId:', currentChatIdRef.current);
+            const chatId = await saveCurrentChat(messagesToSave, currentId, url, currentChatIdRef.current);
+            if (chatId) {
+              console.log('✅ Saved chat with ID:', chatId, 'for tab:', currentId);
+              // Update the persisted chat history state
+              const chats = await loadChatHistory();
+              setPersistedChatHistory(chats);
+            }
+          } catch (error) {
+            console.error('❌ Error saving chat on tab switch:', error);
+          }
+        } else {
+          // Even if no messages, save empty array to in-memory to clear it
+          tabMessagesRef.current[currentId] = [];
+        }
       }
 
       // Load new tab's messages
       setCurrentTabId(activeInfo.tabId);
       currentTabIdRef.current = activeInfo.tabId; // Sync ref immediately
-      if (tabMessagesRef.current[activeInfo.tabId]) {
-        setMessages(tabMessagesRef.current[activeInfo.tabId]);
+      
+      // Check if this tab has an active stream
+      const hasActiveStream = activeStreamTabIdRef.current === activeInfo.tabId;
+      
+      // Hide overlay on previous tab (if it had one but no active stream)
+      if (currentId !== null && currentId !== activeInfo.tabId && activeStreamTabIdRef.current !== currentId) {
+        await hideBrowserAutomationOverlay(currentId);
+      }
+      
+      // First check in-memory storage (only if it has messages)
+      let inMemoryMessages = tabMessagesRef.current[activeInfo.tabId];
+      
+      // If there's an active stream for this tab, use the stream messages (they're more up-to-date)
+      if (hasActiveStream && streamMessagesRef.current.length > 0) {
+        inMemoryMessages = streamMessagesRef.current;
+        console.log('🔄 Using active stream messages for tab:', activeInfo.tabId, `${streamMessagesRef.current.length} messages`);
+        // Also sync tabMessagesRef with stream messages
+        tabMessagesRef.current[activeInfo.tabId] = streamMessagesRef.current;
+      }
+      
+      if (inMemoryMessages && inMemoryMessages.length > 0) {
+        console.log('📂 Loading from in-memory storage for tab:', activeInfo.tabId, `${inMemoryMessages.length} messages`);
+        setMessages(inMemoryMessages);
+        // If this tab has an active stream, restore loading state and overlay
+        if (hasActiveStream) {
+          setIsLoading(true);
+          console.log('🔄 Restoring active stream for tab:', activeInfo.tabId);
+          // Immediately sync messages from streamMessagesRef (they're the most up-to-date)
+          if (streamMessagesRef.current.length > 0) {
+            setMessages([...streamMessagesRef.current]);
+            messagesRef.current = [...streamMessagesRef.current];
+            tabMessagesRef.current[activeInfo.tabId] = [...streamMessagesRef.current];
+          }
+          // Show overlay on this tab since it has active stream
+          await showBrowserAutomationOverlay(activeInfo.tabId);
+          // Notify background script that agent mode is active for this tab
+          notifyAgentModeStatus(true, activeInfo.tabId);
+        } else {
+          // Hide overlay if no active stream
+          await hideBrowserAutomationOverlay(activeInfo.tabId);
+        }
+        // Try to find the persisted chat ID for this tab
+        const chats = await loadChatHistory();
+        const tabChat = chats.find(c => c.tabId === activeInfo.tabId);
+        currentChatIdRef.current = tabChat?.id || null;
       } else {
-        setMessages([]);
+        // Check persisted storage for this tab
+        try {
+          const chats = await loadChatHistory();
+          console.log('🔍 Looking for chats for tab:', activeInfo.tabId, `Found ${chats.length} total chats`);
+          // Find the most recent chat for this tab
+          const tabChats = chats.filter(c => c.tabId === activeInfo.tabId);
+          console.log('🔍 Tab-specific chats:', tabChats.length, tabChats.map(c => ({ id: c.id, messages: c.messageCount, updated: new Date(c.updatedAt).toLocaleString() })));
+          
+          if (tabChats.length > 0) {
+            // Sort by updatedAt, get most recent
+            const mostRecentChat = tabChats.sort((a, b) => b.updatedAt - a.updatedAt)[0];
+            console.log('📚 Loading persisted chat for tab:', activeInfo.tabId, mostRecentChat.id, `${mostRecentChat.messageCount} messages`);
+            setMessages(mostRecentChat.messages);
+            currentChatIdRef.current = mostRecentChat.id;
+            // Also update in-memory storage for quick access
+            tabMessagesRef.current[activeInfo.tabId] = mostRecentChat.messages;
+            // If this tab has an active stream, restore loading state and overlay
+            if (hasActiveStream) {
+              setIsLoading(true);
+              console.log('🔄 Restoring active stream for tab:', activeInfo.tabId);
+              // Immediately sync messages from streamMessagesRef (they're the most up-to-date)
+              if (streamMessagesRef.current.length > 0) {
+                setMessages([...streamMessagesRef.current]);
+                messagesRef.current = [...streamMessagesRef.current];
+                tabMessagesRef.current[activeInfo.tabId] = [...streamMessagesRef.current];
+              }
+              // Show overlay on this tab since it has active stream
+              await showBrowserAutomationOverlay(activeInfo.tabId);
+              // Notify background script that agent mode is active for this tab
+              notifyAgentModeStatus(true, activeInfo.tabId);
+            } else {
+              // Hide overlay if no active stream
+              await hideBrowserAutomationOverlay(activeInfo.tabId);
+            }
+          } else {
+            // No chat history for this tab, start fresh
+            console.log('🆕 Starting new chat for tab:', activeInfo.tabId);
+            setMessages([]);
+            messagesRef.current = [];
+            currentChatIdRef.current = null;
+            // Clear in-memory storage for this tab
+            tabMessagesRef.current[activeInfo.tabId] = [];
+            setIsLoading(false);
+            // Hide overlay for new tab
+            await hideBrowserAutomationOverlay(activeInfo.tabId);
+          }
+        } catch (error) {
+          console.error('❌ Error loading chat on tab switch:', error);
+          setMessages([]);
+          currentChatIdRef.current = null;
+        }
       }
 
       // Check for trusted agent on new tab
@@ -1147,7 +1577,29 @@ function ChatSidebar() {
           }
         });
       } else {
-        // Sidepanel became hidden - notify background script and content script
+        // Sidepanel became hidden - save current chat before closing
+        (async () => {
+          // Check if there's an active stream - use stream messages if available
+          const hasActiveStream = activeStreamTabIdRef.current === currentTabIdRef.current;
+          const messagesToSave = hasActiveStream && streamMessagesRef.current.length > 0 
+            ? streamMessagesRef.current 
+            : messagesRef.current;
+          
+          if (messagesToSave.length > 0) {
+            const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+            const url = tab?.url;
+            console.log('💾 Saving chat before sidepanel close:', currentTabIdRef.current, `${messagesToSave.length} messages`, 'hasActiveStream:', hasActiveStream);
+            const chatId = await saveCurrentChat(messagesToSave, currentTabIdRef.current, url, currentChatIdRef.current);
+            if (chatId) {
+              currentChatIdRef.current = chatId;
+              // Reload chat history to include the updated chat
+              const chats = await loadChatHistory();
+              setPersistedChatHistory(chats);
+            }
+          }
+        })();
+        
+        // Notify background script and content script
         console.log('📍 Sidepanel became hidden, showing floating button');
         chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
           if (tabs[0]?.id) {
@@ -1206,6 +1658,25 @@ function ChatSidebar() {
     if (currentTabId !== null && messages.length > 0) {
       console.log(`💾 Saving ${messages.length} messages for tab ${currentTabId}`);
       tabMessagesRef.current[currentTabId] = messages;
+      
+      // Debounced save to persisted storage (save after 2 seconds of no changes)
+      const saveTimeout = setTimeout(async () => {
+        try {
+          const [tab] = await chrome.tabs.get(currentTabId).catch(() => [null]);
+          const url = tab?.url;
+          const chatId = await saveCurrentChat(messages, currentTabId, url, currentChatIdRef.current);
+          if (chatId) {
+            currentChatIdRef.current = chatId;
+            // Update persisted chat history state
+            const chats = await loadChatHistory();
+            setPersistedChatHistory(chats);
+          }
+        } catch (error) {
+          console.error('Error auto-saving chat:', error);
+        }
+      }, 2000); // Save 2 seconds after last message change
+      
+      return () => clearTimeout(saveTimeout);
     }
   }, [messages, currentTabId]);
 
@@ -1691,10 +2162,28 @@ function ChatSidebar() {
   const stop = () => {
     console.log('🛑 Stop called - aborting all browser operations');
 
-    // Abort the AI API call
+    // Abort the AI API call - check both the current abort controller and any active stream's controller
+    const activeStreamTabId = activeStreamTabIdRef.current;
+    
+    // First, try to abort the active stream's controller (if different from current tab)
+    if (activeStreamTabId !== null && streamAbortControllerRef.current[activeStreamTabId]) {
+      console.log('🛑 Aborting active stream for tab:', activeStreamTabId);
+      streamAbortControllerRef.current[activeStreamTabId].abort();
+      delete streamAbortControllerRef.current[activeStreamTabId];
+    }
+    
+    // Also abort the current abort controller (for backwards compatibility)
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
-      setIsLoading(false);
+    }
+    
+    setIsLoading(false);
+    
+    // Clear stream tracking and notify background script
+    if (activeStreamTabId !== null) {
+      activeStreamTabIdRef.current = null;
+      // Notify background script that agent mode has stopped
+      notifyAgentModeStatus(false, activeStreamTabId);
     }
 
     // Send message to background script to cancel any pending browser operations
@@ -1712,23 +2201,23 @@ function ChatSidebar() {
     console.log('✅ All browser operations aborted');
   };
 
-  // Show/hide browser automation overlay on current tab
-  const showBrowserAutomationOverlay = async () => {
+  // Show/hide browser automation overlay on specific tab
+  const showBrowserAutomationOverlay = async (tabId?: number | null) => {
     try {
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (tab?.id) {
-        await chrome.tabs.sendMessage(tab.id, { type: 'SHOW_BROWSER_AUTOMATION_OVERLAY' });
+      const targetTabId = tabId || currentTabId;
+      if (targetTabId !== null) {
+        await chrome.tabs.sendMessage(targetTabId, { type: 'SHOW_BROWSER_AUTOMATION_OVERLAY' });
       }
     } catch (error) {
       console.warn('Failed to show browser automation overlay:', error);
     }
   };
 
-  const hideBrowserAutomationOverlay = async () => {
+  const hideBrowserAutomationOverlay = async (tabId?: number | null) => {
     try {
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (tab?.id) {
-        await chrome.tabs.sendMessage(tab.id, { type: 'HIDE_BROWSER_AUTOMATION_OVERLAY' });
+      const targetTabId = tabId || currentTabId;
+      if (targetTabId !== null) {
+        await chrome.tabs.sendMessage(targetTabId, { type: 'HIDE_BROWSER_AUTOMATION_OVERLAY' });
       }
     } catch (error) {
       console.warn('Failed to hide browser automation overlay:', error);
@@ -1744,42 +2233,140 @@ function ChatSidebar() {
     setShowMenu(false);
   };
 
-  const switchChat = (tabId: number) => {
-    if (tabMessagesRef.current[tabId]) {
-      setMessages(tabMessagesRef.current[tabId]);
-      setCurrentTabId(tabId);
-      setShowChatMenu(false);
-      setShowMenu(false);
-      // Scroll to bottom
-      setTimeout(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-      }, 100);
+  const switchChat = async (chatIdOrTabId: string | number) => {
+    console.log('🔄 Switching chat:', chatIdOrTabId, typeof chatIdOrTabId);
+    
+    // Handle in-memory tab chats (IDs like "tab-123")
+    if (typeof chatIdOrTabId === 'string' && chatIdOrTabId.startsWith('tab-')) {
+      const tabId = parseInt(chatIdOrTabId.replace('tab-', ''));
+      if (!isNaN(tabId) && tabMessagesRef.current[tabId]) {
+        setMessages(tabMessagesRef.current[tabId]);
+        setCurrentTabId(tabId);
+        currentChatIdRef.current = null; // In-memory chat, no persisted ID
+        setShowChatMenu(false);
+        setShowMenu(false);
+        // Scroll to bottom
+        setTimeout(() => {
+          messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        }, 100);
+        return;
+      }
+    }
+    
+    // Try to find in persisted chat history
+    if (typeof chatIdOrTabId === 'string' && !chatIdOrTabId.startsWith('tab-')) {
+      // First check in state
+      let chat = persistedChatHistory.find(c => c.id === chatIdOrTabId);
+      
+      // If not found in state, reload from storage (in case state is stale)
+      if (!chat) {
+        console.log('🔄 Chat not in state, reloading from storage...');
+        const chats = await loadChatHistory();
+        chat = chats.find(c => c.id === chatIdOrTabId);
+        // Update state with latest chats
+        if (chats.length !== persistedChatHistory.length) {
+          setPersistedChatHistory(chats);
+        }
+      }
+      
+      if (chat) {
+        console.log('✅ Found persisted chat:', chat.id, chat.messageCount, 'messages');
+        setMessages(chat.messages);
+        setCurrentTabId(chat.tabId || null);
+        currentTabIdRef.current = chat.tabId || null;
+        currentChatIdRef.current = chat.id;
+        setShowChatMenu(false);
+        setShowMenu(false);
+        // Scroll to bottom
+        setTimeout(() => {
+          messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        }, 100);
+        return;
+      } else {
+        console.warn('⚠️ Chat not found in persisted history:', chatIdOrTabId);
+      }
+    }
+    
+    // Fallback to in-memory tab messages (when passed as number)
+    if (typeof chatIdOrTabId === 'number') {
+      const tabId = chatIdOrTabId;
+      if (tabMessagesRef.current[tabId]) {
+        console.log('✅ Found in-memory tab chat:', tabId);
+        setMessages(tabMessagesRef.current[tabId]);
+        setCurrentTabId(tabId);
+        currentTabIdRef.current = tabId;
+        currentChatIdRef.current = null; // In-memory chat, no persisted ID
+        setShowChatMenu(false);
+        setShowMenu(false);
+        // Scroll to bottom
+        setTimeout(() => {
+          messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        }, 100);
+      } else {
+        console.warn('⚠️ Tab messages not found for tab:', tabId);
+      }
     }
   };
 
   const getChatHistory = () => {
-    const history: Array<{ tabId: number; title: string; preview: string; messageCount: number }> = [];
+    const history: Array<{ id: string; tabId?: number; title: string; preview: string; messageCount: number; updatedAt: number }> = [];
+    
+    // Add persisted chats
+    persistedChatHistory.forEach(chat => {
+      history.push({
+        id: chat.id,
+        tabId: chat.tabId,
+        title: chat.title,
+        preview: chat.preview,
+        messageCount: chat.messageCount,
+        updatedAt: chat.updatedAt
+      });
+    });
+    
+    // Add in-memory tab chats (only if not already in persisted history)
     Object.entries(tabMessagesRef.current).forEach(([tabIdStr, msgs]) => {
       const tabId = parseInt(tabIdStr);
       if (msgs && msgs.length > 0) {
-        const firstUserMessage = msgs.find(m => m.role === 'user');
-        const preview = firstUserMessage?.content?.slice(0, 50) || 'New chat';
-        history.push({
-          tabId,
-          title: `Chat ${tabId}`,
-          preview,
-          messageCount: msgs.length
-        });
+        // Check if this tab's chat is already in persisted history
+        const alreadyPersisted = persistedChatHistory.some(c => c.tabId === tabId);
+        if (!alreadyPersisted) {
+          const firstUserMessage = msgs.find(m => m.role === 'user');
+          const preview = firstUserMessage?.content?.slice(0, 50) || 'New chat';
+          history.push({
+            id: `tab-${tabId}`, // Temporary ID for in-memory chats
+            tabId,
+            title: `Chat ${tabId}`,
+            preview,
+            messageCount: msgs.length,
+            updatedAt: Date.now()
+          });
+        }
       }
     });
-    return history.sort((a, b) => b.tabId - a.tabId); // Most recent first
+    
+    // Sort by updatedAt, most recent first
+    return history.sort((a, b) => b.updatedAt - a.updatedAt);
   };
 
   const newChat = async () => {
+    // Save current chat before clearing (if there are messages)
+    if (messages.length > 0) {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      const url = tab?.url;
+      const chatId = await saveCurrentChat(messages, currentTabId, url, currentChatIdRef.current);
+      if (chatId) {
+        currentChatIdRef.current = chatId;
+        // Reload chat history to include the newly saved chat
+        const chats = await loadChatHistory();
+        setPersistedChatHistory(chats);
+      }
+    }
+    
     // Clear messages for current tab
     setMessages([]);
     setInput('');
     setShowBrowserToolsWarning(false);
+    currentChatIdRef.current = null;
 
     // Clear messages storage for current tab
     if (currentTabId !== null) {
@@ -1825,6 +2412,7 @@ function ChatSidebar() {
   const streamWithGeminiComputerUse = async (messages: Message[]) => {
     try {
       const apiKey = ensureApiKey();
+      const streamTabId = activeStreamTabIdRef.current;
 
       // Add initial assistant message
       const assistantMessage: Message = {
@@ -1833,6 +2421,11 @@ function ChatSidebar() {
         content: '',
       };
       setMessages(prev => [...prev, assistantMessage]);
+      // Update streamMessagesRef
+      if (streamTabId !== null) {
+        streamMessagesRef.current = [...streamMessagesRef.current, assistantMessage];
+        tabMessagesRef.current[streamTabId] = [...streamMessagesRef.current];
+      }
 
       // Get initial screenshot with retry logic
       let screenshot = await executeTool('screenshot', {});
@@ -1887,19 +2480,56 @@ AVAILABLE ACTIONS (computer_use tool only):
 - navigate: Navigate to a URL
 - wait / wait_5_seconds: Wait for page load
 
-GUIDELINES:
-1. NAVIGATION: Use 'navigate' function to go to websites
-   Example: navigate({url: "https://www.reddit.com"})
+TASK COMPLETION REQUIREMENTS:
+1. COMPLETE THE FULL TASK: Do not stop until you have:
+   - Completed all requested actions
+   - Verified the task is done (e.g., form submitted, item created, action confirmed)
+   - OR clearly communicated why you cannot complete it
 
-2. INTERACTION: Use coordinates from the screenshot you see
-   - Click at coordinates to interact with elements
-   - Type text at coordinates to fill forms
+2. MODAL AWARENESS:
+   - When a modal/dialog appears, you are INSIDE the modal - focus on modal elements
+   - Use getPageContext to check if modals are present - modals have priority
+   - Elements inside modals are marked with "inModal: true" in page context
+   - Do NOT click outside the modal - stay focused on modal interactions
+   - If modal closes unexpectedly, use waitForModal to wait for it to reopen
 
-3. NO HALLUCINATING: Only use the functions listed above. Do NOT invent or call functions like print(), execute(), or any code functions.
+3. ERROR HANDLING:
+   - If an action fails, try alternative approaches (different selector, coordinates, etc.)
+   - If you cannot complete the task after multiple attempts, clearly explain:
+     * What you tried
+     * What prevented completion
+     * What the user needs to do (if anything)
+   - NEVER silently stop - always communicate the status
 
-4. EFFICIENCY: Complete tasks in fewest steps possible.`;
+4. VERIFICATION:
+   - After completing actions, verify success (check for confirmation messages, updated UI, etc.)
+   - If verification shows the task isn't complete, continue working until it is
 
+5. GUIDELINES:
+   - NAVIGATION: Use 'navigate' function to go to websites
+   - INTERACTION: Use coordinates from the screenshot you see
+   - NO HALLUCINATING: Only use the functions listed above
+   - PERSISTENCE: Keep trying different approaches if initial attempts fail
+   - CLARITY: Always explain what you're doing and why`;
+
+      let lastSaveTime = Date.now();
+      const SAVE_INTERVAL = 3000; // Save every 3 seconds during streaming
+      
       for (let turn = 0; turn < maxTurns; turn++) {
+        // Check if we're approaching max turns and communicate status
+        if (turn === maxTurns - 1) {
+          responseText += '\n\n⚠️ Approaching maximum turns. ';
+          const updated = [...streamMessagesRef.current];
+          const lastMsg = updated[updated.length - 1];
+          if (lastMsg && lastMsg.role === 'assistant') {
+            lastMsg.content = responseText;
+          }
+          streamMessagesRef.current = updated;
+          if (streamTabId !== null) {
+            tabMessagesRef.current[streamTabId] = updated;
+          }
+          setMessages(updated);
+        }
         if (abortControllerRef.current?.signal.aborted) {
           setMessages(prev => {
             const updated = [...prev];
@@ -2070,12 +2700,78 @@ GUIDELINES:
         const hasFunctionCalls = parts.some((p: any) => 'functionCall' in p && p.functionCall);
 
         if (!hasFunctionCalls) {
-          // No more actions - task complete
+          // No more actions - check if task is actually complete
+          let finalText = '';
           for (const part of parts) {
             if ('text' in part && typeof part.text === 'string') {
-              responseText += part.text;
+              finalText += part.text;
             }
           }
+          responseText += finalText;
+          
+          // If no text was provided and we're stopping, add a completion message
+          if (!finalText.trim() && turn > 0) {
+            responseText += '\n\n✅ Task completed. If you requested something specific, please verify it was completed correctly.';
+          }
+          
+          // Update final message
+          const updated = [...streamMessagesRef.current];
+          const lastMsg = updated[updated.length - 1];
+          if (lastMsg && lastMsg.role === 'assistant') {
+            lastMsg.content = responseText;
+          }
+          streamMessagesRef.current = updated;
+          if (streamTabId !== null) {
+            tabMessagesRef.current[streamTabId] = updated;
+            // Final save when task completes
+            (async () => {
+              try {
+                const [tab] = await chrome.tabs.get(streamTabId).catch(() => [null]);
+                const url = tab?.url;
+                const chatId = await saveCurrentChat(updated, streamTabId, url, currentChatIdRef.current);
+                if (chatId) {
+                  currentChatIdRef.current = chatId;
+                  const chats = await loadChatHistory();
+                  setPersistedChatHistory(chats);
+                }
+              } catch (error) {
+                console.debug('Error saving on task completion:', error);
+              }
+            })();
+          }
+          setMessages(updated);
+          break;
+        }
+        
+        // If we've reached max turns, communicate this clearly
+        if (turn === maxTurns - 1) {
+          responseText += `\n\n⚠️ Reached maximum turns (${maxTurns}). `;
+          responseText += 'If the task is not complete, please try breaking it into smaller steps or provide more specific instructions.';
+          const updated = [...streamMessagesRef.current];
+          const lastMsg = updated[updated.length - 1];
+          if (lastMsg && lastMsg.role === 'assistant') {
+            lastMsg.content = responseText;
+          }
+          streamMessagesRef.current = updated;
+          if (streamTabId !== null) {
+            tabMessagesRef.current[streamTabId] = updated;
+            // Final save when max turns reached
+            (async () => {
+              try {
+                const [tab] = await chrome.tabs.get(streamTabId).catch(() => [null]);
+                const url = tab?.url;
+                const chatId = await saveCurrentChat(updated, streamTabId, url, currentChatIdRef.current);
+                if (chatId) {
+                  currentChatIdRef.current = chatId;
+                  const chats = await loadChatHistory();
+                  setPersistedChatHistory(chats);
+                }
+              } catch (error) {
+                console.debug('Error saving on max turns:', error);
+              }
+            })();
+          }
+          setMessages(updated);
           break;
         }
 
@@ -2086,14 +2782,39 @@ GUIDELINES:
           if ('text' in part && typeof part.text === 'string') {
             responseText += part.text + '\n';
             // Update message with current text
-            setMessages(prev => {
-              const updated = [...prev];
-              const lastMsg = updated[updated.length - 1];
-              if (lastMsg && lastMsg.role === 'assistant') {
-                lastMsg.content = responseText;
+            const updated = [...streamMessagesRef.current];
+            const lastMsg = updated[updated.length - 1];
+            if (lastMsg && lastMsg.role === 'assistant') {
+              lastMsg.content = responseText;
+            }
+            streamMessagesRef.current = updated;
+            if (streamTabId !== null) {
+              tabMessagesRef.current[streamTabId] = updated;
+              
+              // Periodically save to persisted storage during streaming
+              const now = Date.now();
+              if (now - lastSaveTime > SAVE_INTERVAL) {
+                lastSaveTime = now;
+                // Save in background without blocking
+                (async () => {
+                  try {
+                    const [tab] = await chrome.tabs.get(streamTabId).catch(() => [null]);
+                    const url = tab?.url;
+                    await saveCurrentChat(updated, streamTabId, url, currentChatIdRef.current);
+                    const chats = await loadChatHistory();
+                    setPersistedChatHistory(chats);
+                  } catch (error) {
+                    console.debug('Error auto-saving during stream:', error);
+                  }
+                })();
               }
-              return updated;
-            });
+            }
+            // Always update the UI messages state if we're viewing the tab with the active stream
+            // Use functional update to ensure we get the latest state
+            if (streamTabId !== null && streamTabId === currentTabIdRef.current) {
+              setMessages(() => updated);
+              messagesRef.current = updated; // Keep messagesRef in sync
+            }
           } else if ('functionCall' in part && part.functionCall) {
             // Check if user clicked stop button
             if (abortControllerRef.current?.signal.aborted) {
@@ -2114,14 +2835,21 @@ GUIDELINES:
             responseText += `\n[Executing: ${funcName}]\n`;
 
             // Update message with current progress
-            setMessages(prev => {
-              const updated = [...prev];
-              const lastMsg = updated[updated.length - 1];
-              if (lastMsg && lastMsg.role === 'assistant') {
-                lastMsg.content = responseText;
-              }
-              return updated;
-            });
+            const updated = [...streamMessagesRef.current];
+            const lastMsg = updated[updated.length - 1];
+            if (lastMsg && lastMsg.role === 'assistant') {
+              lastMsg.content = responseText;
+            }
+            streamMessagesRef.current = updated;
+            if (streamTabId !== null) {
+              tabMessagesRef.current[streamTabId] = updated;
+            }
+            // Always update the UI messages state if we're viewing the tab with the active stream
+            // Use functional update to ensure we get the latest state
+            if (streamTabId !== null && streamTabId === currentTabIdRef.current) {
+              setMessages(() => updated);
+              messagesRef.current = updated; // Keep messagesRef in sync
+            }
 
             // Show overlay before ANY browser action (ensures overlay is always visible)
             console.log(`🔵 Showing overlay for browser action: ${funcName}`);
@@ -2171,15 +2899,7 @@ GUIDELINES:
             
             functionResponses.push(functionResponse);
             
-            // Update UI
-            setMessages(prev => {
-              const updated = [...prev];
-              const lastMsg = updated[updated.length - 1];
-              if (lastMsg && lastMsg.role === 'assistant') {
-                lastMsg.content = responseText;
-              }
-              return updated;
-            });
+            // Messages already updated above at line 2648-2658, no need to update again here
           }
         }
         
@@ -2206,15 +2926,22 @@ GUIDELINES:
         }
       }
       
-      // Final update
-      setMessages(prev => {
-        const updated = [...prev];
-        const lastMsg = updated[updated.length - 1];
-        if (lastMsg && lastMsg.role === 'assistant') {
-          lastMsg.content = responseText || 'Task completed';
-        }
-        return updated;
-      });
+      // Final update - update streamMessagesRef first
+      const finalUpdated = [...streamMessagesRef.current];
+      const lastMsg = finalUpdated[finalUpdated.length - 1];
+      if (lastMsg && lastMsg.role === 'assistant') {
+        lastMsg.content = responseText || 'Task completed';
+      }
+      streamMessagesRef.current = finalUpdated;
+      if (streamTabId !== null) {
+        tabMessagesRef.current[streamTabId] = finalUpdated;
+      }
+      
+      // Only update UI if we're on the active stream tab
+      if (streamTabId !== null && streamTabId === currentTabIdRef.current) {
+        setMessages(finalUpdated);
+        messagesRef.current = finalUpdated;
+      }
       
     } catch (error: any) {
       console.error('❌ Error with Gemini Computer Use:');
@@ -2222,7 +2949,24 @@ GUIDELINES:
       console.error('Error message:', error?.message);
       console.error('Error stack:', error?.stack);
       console.error('Full error object:', error);
+      
+      // Clean up stream tracking on error
+      if (activeStreamTabIdRef.current === streamTabId) {
+        activeStreamTabIdRef.current = null;
+        if (streamTabId !== null && streamAbortControllerRef.current[streamTabId]) {
+          delete streamAbortControllerRef.current[streamTabId];
+        }
+      }
+      
       throw error;
+    } finally {
+      // Clean up stream tracking when function completes (success or error)
+      if (activeStreamTabIdRef.current === streamTabId) {
+        activeStreamTabIdRef.current = null;
+        if (streamTabId !== null && streamAbortControllerRef.current[streamTabId]) {
+          delete streamAbortControllerRef.current[streamTabId];
+        }
+      }
     }
   };
 
@@ -2360,6 +3104,15 @@ GUIDELINES:
       case 'get_url':
       case 'get_page_content':
         return await executeTool('getPageContext', {});
+      
+      case 'waitForModal':
+      case 'wait_for_modal':
+        return await executeTool('waitForModal', { timeout: args.timeout || 5000 });
+      
+      case 'closeModal':
+      case 'close_modal':
+      case 'dismiss_modal':
+        return await executeTool('closeModal', {});
       
       case 'wait':
       case 'sleep':
@@ -2557,7 +3310,7 @@ GUIDELINES:
           model,
           tools: allTools,
           messages: aiMessages,
-          stopWhen: stepCountIs(20),
+          stopWhen: stepCountIs(50), // Increased from 20 to 50 for complex tasks
           abortSignal: abortControllerRef.current?.signal,
         });
 
@@ -2568,24 +3321,120 @@ GUIDELINES:
         content: '',
       };
       setMessages(prev => [...prev, assistantMessage]);
+      
+      // Update refs for tab synchronization
+      const streamTabId = activeStreamTabIdRef.current;
+      streamMessagesRef.current = [...messages, assistantMessage];
+      if (streamTabId !== null) {
+        tabMessagesRef.current[streamTabId] = [...messages, assistantMessage];
+      }
 
       // Stream the response - collect full text without duplicates
       let fullText = '';
+      let lastSaveTime = Date.now();
+      const SAVE_INTERVAL = 3000; // Save every 3 seconds during streaming
+      
       for await (const chunk of result.textStream) {
         fullText += chunk;
-        setMessages(prev => {
-          const updated = [...prev];
-          const lastMsg = updated[updated.length - 1];
-          if (lastMsg && lastMsg.role === 'assistant') {
-            // Only update if we've accumulated new text
-            lastMsg.content = fullText;
+        
+        // Always update the stream messages ref (for the tab that started the stream)
+        const updated = [...streamMessagesRef.current];
+        const lastMsg = updated[updated.length - 1];
+        if (lastMsg && lastMsg.role === 'assistant') {
+          lastMsg.content = fullText;
+        }
+        streamMessagesRef.current = updated;
+        
+        // Update that tab's in-memory storage
+        if (streamTabId !== null) {
+          tabMessagesRef.current[streamTabId] = updated;
+          
+          // Periodically save to persisted storage during streaming
+          const now = Date.now();
+          if (now - lastSaveTime > SAVE_INTERVAL) {
+            lastSaveTime = now;
+            // Save in background without blocking
+            (async () => {
+              try {
+                const [tab] = await chrome.tabs.get(streamTabId).catch(() => [null]);
+                const url = tab?.url;
+                await saveCurrentChat(updated, streamTabId, url, currentChatIdRef.current);
+                const chats = await loadChatHistory();
+                setPersistedChatHistory(chats);
+              } catch (error) {
+                console.debug('Error auto-saving during stream:', error);
+              }
+            })();
           }
-          return updated;
-        });
+        }
+        
+        // Always update the UI messages state if we're viewing the tab with the active stream
+        // This ensures messages are visible even if user switched tabs and came back
+        if (streamTabId !== null && streamTabId === currentTabIdRef.current) {
+          setMessages(updated);
+          messagesRef.current = updated; // Keep messagesRef in sync
+        }
+      }
+      
+      // Check if we got any content - if not, show error
+      const finalMessages = streamMessagesRef.current;
+      const lastMessage = finalMessages[finalMessages.length - 1];
+      if (lastMessage && lastMessage.role === 'assistant' && !lastMessage.content.trim()) {
+        console.warn('⚠️ Stream completed with no content');
+        const updated = [...finalMessages];
+        updated[updated.length - 1].content = '⚠️ No response received from the AI. Please check your API key and try again.';
+        streamMessagesRef.current = updated;
+        if (streamTabId !== null) {
+          tabMessagesRef.current[streamTabId] = updated;
+          if (streamTabId === currentTabIdRef.current) {
+            setMessages(updated);
+            messagesRef.current = updated;
+          }
+        }
+      }
+      
+      // Final save when stream completes
+      if (streamTabId !== null && streamMessagesRef.current.length > 0) {
+        try {
+          const [tab] = await chrome.tabs.get(streamTabId).catch(() => [null]);
+          const url = tab?.url;
+          const chatId = await saveCurrentChat(streamMessagesRef.current, streamTabId, url, currentChatIdRef.current);
+          if (chatId) {
+            currentChatIdRef.current = chatId;
+            const chats = await loadChatHistory();
+            setPersistedChatHistory(chats);
+          }
+        } catch (error) {
+          console.debug('Error saving on stream completion:', error);
+        }
+      }
+      
+      // Stream completed - clear stream tracking
+      if (activeStreamTabIdRef.current === streamTabId) {
+        activeStreamTabIdRef.current = null;
+        // Clean up abort controller
+        if (streamTabId !== null && streamAbortControllerRef.current[streamTabId]) {
+          delete streamAbortControllerRef.current[streamTabId];
+        }
       }
 
     } catch (error) {
       console.error('❌ Error streaming with AI SDK:', error);
+      // Update the assistant message with error
+      const streamTabId = activeStreamTabIdRef.current;
+      const updated = [...streamMessagesRef.current];
+      const lastMsg = updated[updated.length - 1];
+      if (lastMsg && lastMsg.role === 'assistant') {
+        lastMsg.content = `❌ Error: ${error instanceof Error ? error.message : String(error)}`;
+      }
+      streamMessagesRef.current = updated;
+      if (streamTabId !== null) {
+        tabMessagesRef.current[streamTabId] = updated;
+        if (streamTabId === currentTabIdRef.current) {
+          setMessages(updated);
+          messagesRef.current = updated;
+        }
+      }
       throw error;
     }
   };
@@ -2601,7 +3450,14 @@ GUIDELINES:
       role: 'assistant',
       content: '',
     };
+    const streamTabId = activeStreamTabIdRef.current;
     setMessages(prev => [...prev, assistantMessage]);
+    streamMessagesRef.current = [...messages, assistantMessage];
+    if (streamTabId !== null) {
+      tabMessagesRef.current[streamTabId] = [...messages, assistantMessage];
+    }
+    let lastSaveTime = Date.now();
+    const SAVE_INTERVAL = 3000; // Save every 3 seconds during streaming
 
     if (!messages || messages.length === 0) {
       throw new Error('No messages provided to stream');
@@ -2670,14 +3526,21 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
             }
             const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
             if (text) {
-              setMessages(prev => {
-                const updated = [...prev];
-                const lastMsg = updated[updated.length - 1];
-                if (lastMsg && lastMsg.role === 'assistant') {
-                  lastMsg.content = text;
+              const updated = [...streamMessagesRef.current];
+              const lastMsg = updated[updated.length - 1];
+              if (lastMsg && lastMsg.role === 'assistant') {
+                lastMsg.content = text;
+              }
+              streamMessagesRef.current = updated;
+              if (streamTabId !== null) {
+                tabMessagesRef.current[streamTabId] = updated;
+                
+                // Always update the UI messages state if we're viewing the tab with the active stream
+                if (streamTabId === currentTabIdRef.current) {
+                  setMessages(updated);
+                  messagesRef.current = updated; // Keep messagesRef in sync
                 }
-                return updated;
-              });
+              }
             }
           } catch (e) {
             console.warn('Failed to parse accumulated JSON buffer:', e);
@@ -2701,18 +3564,76 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
           const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
           if (text) {
             parsedAnyChunk = true;
-            setMessages(prev => {
-              const updated = [...prev];
-              const lastMsg = updated[updated.length - 1];
-              if (lastMsg && lastMsg.role === 'assistant') {
-                lastMsg.content += text;
+            const updated = [...streamMessagesRef.current];
+            const lastMsg = updated[updated.length - 1];
+            if (lastMsg && lastMsg.role === 'assistant') {
+              lastMsg.content += text;
+            }
+            streamMessagesRef.current = updated;
+            if (streamTabId !== null) {
+              tabMessagesRef.current[streamTabId] = updated;
+              
+              // Periodically save to persisted storage during streaming
+              const now = Date.now();
+              if (now - lastSaveTime > SAVE_INTERVAL) {
+                lastSaveTime = now;
+                // Save in background without blocking
+                (async () => {
+                  try {
+                    const [tab] = await chrome.tabs.get(streamTabId).catch(() => [null]);
+                    const url = tab?.url;
+                    await saveCurrentChat(updated, streamTabId, url, currentChatIdRef.current);
+                    const chats = await loadChatHistory();
+                    setPersistedChatHistory(chats);
+                  } catch (error) {
+                    console.debug('Error auto-saving during stream:', error);
+                  }
+                })();
               }
-              return updated;
-            });
+              
+              // Always update the UI messages state if we're viewing the tab with the active stream
+              if (streamTabId === currentTabIdRef.current) {
+                setMessages(updated);
+                messagesRef.current = updated; // Keep messagesRef in sync
+              }
+            }
           }
         } catch (e) {
           // Skip invalid JSON (expected for formatted responses)
         }
+      }
+    }
+    
+    // Check if we got any content - if not, show error
+    const finalMessages = streamMessagesRef.current;
+    const lastMessage = finalMessages[finalMessages.length - 1];
+    if (lastMessage && lastMessage.role === 'assistant' && !lastMessage.content.trim()) {
+      console.warn('⚠️ Stream completed with no content');
+      const updated = [...finalMessages];
+      updated[updated.length - 1].content = '⚠️ No response received from the AI. Please check your API key and try again.';
+      streamMessagesRef.current = updated;
+      if (streamTabId !== null) {
+        tabMessagesRef.current[streamTabId] = updated;
+        if (streamTabId === currentTabIdRef.current) {
+          setMessages(updated);
+          messagesRef.current = updated;
+        }
+      }
+    }
+    
+    // Final save when stream completes
+    if (streamTabId !== null && streamMessagesRef.current.length > 0) {
+      try {
+        const [tab] = await chrome.tabs.get(streamTabId).catch(() => [null]);
+        const url = tab?.url;
+        const chatId = await saveCurrentChat(streamMessagesRef.current, streamTabId, url, currentChatIdRef.current);
+        if (chatId) {
+          currentChatIdRef.current = chatId;
+          const chats = await loadChatHistory();
+          setPersistedChatHistory(chats);
+        }
+      } catch (error) {
+        console.debug('Error saving on stream completion:', error);
       }
     }
   };
@@ -2745,6 +3666,14 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
     setInput(''); // Clear input field
     setIsLoading(true);
     setIsUserScrolled(false); // Reset scroll state when user sends message
+    
+    // Track that this tab has an active stream
+    if (currentTabId !== null) {
+      activeStreamTabIdRef.current = currentTabId;
+      streamMessagesRef.current = newMessages;
+      // Notify background script that agent mode has started
+      notifyAgentModeStatus(true, currentTabId);
+    }
 
     // Force immediate scroll to bottom
     setTimeout(() => {
@@ -2752,6 +3681,11 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
     }, 0);
 
     abortControllerRef.current = new AbortController();
+    
+    // Also store in streamAbortControllerRef if we have an active stream tab
+    if (currentTabId !== null) {
+      streamAbortControllerRef.current[currentTabId] = abortControllerRef.current;
+    }
 
     try {
       // CHECK FOR A2A AGENT FOR CURRENT SITE
@@ -2794,6 +3728,17 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
         }
 
         setIsLoading(false);
+        // Clear stream tracking
+        if (activeStreamTabIdRef.current === currentTabIdRef.current) {
+          const streamTabId = activeStreamTabIdRef.current;
+          activeStreamTabIdRef.current = null;
+          // Clean up abort controller
+          if (streamTabId !== null && streamAbortControllerRef.current[streamTabId]) {
+            delete streamAbortControllerRef.current[streamTabId];
+          }
+          // Notify background script that agent mode has stopped
+          notifyAgentModeStatus(false, streamTabId);
+        }
         return; // Exit early - message handled by A2A agent
       }
 
@@ -2823,6 +3768,13 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
             content: '',
           };
           setMessages(prev => [...prev, assistantMessage]);
+          
+          // CRITICAL: Initialize streamMessagesRef with assistant message
+          const browserToolsStreamTabId = activeStreamTabIdRef.current;
+          streamMessagesRef.current = [...newMessages, assistantMessage];
+          if (browserToolsStreamTabId !== null) {
+            tabMessagesRef.current[browserToolsStreamTabId] = [...newMessages, assistantMessage];
+          }
 
           const modelToUse = settings.model === 'custom' && settings.customModelName
             ? settings.customModelName
@@ -2976,11 +3928,17 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
             modelToUse,
             settings.customBaseUrl,
             (text: string) => {
+              const streamTabId = activeStreamTabIdRef.current;
               setMessages(prev => {
                 const updated = [...prev];
                 const lastMsg = updated[updated.length - 1];
                 if (lastMsg && lastMsg.role === 'assistant') {
                   lastMsg.content += text;
+                }
+                // Update refs for tab synchronization
+                streamMessagesRef.current = updated;
+                if (streamTabId !== null) {
+                  tabMessagesRef.current[streamTabId] = updated;
                 }
                 return updated;
               });
@@ -2990,7 +3948,23 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
               }, 0);
             },
             () => {
-              // On complete - hide browser automation overlay
+              // On complete - check for empty response and hide browser automation overlay
+              const streamTabId = activeStreamTabIdRef.current;
+              const finalMessages = streamMessagesRef.current;
+              const lastMessage = finalMessages[finalMessages.length - 1];
+              if (lastMessage && lastMessage.role === 'assistant' && !lastMessage.content.trim()) {
+                console.warn('⚠️ Anthropic browser tools stream completed with no content');
+                const updated = [...finalMessages];
+                updated[updated.length - 1].content = '⚠️ No response received from the AI. Please check your API key and try again.';
+                streamMessagesRef.current = updated;
+                if (streamTabId !== null) {
+                  tabMessagesRef.current[streamTabId] = updated;
+                  if (streamTabId === currentTabIdRef.current) {
+                    setMessages(updated);
+                    messagesRef.current = updated;
+                  }
+                }
+              }
               hideBrowserAutomationOverlay();
             },
             wrappedExecuteTool,
@@ -3121,6 +4095,13 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
             content: '',
           };
           setMessages(prev => [...prev, assistantMessage]);
+          
+          // CRITICAL: Initialize streamMessagesRef with assistant message
+          const anthropicStreamTabId = activeStreamTabIdRef.current;
+          streamMessagesRef.current = [...newMessages, assistantMessage];
+          if (anthropicStreamTabId !== null) {
+            tabMessagesRef.current[anthropicStreamTabId] = [...newMessages, assistantMessage];
+          }
 
           const modelToUse = settings.model === 'custom' && settings.customModelName
             ? settings.customModelName
@@ -3160,17 +4141,39 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
               modelToUse,
               settings.customBaseUrl,
               (text: string) => {
+                const streamTabId = activeStreamTabIdRef.current;
                 setMessages(prev => {
                   const updated = [...prev];
                   const lastMsg = updated[updated.length - 1];
                   if (lastMsg && lastMsg.role === 'assistant') {
                     lastMsg.content += text;
                   }
+                  // Update refs for tab synchronization
+                  streamMessagesRef.current = updated;
+                  if (streamTabId !== null) {
+                    tabMessagesRef.current[streamTabId] = updated;
+                  }
                   return updated;
                 });
               },
               () => {
-                // On complete
+                // On complete - check for empty response
+                const streamTabId = activeStreamTabIdRef.current;
+                const finalMessages = streamMessagesRef.current;
+                const lastMessage = finalMessages[finalMessages.length - 1];
+                if (lastMessage && lastMessage.role === 'assistant' && !lastMessage.content.trim()) {
+                  console.warn('⚠️ Anthropic stream completed with no content');
+                  const updated = [...finalMessages];
+                  updated[updated.length - 1].content = '⚠️ No response received from the AI. Please check your API key and try again.';
+                  streamMessagesRef.current = updated;
+                  if (streamTabId !== null) {
+                    tabMessagesRef.current[streamTabId] = updated;
+                    if (streamTabId === currentTabIdRef.current) {
+                      setMessages(updated);
+                      messagesRef.current = updated;
+                    }
+                  }
+                }
               },
               async (toolName: string, params: any) => {
                 console.log(`🔧 Tool call: ${toolName}`, params);
@@ -3227,23 +4230,62 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
           } else {
             console.log('ℹ️  No custom MCP tools available');
 
+            // Add assistant message before streaming
+            const assistantMessage: Message = {
+              id: (Date.now() + 1).toString(),
+              role: 'assistant',
+              content: '',
+            };
+            setMessages(prev => [...prev, assistantMessage]);
+            
+            // CRITICAL: Initialize streamMessagesRef with assistant message
+            const streamTabId = activeStreamTabIdRef.current;
+            streamMessagesRef.current = [...newMessages, assistantMessage];
+            if (streamTabId !== null) {
+              tabMessagesRef.current[streamTabId] = [...newMessages, assistantMessage];
+            }
+
             await streamAnthropic(
               newMessages,
               settings.apiKey,
               modelToUse,
               settings.customBaseUrl,
               (text: string) => {
+                const streamTabId = activeStreamTabIdRef.current;
                 setMessages(prev => {
                   const updated = [...prev];
                   const lastMsg = updated[updated.length - 1];
                   if (lastMsg && lastMsg.role === 'assistant') {
                     lastMsg.content += text;
                   }
+                  // Update refs for tab synchronization
+                  streamMessagesRef.current = updated;
+                  if (streamTabId !== null) {
+                    tabMessagesRef.current[streamTabId] = updated;
+                  }
                   return updated;
                 });
               },
               undefined // Don't pass abort signal for now - causes issues
             );
+            
+            // Check for empty response after Anthropic stream completes
+            const checkStreamTabId = activeStreamTabIdRef.current;
+            const checkFinalMessages = streamMessagesRef.current;
+            const checkLastMessage = checkFinalMessages[checkFinalMessages.length - 1];
+            if (checkLastMessage && checkLastMessage.role === 'assistant' && !checkLastMessage.content.trim()) {
+              console.warn('⚠️ Anthropic stream completed with no content');
+              const updated = [...checkFinalMessages];
+              updated[updated.length - 1].content = '⚠️ No response received from the AI. Please check your API key and try again.';
+              streamMessagesRef.current = updated;
+              if (checkStreamTabId !== null) {
+                tabMessagesRef.current[checkStreamTabId] = updated;
+                if (checkStreamTabId === currentTabIdRef.current) {
+                  setMessages(updated);
+                  messagesRef.current = updated;
+                }
+              }
+            }
           }
         } else if (settings.provider === 'google') {
           await streamGoogle(newMessages, abortControllerRef.current.signal);
@@ -3254,6 +4296,13 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
             content: '',
           };
           setMessages(prev => [...prev, assistantMessage]);
+          
+          // CRITICAL: Initialize streamMessagesRef with assistant message
+          const streamTabId = activeStreamTabIdRef.current;
+          streamMessagesRef.current = [...newMessages, assistantMessage];
+          if (streamTabId !== null) {
+            tabMessagesRef.current[streamTabId] = [...newMessages, assistantMessage];
+          }
 
           const modelToUse = settings.model === 'custom' && settings.customModelName
             ? settings.customModelName
@@ -3265,17 +4314,61 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
             modelToUse,
             settings.customBaseUrl,
             (text: string) => {
-              setMessages(prev => {
-                const updated = [...prev];
-                const lastMsg = updated[updated.length - 1];
-                if (lastMsg && lastMsg.role === 'assistant') {
-                  lastMsg.content += text;
+              const streamTabId = activeStreamTabIdRef.current;
+              const updated = [...streamMessagesRef.current];
+              const lastMsg = updated[updated.length - 1];
+              if (lastMsg && lastMsg.role === 'assistant') {
+                lastMsg.content += text;
+              }
+              streamMessagesRef.current = updated;
+              if (streamTabId !== null) {
+                tabMessagesRef.current[streamTabId] = updated;
+                
+                // Periodically save to persisted storage during streaming (throttled)
+                // Use a simple counter to avoid too frequent saves
+                const saveCounter = (streamTabId % 10); // Save roughly every 10th chunk
+                if (saveCounter === 0) {
+                  // Save in background without blocking
+                  (async () => {
+                    try {
+                      const [tab] = await chrome.tabs.get(streamTabId).catch(() => [null]);
+                      const url = tab?.url;
+                      await saveCurrentChat(updated, streamTabId, url, currentChatIdRef.current);
+                      const chats = await loadChatHistory();
+                      setPersistedChatHistory(chats);
+                    } catch (error) {
+                      console.debug('Error auto-saving during OpenAI stream:', error);
+                    }
+                  })();
                 }
-                return updated;
-              });
+                
+                // Always update the UI messages state if we're viewing the tab with the active stream
+                if (streamTabId === currentTabIdRef.current) {
+                  setMessages(updated);
+                  messagesRef.current = updated; // Keep messagesRef in sync
+                }
+              }
             },
             abortControllerRef.current.signal
           );
+          
+          // Check for empty response after OpenAI stream completes
+          const openAIStreamTabId = activeStreamTabIdRef.current;
+          const openAIFinalMessages = streamMessagesRef.current;
+          const openAILastMessage = openAIFinalMessages[openAIFinalMessages.length - 1];
+          if (openAILastMessage && openAILastMessage.role === 'assistant' && !openAILastMessage.content.trim()) {
+            console.warn('⚠️ OpenAI stream completed with no content');
+            const updated = [...openAIFinalMessages];
+            updated[updated.length - 1].content = '⚠️ No response received from the AI. Please check your API key and try again.';
+            streamMessagesRef.current = updated;
+            if (openAIStreamTabId !== null) {
+              tabMessagesRef.current[openAIStreamTabId] = updated;
+              if (openAIStreamTabId === currentTabIdRef.current) {
+                setMessages(updated);
+                messagesRef.current = updated;
+              }
+            }
+          }
         } else {
           throw new Error(`Provider ${settings.provider} not yet implemented`);
         }
@@ -3284,6 +4377,17 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
       // Hide browser automation overlay on completion
       await hideBrowserAutomationOverlay();
       setIsLoading(false);
+      // Clear stream tracking when stream completes
+      if (activeStreamTabIdRef.current === currentTabIdRef.current) {
+        const streamTabId = activeStreamTabIdRef.current;
+        activeStreamTabIdRef.current = null;
+        // Clean up abort controller
+        if (streamTabId !== null && streamAbortControllerRef.current[streamTabId]) {
+          delete streamAbortControllerRef.current[streamTabId];
+        }
+        // Notify background script that agent mode has stopped
+        notifyAgentModeStatus(false, streamTabId);
+      }
     } catch (error: any) {
       console.error('❌ Chat error occurred:');
       console.error('Error type:', typeof error);
@@ -3295,21 +4399,49 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
       if (error.name !== 'AbortError') {
         // Show detailed error message to user
         const errorDetails = error?.stack || JSON.stringify(error, null, 2);
+        const streamTabId = activeStreamTabIdRef.current;
+        
+        // Try to update existing assistant message, or create new one
         setMessages(prev => {
-          const updated = prev.filter(m => m.content !== '');
-          return [
-            ...updated,
-            {
+          const updated = [...prev];
+          const lastMsg = updated[updated.length - 1];
+          
+          if (lastMsg && lastMsg.role === 'assistant' && (!lastMsg.content || !lastMsg.content.trim())) {
+            // Update existing empty assistant message
+            lastMsg.content = `❌ Error: ${error.message}\n\nPlease check:\n- Your API key is correct\n- Your internet connection\n- The API service is available\n\n\`\`\`\n${errorDetails}\n\`\`\``;
+          } else {
+            // Add new error message
+            updated.push({
               id: Date.now().toString(),
               role: 'assistant',
-              content: `Error: ${error.message}\n\nDetails:\n\`\`\`\n${errorDetails}\n\`\`\``,
-            },
-          ];
+              content: `❌ Error: ${error.message}\n\nPlease check:\n- Your API key is correct\n- Your internet connection\n- The API service is available\n\n\`\`\`\n${errorDetails}\n\`\`\``,
+            });
+          }
+          
+          // Update refs
+          streamMessagesRef.current = updated;
+          messagesRef.current = updated;
+          if (streamTabId !== null) {
+            tabMessagesRef.current[streamTabId] = updated;
+          }
+          
+          return updated;
         });
       }
       // Hide browser automation overlay on error
       await hideBrowserAutomationOverlay();
       setIsLoading(false);
+      // Clear stream tracking when stream completes
+      if (activeStreamTabIdRef.current === currentTabIdRef.current) {
+        const streamTabId = activeStreamTabIdRef.current;
+        activeStreamTabIdRef.current = null;
+        // Clean up abort controller
+        if (streamTabId !== null && streamAbortControllerRef.current[streamTabId]) {
+          delete streamAbortControllerRef.current[streamTabId];
+        }
+        // Notify background script that agent mode has stopped
+        notifyAgentModeStatus(false, streamTabId);
+      }
     }
   };
 
@@ -3581,8 +4713,9 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
                   style={{
                     width: '100%',
                     padding: '10px 16px',
-                    background: 'transparent',
+                    background: showChatMenu ? '#2a2a2a' : 'transparent',
                     border: 'none',
+                    outline: 'none',
                     color: '#ffffff',
                     textAlign: 'left',
                     cursor: 'pointer',
@@ -3592,8 +4725,18 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
                     justifyContent: 'space-between',
                     alignItems: 'center'
                   }}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#2a2a2a'}
-                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                  onMouseEnter={(e) => {
+                    if (!showChatMenu) {
+                      e.currentTarget.style.backgroundColor = '#2a2a2a';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!showChatMenu) {
+                      e.currentTarget.style.backgroundColor = 'transparent';
+                    } else {
+                      e.currentTarget.style.backgroundColor = '#2a2a2a';
+                    }
+                  }}
                 >
                   <span>Switch Chat</span>
                   <span style={{ fontSize: '12px' }}>▶</span>
@@ -3614,40 +4757,50 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
                     overflowY: 'auto'
                   }}>
                     {getChatHistory().length > 0 ? (
-                      getChatHistory().map((chat) => (
-                        <button
-                          key={chat.tabId}
-                          onClick={() => switchChat(chat.tabId)}
-                          style={{
-                            width: '100%',
-                            padding: '10px 16px',
-                            background: currentTabId === chat.tabId ? '#00B140' : 'transparent',
-                            border: 'none',
-                            color: '#ffffff',
-                            textAlign: 'left',
-                            cursor: 'pointer',
-                            fontSize: '13px',
-                            fontFamily: 'inherit'
-                          }}
-                          onMouseEnter={(e) => {
-                            if (currentTabId !== chat.tabId) {
-                              e.currentTarget.style.backgroundColor = '#2a2a2a';
-                            }
-                          }}
-                          onMouseLeave={(e) => {
-                            if (currentTabId !== chat.tabId) {
-                              e.currentTarget.style.backgroundColor = 'transparent';
-                            }
-                          }}
-                        >
-                          <div style={{ fontWeight: currentTabId === chat.tabId ? 600 : 400 }}>
-                            {chat.preview}...
-                          </div>
-                          <div style={{ fontSize: '11px', color: '#d1d5db', marginTop: '2px' }}>
-                            {chat.messageCount} messages
-                          </div>
-                        </button>
-                      ))
+                      getChatHistory().map((chat) => {
+                        const isCurrentChat = currentChatIdRef.current === chat.id || 
+                          (chat.tabId && currentTabId === chat.tabId && !currentChatIdRef.current);
+                        const date = new Date(chat.updatedAt);
+                        const timeStr = date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                        
+                        return (
+                          <button
+                            key={chat.id}
+                            onClick={async () => {
+                              console.log('🖱️ Clicked chat:', chat.id, chat.tabId);
+                              await switchChat(chat.id);
+                            }}
+                            style={{
+                              width: '100%',
+                              padding: '10px 16px',
+                              background: isCurrentChat ? '#00B140' : 'transparent',
+                              border: 'none',
+                              color: '#ffffff',
+                              textAlign: 'left',
+                              cursor: 'pointer',
+                              fontSize: '13px',
+                              fontFamily: 'inherit'
+                            }}
+                            onMouseEnter={(e) => {
+                              if (!isCurrentChat) {
+                                e.currentTarget.style.backgroundColor = '#2a2a2a';
+                              }
+                            }}
+                            onMouseLeave={(e) => {
+                              if (!isCurrentChat) {
+                                e.currentTarget.style.backgroundColor = 'transparent';
+                              }
+                            }}
+                          >
+                            <div style={{ fontWeight: isCurrentChat ? 600 : 400 }}>
+                              {chat.title}
+                            </div>
+                            <div style={{ fontSize: '11px', color: '#d1d5db', marginTop: '2px' }}>
+                              {chat.messageCount} messages · {timeStr}
+                            </div>
+                          </button>
+                        );
+                      })
                     ) : (
                       <div style={{
                         padding: '10px 16px',
@@ -3770,10 +4923,18 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
               className={`message ${message.role}`}
             >
               <div className="message-content">
-                {message.content ? (
+                {message.content || (isLoading && message.role === 'assistant') ? (
                   message.role === 'assistant' ? (
                     <>
-                      <MessageParser content={message.content} />
+                      {message.content ? (
+                        <MessageParser content={message.content} />
+                      ) : (
+                        <div className="typing-indicator">
+                          <span></span>
+                          <span></span>
+                          <span></span>
+                        </div>
+                      )}
                       {onboardingState?.active && onboardingState.step === 'provider' && message.id === '1' && (
                         <div style={{ 
                           marginTop: '16px', 
@@ -3947,3 +5108,4 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
 const container = document.getElementById('root');
 const root = createRoot(container!);
 root.render(<ChatSidebar />);
+

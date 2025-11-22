@@ -89,6 +89,27 @@ const BROWSER_TOOLS = [
       properties: {},
     },
   },
+  {
+    name: 'waitForModal',
+    description: 'Wait for a modal/dialog to appear on the page. Use this when you expect a modal to open after an action.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        timeout: {
+          type: 'number',
+          description: 'Maximum time to wait in milliseconds (default: 5000)',
+        },
+      },
+    },
+  },
+  {
+    name: 'closeModal',
+    description: 'Close the currently visible modal/dialog. Use the close button if available, or try ESC key or backdrop click.',
+    input_schema: {
+      type: 'object',
+      properties: {},
+    },
+  },
 ];
 
 export async function streamAnthropicWithBrowserTools(
@@ -124,7 +145,7 @@ export async function streamAnthropicWithBrowserTools(
   console.log('🔧 All tool names:', allTools.map((t: any) => t.name).join(', '));
   console.log('🔧 Starting with', conversationMessages.length, 'messages (limited from', messages.length, ')');
 
-  const MAX_TURNS = 10; // Prevent infinite loops
+  const MAX_TURNS = 20; // Increased from 10 to 20 for complex tasks
   let turnCount = 0;
 
   while (turnCount < MAX_TURNS) {
@@ -143,32 +164,102 @@ export async function streamAnthropicWithBrowserTools(
       })),
       system: `You are a helpful AI assistant with browser automation capabilities. You can navigate to websites, click elements, type text, scroll pages, and take screenshots.
 
+TASK COMPLETION REQUIREMENTS:
+1. COMPLETE THE FULL TASK: Do not stop until you have:
+   - Completed all requested actions
+   - Verified the task is done (e.g., form submitted, item created, action confirmed)
+   - OR clearly communicated why you cannot complete it
+
+2. ERROR HANDLING & COMMUNICATION:
+   - If an action fails, try alternative approaches (different selector, coordinates, etc.)
+   - If you cannot complete the task after multiple attempts, clearly explain:
+     * What you tried
+     * What prevented completion
+     * What the user needs to do (if anything)
+   - NEVER silently stop - always communicate the status
+   - If you reach the turn limit, explain what was accomplished and what remains
+
+3. VERIFICATION:
+   - After completing actions, verify success (check for confirmation messages, updated UI, etc.)
+   - If verification shows the task isn't complete, continue working until it is
+
 CRITICAL: ALWAYS PREFER DOM-BASED METHODS OVER SCREENSHOTS
 
 INTERACTION WORKFLOW (Follow this order):
 
-1. **First, get page context**: Call getPageContext to see the page structure, interactive elements, and their selectors
+1. **First, get page context**: Call getPageContext to see the page structure, interactive elements, their selectors, and authentication status
 
-2. **Use DOM methods (PREFERRED)**:
+2. **Check authentication status**:
+   - If authentication.requiresLogin is true, you need to help the user log in
+   - Look for login forms (input[type="password"], buttons with "Sign In", "Login", etc.)
+   - Use the interactive elements list to find login-related buttons and inputs
+   - Guide the user through the login process step by step
+   - All operations use the user's authentic local IP address and network connection for security
+
+3. **Handle modals and dialogs (CRITICAL for ALL web apps - React, Vue, Angular, etc.)**:
+   - ALWAYS check modals array in page context FIRST - if modals are present, they take absolute priority
+   - Elements inside modals are automatically prioritized (marked with inModal: true, +20 priority boost)
+   - Works with ALL frameworks: React, Vue, Angular, Svelte, vanilla JS, Bootstrap, Material-UI, Ant Design, etc.
+   - Modals may not have standard attributes but are detected by z-index, positioning, and framework patterns
+   - If you see a modal in the modals array, NEVER use screenshots - use DOM methods with the modal's selectors
+   - To close a modal: look for closeButton in the modal data, or use the modal's close button selector
+   - Modals are sorted by z-index - the topmost modal is usually the one to interact with
+   - If a modal appears, interact with elements inside it first before trying to close it
+   - Common close patterns: button with "×", "Close", "X", "Cancel", or aria-label containing "close" (works in all languages)
+   - For create/edit modals: look for form inputs, textareas, and submit buttons inside the modal
+   - Modal elements will have inModal: true flag - ALWAYS prefer these over page elements
+   - Works with international apps: close buttons detected in English, Japanese, Chinese, Korean, French, German, Spanish, Russian, etc.
+
+4. **Use DOM methods (PREFERRED)**:
+   - Interactive elements are sorted by priority (higher priority = more likely to be the target)
+   - Elements in modals get +20 priority boost - always check modals first!
    - Use clickElement with CSS selectors or text content (e.g., clickElement with selector="#search-btn" or text="Search")
+   - Prefer selectors from the interactiveElements list as they're optimized and prioritized
    - Use type with selectors to focus and type into inputs (e.g., type with selector="input[name=q]" and text="pants")
    - These methods are more reliable and efficient than coordinates
 
-3. **Only use screenshots as LAST RESORT**:
-   - If clickElement cannot find the element by selector or text
-   - If you need to understand visual layout
-   - Then take screenshot and use coordinate-based click
+5. **ONLY use screenshots as ABSOLUTE LAST RESORT**:
+   - NEVER use screenshots if hasActiveModals is true or modals array has items - modals are always accessible via DOM
+   - NEVER use screenshots for Jira Cloud or React-based modals - they are fully accessible via DOM
+   - Only use screenshots if:
+     * No modals are present (hasActiveModals is false)
+     * clickElement cannot find the element by selector or text after trying multiple approaches
+     * You need to understand visual layout that's not available in DOM
+   - Screenshots are cached briefly to improve performance
+   - Remember: Modal elements have inModal: true and are prioritized - use them instead of screenshots!
+
+MODAL HANDLING EXAMPLES:
+- If modals array has items, check the first (topmost) modal
+- Modal close button: clickElement with selector from modal.closeButton.selector
+- Elements in modals: Look for interactiveElements with inModal: true (they're already prioritized)
+- After completing modal action, close it using the close button selector
 
 DOM METHOD EXAMPLES:
 - Search button: clickElement with selector="button[type=submit]" or text="Search"
 - Input field: type with selector="input[name=search]" or selector="#search-input"
 - Sign in link: clickElement with text="Sign In" or selector="a[href*=signin]"
+- Login form: First find the username/email input, then password input, then submit button
+- Modal button: clickElement with selector from interactiveElements (check inModal: true)
+
+AUTHENTICATION HANDLING:
+- When authentication.requiresLogin is true, look for:
+  * Input fields with type="email", type="text" (for username/email)
+  * Input fields with type="password"
+  * Buttons with text containing "Sign In", "Login", "Log In", "Submit"
+- Fill in credentials step by step, then click the login button
+- Wait for page navigation after login before proceeding
+- All authentication happens using the user's local browser session and IP address
 
 COORDINATE CLICKING (last resort only):
 - If DOM methods fail, take a screenshot first
 - Measure coordinates from top-left (0,0)
 - Click the CENTER of elements
 - Viewport dimensions tell you the bounds
+
+PERFORMANCE TIPS:
+- Interactive elements are pre-sorted by priority - use higher priority elements first
+- Page context is cached briefly - don't call getPageContext excessively
+- Screenshots are cached for 1 second - avoid taking multiple screenshots rapidly
 
 When the user asks you to interact with a page, follow this workflow carefully. Always try DOM methods first!`,
     };
@@ -217,6 +308,20 @@ When the user asks you to interact with a page, follow this workflow carefully. 
 
     // Check for tool use
     const toolUses = data.content?.filter((c: any) => c.type === 'tool_use') || [];
+
+    // Detect if model is describing tool calls instead of making them
+    if (toolUses.length === 0 && textContent?.text) {
+      const text = textContent.text.toLowerCase();
+      const toolKeywords = ['click_element', 'clickelement', 'executing:', 'selector:', 'description:'];
+      const hasToolLikeText = toolKeywords.some(keyword => text.includes(keyword));
+      
+      if (hasToolLikeText) {
+        console.warn('⚠️ Model appears to be describing tool calls instead of making them!');
+        console.warn('⚠️ Text content:', textContent.text.substring(0, 200));
+        console.warn('⚠️ This usually means the model is confused about tool format.');
+        onTextChunk('\n\n⚠️ Note: It looks like I described an action instead of executing it. Let me try again with the proper tool call.\n');
+      }
+    }
 
     if (toolUses.length === 0) {
       // No more tools to execute, we're done
@@ -322,6 +427,17 @@ TO CLICK AN ELEMENT:
 
     // If the response has a stop_reason of 'end_turn', we're done
     if (data.stop_reason === 'end_turn') {
+      // Ensure we have some text response - if not, add completion message
+      if (!fullResponseText.trim() && turnCount > 1) {
+        onTextChunk('\n\n✅ Task completed. If you requested something specific, please verify it was completed correctly.');
+      }
+      break;
+    }
+    
+    // If we've reached max turns, communicate this clearly
+    if (turnCount >= MAX_TURNS) {
+      onTextChunk(`\n\n⚠️ Reached maximum turns (${MAX_TURNS}). `);
+      onTextChunk('If the task is not complete, please try breaking it into smaller steps or provide more specific instructions.');
       break;
     }
   }

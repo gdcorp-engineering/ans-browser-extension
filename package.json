@@ -19,7 +19,8 @@
     "package:zip:test": "BUILD_ENV=test npm run package:zip",
     "package:zip:prod": "BUILD_ENV=prod npm run package:zip",
     "get-extension-id": "node get-extension-id.js",
-    "test:prompts": "node test-prompt-runner.mjs"
+    "test:prompts": "node test-prompt-runner.mjs",
+    "test:agent-mode": "node test-agent-mode.mjs"
   },
   "dependencies": {
     "@a2a-js/sdk": "^0.3.5",

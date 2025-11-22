@@ -19,6 +19,47 @@ let shouldAbortOperations = false;
 // Track sidebar state per tab
 const sidebarState: Map<number, boolean> = new Map();
 
+// Track agent mode state per tab (when AI is actively working)
+const agentModeState: Map<number, boolean> = new Map();
+
+// Update tab badge to show agent mode status
+async function updateTabBadge(tabId: number, isActive: boolean) {
+  try {
+    if (isActive) {
+      // Show badge with "AI" text and blue background
+      await chrome.action.setBadgeText({ tabId, text: 'AI' });
+      await chrome.action.setBadgeBackgroundColor({ 
+        tabId, 
+        color: '#007AFF' // Blue color matching the extension theme
+      });
+    } else {
+      // Clear badge when agent mode is inactive
+      await chrome.action.setBadgeText({ tabId, text: '' });
+    }
+  } catch (error) {
+    // Tab might have been closed, ignore errors
+    console.debug('Could not update badge for tab', tabId, error);
+  }
+}
+
+// Update page title in content script to show agent mode status
+async function updatePageTitle(tabId: number, isActive: boolean) {
+  try {
+    // Ensure content script is injected
+    await ensureContentScript(tabId);
+    
+    // Send message to content script to update title
+    const response = await chrome.tabs.sendMessage(tabId, {
+      type: 'UPDATE_AGENT_MODE_TITLE',
+      isActive: isActive
+    });
+    console.log(`📝 Page title update ${isActive ? 'started' : 'stopped'} for tab ${tabId}`, response);
+  } catch (error) {
+    // Log error for debugging
+    console.warn(`⚠️ Could not update page title for tab ${tabId}:`, error);
+  }
+}
+
 // Set side panel to open automatically on extension icon click
 // The side panel will be per-tab by default when using tabId
 chrome.sidePanel
@@ -405,10 +446,22 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
     return true;
   }
 
-  // Take screenshot
+  // Screenshot cache to avoid redundant captures
+  const screenshotCache: {
+    [tabId: number]: {
+      dataUrl: string;
+      timestamp: number;
+      url: string;
+    };
+  } = {};
+
+  const SCREENSHOT_CACHE_DURATION = 1000; // 1 second cache
+
+  // Take screenshot with optimizations
   if (request.type === 'TAKE_SCREENSHOT') {
     (async () => {
       try {
+        const startTime = performance.now();
 
         // Define restricted protocols (but allow regular web pages)
         const restrictedProtocols = ['chrome://', 'chrome-extension://', 'edge://', 'about:', 'devtools://'];
@@ -440,57 +493,83 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
           activeTab = currentWindow.tabs.find(tab => tab.active === true);
         }
 
-        if (!activeTab) {
+        if (!activeTab || !activeTab.id) {
           console.error('❌ No active tab found in window');
           sendResponse({ success: false, error: 'No active tab found' });
           return;
         }
 
-
         // Check if the current tab is restricted
         if (isRestricted(activeTab.url)) {
           // Navigate to google.com automatically
-          if (activeTab.id) {
-            await chrome.tabs.update(activeTab.id, { url: 'https://www.google.com' });
+          await chrome.tabs.update(activeTab.id, { url: 'https://www.google.com' });
 
-            // Wait for the page to load
-            await new Promise(resolve => setTimeout(resolve, 2000));
+          // Wait for the page to load
+          await new Promise(resolve => setTimeout(resolve, 2000));
 
-            // Get the updated tab
-            const updatedTab = await chrome.tabs.get(activeTab.id);
-
-            // Update activeTab reference
-            activeTab = updatedTab;
-          } else {
-            sendResponse({
-              success: false,
-              error: 'Cannot navigate from restricted page'
-            });
-            return;
-          }
+          // Get the updated tab
+          const updatedTab = await chrome.tabs.get(activeTab.id);
+          activeTab = updatedTab;
         }
 
+        // Check cache first
+        const cached = screenshotCache[activeTab.id];
+        const now = Date.now();
+        if (cached && cached.url === activeTab.url && (now - cached.timestamp) < SCREENSHOT_CACHE_DURATION) {
+          console.log('📸 Using cached screenshot');
+          const viewport = await chrome.tabs.sendMessage(activeTab.id, {
+            type: 'GET_VIEWPORT_SIZE'
+          }).catch(() => ({ width: 1280, height: 800 }));
+          
+          sendResponse({
+            success: true,
+            screenshot: cached.dataUrl,
+            viewport: viewport,
+            cached: true
+          });
+          return;
+        }
 
         // Ensure windowId is defined
         if (currentWindow.id === undefined) {
           throw new Error('Window ID is undefined');
         }
 
+        // Wait a brief moment for any pending DOM updates
+        await new Promise(resolve => setTimeout(resolve, 100));
+
         // Capture the visible tab in the current window
+        // Use jpeg format for better compression when quality is acceptable
+        const format = request.format || 'png'; // Allow format override
+        const quality = request.quality || (format === 'jpeg' ? 85 : 100);
+        
         const dataUrl = await chrome.tabs.captureVisibleTab(currentWindow.id, {
-          format: 'png',
-          quality: 80
+          format: format as 'png' | 'jpeg',
+          quality: quality
         });
 
-        // Get viewport dimensions from the tab
-        const viewport = await chrome.tabs.sendMessage(activeTab.id!, {
+        // Cache the screenshot
+        screenshotCache[activeTab.id] = {
+          dataUrl,
+          timestamp: now,
+          url: activeTab.url || ''
+        };
+
+        // Get viewport dimensions from the tab (parallel with screenshot)
+        const viewport = await chrome.tabs.sendMessage(activeTab.id, {
           type: 'GET_VIEWPORT_SIZE'
         }).catch(() => ({ width: 1280, height: 800 })); // Fallback dimensions
+
+        const duration = performance.now() - startTime;
+        console.log(`📸 Screenshot captured in ${duration.toFixed(2)}ms`);
 
         sendResponse({
           success: true,
           screenshot: dataUrl,
-          viewport: viewport
+          viewport: viewport,
+          cached: false,
+          format,
+          quality
         });
       } catch (error) {
         console.error('❌ Screenshot capture error:', error);
@@ -523,6 +602,9 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
 
         const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
         if (tabs[0]?.id) {
+          // Clear screenshot cache for this tab on navigation
+          delete screenshotCache[tabs[0].id];
+          
           await chrome.tabs.update(tabs[0].id, { url: request.url });
           sendResponse({ success: true, url: request.url });
         } else {
@@ -563,8 +645,86 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
   // Page loaded notification from content script
   if (request.type === 'PAGE_LOADED') {
     console.log('Page loaded:', request.url);
+    // Clear screenshot cache when page loads (content script will clear its own cache)
+    // This ensures fresh screenshots after navigation
     return false;
   }
+  
+  // Clear screenshot cache for a specific tab (called on navigation)
+  if (request.type === 'CLEAR_SCREENSHOT_CACHE') {
+    if (request.tabId) {
+      delete screenshotCache[request.tabId];
+      sendResponse({ success: true });
+    } else {
+      // Clear all cache
+      Object.keys(screenshotCache).forEach(key => delete screenshotCache[parseInt(key)]);
+      sendResponse({ success: true, cleared: 'all' });
+    }
+    return true;
+  }
+
+  // Track agent mode start (when AI starts working on a tab)
+  if (request.type === 'AGENT_MODE_START') {
+    (async () => {
+      try {
+        const tabId = request.tabId;
+        if (tabId) {
+          agentModeState.set(tabId, true);
+          await updateTabBadge(tabId, true);
+          await updatePageTitle(tabId, true);
+          console.log(`🤖 Agent mode started for tab ${tabId}`);
+        } else {
+          // Fallback: get current tab
+          const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+          if (tabs[0]?.id) {
+            agentModeState.set(tabs[0].id, true);
+            await updateTabBadge(tabs[0].id, true);
+            await updatePageTitle(tabs[0].id, true);
+            console.log(`🤖 Agent mode started for tab ${tabs[0].id} (fallback)`);
+          }
+        }
+        sendResponse({ success: true });
+      } catch (error) {
+        console.error('Error starting agent mode:', error);
+        sendResponse({ success: false, error: (error as Error).message });
+      }
+    })();
+    return true;
+  }
+
+  // Track agent mode stop (when AI finishes working on a tab)
+  if (request.type === 'AGENT_MODE_STOP') {
+    (async () => {
+      try {
+        const tabId = request.tabId;
+        if (tabId) {
+          agentModeState.set(tabId, false);
+          await updateTabBadge(tabId, false);
+          await updatePageTitle(tabId, false);
+          console.log(`✅ Agent mode stopped for tab ${tabId}`);
+        } else {
+          // Fallback: get current tab
+          const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+          if (tabs[0]?.id) {
+            agentModeState.set(tabs[0].id, false);
+            await updateTabBadge(tabs[0].id, false);
+            await updatePageTitle(tabs[0].id, false);
+            console.log(`✅ Agent mode stopped for tab ${tabs[0].id} (fallback)`);
+          }
+        }
+        sendResponse({ success: true });
+      } catch (error) {
+        console.error('Error stopping agent mode:', error);
+        sendResponse({ success: false, error: (error as Error).message });
+      }
+    })();
+    return true;
+  }
+});
+
+// Clean up agent mode state when tabs are closed
+chrome.tabs.onRemoved.addListener((tabId) => {
+  agentModeState.delete(tabId);
 });
 
 console.log('Atlas background service worker loaded');

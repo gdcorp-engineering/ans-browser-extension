@@ -448,13 +448,20 @@ function SettingsPage() {
               </button>
             </div>
             <p className="help-text">
-              🔑 Required for ANS API access. Format: <code>Authorization: Bearer eyJraWQiOi...</code>
+              🔑 JWT token for ANS API access. Get your token from the <code>auth_jomax</code> cookie value at <a href="https://ra.int.dev-godaddy.com" target="_blank" rel="noopener noreferrer">ra.int.dev-godaddy.com</a>.
               <br />
               Paste just the token part (without "Bearer"). Token typically starts with "eyJ".
+              <br />
+              <strong>Note:</strong> The extension will set this as the <code>auth_jomax</code> cookie and also send it as a Bearer token to support both authentication methods.
             </p>
             {settings.ansApiToken && settings.ansApiToken.startsWith('Bearer ') && (
               <p style={{ color: '#dc3545', fontSize: '12px', marginTop: '5px' }}>
                 ⚠️ Remove "Bearer " prefix - paste only the token part
+              </p>
+            )}
+            {settings.ansApiToken && !settings.ansApiToken.startsWith('eyJ') && !settings.ansApiToken.startsWith('Bearer ') && settings.ansApiToken.trim().length > 0 && (
+              <p style={{ color: '#ff9800', fontSize: '12px', marginTop: '5px' }}>
+                ⚠️ This doesn't look like a JWT token (should start with "eyJ"). Make sure you're pasting the full token value from the auth_jomax cookie.
               </p>
             )}
           </div>

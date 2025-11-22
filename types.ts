@@ -61,6 +61,18 @@ export interface Message {
   toolCalls?: GeminiFunctionCall[];
 }
 
+export interface ChatHistory {
+  id: string;                    // UUID v4
+  title: string;                 // Auto-generated or user-edited
+  createdAt: number;             // Timestamp
+  updatedAt: number;             // Last message timestamp
+  tabId?: number;                // Original tab (optional, for context)
+  url?: string;                  // Original page URL (optional)
+  messageCount: number;          // Quick reference
+  preview: string;               // First user message (truncated to 100 chars)
+  messages: Message[];          // Full message array
+}
+
 export interface PageContext {
   url: string;
   title: string;
