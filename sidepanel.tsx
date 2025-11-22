@@ -2370,60 +2370,59 @@ GUIDELINES:
         )}
       </div>
 
-      {/* Available Tools Panel */}
-      <div style={{
-        borderBottom: '1px solid #d1d5db',
-        background: '#fafafa',
-      }}>
-        <button
-          onClick={() => setShowToolsPanel(!showToolsPanel)}
-          style={{
-            width: '100%',
-            padding: '8px 16px',
-            background: 'transparent',
-            border: 'none',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            cursor: 'pointer',
-            fontSize: '13px',
-            color: '#4b5563',
-            fontWeight: '500',
-          }}
-        >
-          <span>🔧 Available Tools</span>
-          <span style={{ fontSize: '10px' }}>{showToolsPanel ? '▼' : '▶'}</span>
-        </button>
+      {/* Available Tools Panel - Only show if tools are available */}
+      {(() => {
+        const mcpService = getMCPService();
+        const a2aService = getA2AService();
 
-        {showToolsPanel && (
+        const hasMCPTools = mcpService.hasConnections() && mcpService.getTotalToolCount() > 0;
+        const hasA2AAgents = a2aService.hasConnections() && a2aService.getConnectionStatus().length > 0;
+        const hasBrowserTools = browserToolsEnabled;
+
+        // Hide entire panel if no tools available
+        if (!hasMCPTools && !hasA2AAgents && !hasBrowserTools) {
+          return null;
+        }
+
+        return (
           <div style={{
-            padding: '12px 16px',
-            fontSize: '12px',
-            maxHeight: '300px',
-            overflowY: 'auto',
+            borderBottom: '1px solid #d1d5db',
+            background: '#fafafa',
           }}>
-            {(() => {
-              const mcpService = getMCPService();
-              const a2aService = getA2AService();
+            <button
+              onClick={() => setShowToolsPanel(!showToolsPanel)}
+              style={{
+                width: '100%',
+                padding: '8px 16px',
+                background: 'transparent',
+                border: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                cursor: 'pointer',
+                fontSize: '13px',
+                color: '#4b5563',
+                fontWeight: '500',
+              }}
+            >
+              <span>🔧 Available Tools</span>
+              <span style={{ fontSize: '10px' }}>{showToolsPanel ? '▼' : '▶'}</span>
+            </button>
 
-              const mcpTools = mcpService.hasConnections()
-                ? mcpService.getToolsWithOrigin()
-                : [];
-              const a2aAgents = a2aService.hasConnections()
-                ? a2aService.getConnectionStatus()
-                : [];
-
-              const hasMCPTools = mcpTools.length > 0;
-              const hasA2AAgents = a2aAgents.length > 0;
-              const hasBrowserTools = browserToolsEnabled;
-
-              if (!hasMCPTools && !hasA2AAgents && !hasBrowserTools) {
-                return (
-                  <div style={{ color: '#6b7280', fontStyle: 'italic' }}>
-                    No tools configured. Enable Browser Tools or add MCP/A2A servers in Settings.
-                  </div>
-                );
-              }
+            {showToolsPanel && (
+              <div style={{
+                padding: '12px 16px',
+                fontSize: '12px',
+                maxHeight: '300px',
+                overflowY: 'auto',
+              }}>
+                {(() => {
+                  const mcpTools = mcpService.hasConnections()
+                    ? mcpService.getToolsWithOrigin()
+                    : [];
+                  const a2aAgents = a2aService.hasConnections()
+                    ? a2aService.getConnectionStatus()
+                    : [];
 
               return (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -2488,7 +2487,9 @@ GUIDELINES:
             })()}
           </div>
         )}
-      </div>
+          </div>
+        );
+      })()}
 
       <div className="messages-container" ref={messagesContainerRef}>
         {messages.length === 0 ? (
