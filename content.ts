@@ -330,30 +330,33 @@ function dispatchClickSequence(element: HTMLElement, x: number, y: number): void
                            element.hasAttribute('v-on:click');
   console.log('🎧 Has click listeners/handlers:', hasClickListeners ? 'Yes' : 'Unknown (may use addEventListener)');
 
-  // Try NATIVE click first (generates trusted events)
-  console.log('1️⃣ Attempting native element.click()...');
+  // For complex apps like Slack, we need to focus first
+  console.log('1️⃣ Setting focus on element...');
   try {
-    element.click();
-    console.log('✅ Native click executed');
+    if (element instanceof HTMLElement) {
+      element.focus();
+      console.log('✅ Focus set');
+    }
   } catch (error) {
-    console.error('❌ Native click failed:', error);
+    console.error('❌ Focus failed:', error);
   }
 
   // If it's a clickable parent, try clicking the actual interactive child
   const interactiveChild = element.querySelector('button, a, input, [role="button"], [onclick]') as HTMLElement;
   if (interactiveChild && interactiveChild !== element) {
-    console.log('2️⃣ Found interactive child, clicking it...');
+    console.log('2️⃣ Found interactive child, focusing it...');
     console.log('   Child:', interactiveChild.tagName, interactiveChild.className);
     try {
-      interactiveChild.click();
-      console.log('✅ Child click executed');
+      interactiveChild.focus();
+      element = interactiveChild; // Target the child for subsequent events
+      console.log('✅ Child focused, will target it');
     } catch (error) {
-      console.error('❌ Child click failed:', error);
+      console.error('❌ Child focus failed:', error);
     }
   }
 
-  // Dispatch synthetic events as additional attempt
-  console.log('3️⃣ Dispatching synthetic events...');
+  // Dispatch complete event sequence synchronously for React apps
+  console.log('3️⃣ Dispatching complete event sequence...');
   const eventOptions = {
     bubbles: true,
     cancelable: true,
@@ -383,23 +386,45 @@ function dispatchClickSequence(element: HTMLElement, x: number, y: number): void
   };
 
   try {
-    // Complete event sequence on the element
+    // Step 1: Mouse enter events
+    element.dispatchEvent(new MouseEvent('mouseenter', { ...eventOptions, buttons: 0 }));
+    element.dispatchEvent(new MouseEvent('mouseover', eventOptions));
+    element.dispatchEvent(new MouseEvent('mousemove', eventOptions));
+
+    // Step 2: Focus events (critical for React apps)
+    element.dispatchEvent(new FocusEvent('focusin', { bubbles: true, cancelable: true }));
+    element.dispatchEvent(new FocusEvent('focus', { bubbles: false, cancelable: true }));
+
+    // Step 3: Complete pointer/mouse down sequence
     element.dispatchEvent(new PointerEvent('pointerdown', pointerOptions));
     element.dispatchEvent(new MouseEvent('mousedown', eventOptions));
 
-    // Small delay to simulate real mouse timing
-    setTimeout(() => {
-      element.dispatchEvent(new PointerEvent('pointerup', { ...pointerOptions, buttons: 0 }));
-      element.dispatchEvent(new MouseEvent('mouseup', { ...eventOptions, buttons: 0 }));
-      element.dispatchEvent(new PointerEvent('click', { ...pointerOptions, buttons: 0 }));
-      element.dispatchEvent(new MouseEvent('click', { ...eventOptions, buttons: 0 }));
-      console.log('✅ Synthetic events dispatched with delay');
-    }, 50);
+    // Step 4: Up and click events (synchronous for React)
+    element.dispatchEvent(new PointerEvent('pointerup', { ...pointerOptions, buttons: 0 }));
+    element.dispatchEvent(new MouseEvent('mouseup', { ...eventOptions, buttons: 0 }));
+    element.dispatchEvent(new PointerEvent('click', { ...pointerOptions, buttons: 0 }));
+    element.dispatchEvent(new MouseEvent('click', { ...eventOptions, buttons: 0 }));
+
+    console.log('✅ Complete event sequence dispatched');
+
+    // Step 5: Try native click as final attempt (generates trusted events)
+    console.log('4️⃣ Attempting native element.click()...');
+    try {
+      element.click();
+      console.log('✅ Native click executed');
+    } catch (error) {
+      console.error('❌ Native click failed:', error);
+    }
 
     // Also try dispatching on the top element if different
     if (topElement && topElement !== element) {
-      console.log('4️⃣ Also trying to click top element at coordinates...');
-      (topElement as HTMLElement).click();
+      console.log('5️⃣ Also trying to click top element at coordinates...');
+      try {
+        (topElement as HTMLElement).click();
+        topElement.dispatchEvent(new MouseEvent('click', { ...eventOptions, buttons: 0 }));
+      } catch (error) {
+        console.error('❌ Top element click failed:', error);
+      }
     }
 
     console.log('✅ All click attempts completed');
@@ -1114,6 +1139,11 @@ function executePageAction(
         }
 
         if (focusedElement) {
+          // Ensure element is focused
+          if (focusedElement instanceof HTMLElement) {
+            focusedElement.focus();
+          }
+
           // Special handling for Enter key - actually submit the form
           if (keyToPress === 'Enter') {
             // First try dispatching keyboard events with all required properties for Chrome
@@ -1122,10 +1152,21 @@ function executePageAction(
               code: 'Enter',
               keyCode: 13,
               which: 13,
+              charCode: 13,
               bubbles: true,
               cancelable: true,
-              composed: true
+              composed: true,
+              view: window
             };
+
+            // Dispatch beforeinput event for React apps
+            const beforeInputEvent = new InputEvent('beforeinput', {
+              bubbles: true,
+              cancelable: true,
+              data: '\n',
+              inputType: 'insertLineBreak'
+            });
+            focusedElement.dispatchEvent(beforeInputEvent);
 
             const keydownEvent = new KeyboardEvent('keydown', keyEventInit);
             const keypressEvent = new KeyboardEvent('keypress', keyEventInit);
@@ -1133,6 +1174,15 @@ function executePageAction(
 
             focusedElement.dispatchEvent(keydownEvent);
             focusedElement.dispatchEvent(keypressEvent);
+
+            // Dispatch input event for React apps
+            focusedElement.dispatchEvent(new InputEvent('input', {
+              bubbles: true,
+              cancelable: true,
+              data: '\n',
+              inputType: 'insertLineBreak'
+            }));
+
             focusedElement.dispatchEvent(keyupEvent);
 
             // If it's an input field, try to submit the parent form
@@ -1170,11 +1220,34 @@ function executePageAction(
             key: keyToPress,
             code: keyToPress === 'Tab' ? 'Tab' : keyToPress === 'Escape' ? 'Escape' : `Key${keyToPress}`,
             bubbles: true,
-            cancelable: true
+            cancelable: true,
+            composed: true,
+            view: window
           };
+
+          // Dispatch beforeinput for printable characters
+          if (keyToPress.length === 1) {
+            focusedElement.dispatchEvent(new InputEvent('beforeinput', {
+              bubbles: true,
+              cancelable: true,
+              data: keyToPress,
+              inputType: 'insertText'
+            }));
+          }
 
           focusedElement.dispatchEvent(new KeyboardEvent('keydown', keyEventInit));
           focusedElement.dispatchEvent(new KeyboardEvent('keypress', keyEventInit));
+
+          // Dispatch input for printable characters
+          if (keyToPress.length === 1) {
+            focusedElement.dispatchEvent(new InputEvent('input', {
+              bubbles: true,
+              cancelable: true,
+              data: keyToPress,
+              inputType: 'insertText'
+            }));
+          }
+
           focusedElement.dispatchEvent(new KeyboardEvent('keyup', keyEventInit));
 
           return { success: true, message: `Pressed ${keyToPress} key` };
