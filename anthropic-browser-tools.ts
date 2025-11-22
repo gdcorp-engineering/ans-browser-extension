@@ -130,9 +130,20 @@ export async function streamAnthropicWithBrowserTools(
 
   // Merge browser tools with additional tools (MCP)
   console.log('🔧 Browser tools count:', BROWSER_TOOLS.length);
-  console.log('🔧 Additional tools (MCP) count:', additionalTools?.length || 0);
+  console.log('🔧 Additional tools (MCP/A2A) count:', additionalTools?.length || 0);
 
-  const allTools = additionalTools ? [...BROWSER_TOOLS, ...additionalTools] : BROWSER_TOOLS;
+  const hasAdditionalTools = !!(additionalTools && additionalTools.length > 0);
+  const mcpToolNames = (additionalTools || [])
+    .filter((tool: any) => tool?.name && !tool.name.startsWith('a2a_'))
+    .map((tool: any) => tool.name);
+  const a2aToolNames = (additionalTools || [])
+    .filter((tool: any) => tool?.name && tool.name.startsWith('a2a_'))
+    .map((tool: any) => tool.name);
+  const mcpToolNameSet = new Set(mcpToolNames);
+  const a2aToolNameSet = new Set(a2aToolNames);
+  const allTools = hasAdditionalTools
+    ? [...additionalTools, ...BROWSER_TOOLS] // Surface MCP/A2A tools first
+    : BROWSER_TOOLS;
 
   console.log('🔧 Total merged tools:', allTools.length);
   console.log('🔧 All tool names:', allTools.map((t: any) => t.name).join(', '));
@@ -147,6 +158,28 @@ export async function streamAnthropicWithBrowserTools(
     console.log('🔧 Anthropic Browser Tools - Turn', turnCount);
     console.log('📤 Sending request with tools:', allTools.map((t: any) => t.name));
 
+    const mcpPrioritySection = hasAdditionalTools ? `
+🔴 CRITICAL - MCP / TRUSTED AGENT PRIORITY:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+You have specialized MCP or trusted agent tools available.
+THESE MUST BE YOUR FIRST CHOICE - not browser automation!
+
+BEFORE using browser tools:
+1. Check if ANY MCP/A2A tool can handle the request
+2. If yes → USE IT IMMEDIATELY (do not use browser tools)
+3. If no → Explain why, then proceed with browser automation
+
+Examples:
+- "Find domains" → Use MCP domain search tool (NOT manual navigation)
+- "Check email" → Use MCP email tool (NOT manual login)
+- "Create issue" → Use MCP GitHub tool (NOT manual clicking)
+
+Only use browser automation when:
+- No MCP tool exists for the task
+- MCP tool output needs visual verification
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+` : '';
+
     const requestBody = {
       model,
       max_tokens: 4096,
@@ -157,11 +190,13 @@ export async function streamAnthropicWithBrowserTools(
       })),
       system: `You are a helpful AI assistant with browser automation capabilities. You can navigate to websites, click elements, type text, scroll pages, and take screenshots.
 
+${mcpPrioritySection}
+
 IMPORTANT: When typing in search inputs, Enter is AUTOMATICALLY pressed - you only need to call type().
 
 ALWAYS PREFER DOM-BASED METHODS OVER SCREENSHOTS
 
-INTERACTION WORKFLOW (Follow this order):
+BROWSER AUTOMATION WORKFLOW (when no MCP tool applies):
 
 1. **First, get page context**: Call getPageContext to see the page structure, interactive elements, and their selectors
 
@@ -250,7 +285,27 @@ When the user asks you to interact with a page, follow this workflow carefully. 
 
     for (const toolUse of toolUses) {
       console.log(`🔧 Executing tool: ${toolUse.name}`, toolUse.input);
-      onTextChunk(`\n[Executing: ${toolUse.name}]\n`);
+      const isMcpToolUse = mcpToolNameSet.has(toolUse.name);
+      const isA2AToolUse = a2aToolNameSet.has(toolUse.name);
+      const toolTypeTags: string[] = [];
+      if (isMcpToolUse) toolTypeTags.push('MCP tool');
+      if (isA2AToolUse) toolTypeTags.push('A2A tool');
+      const executingHeader = toolTypeTags.length
+        ? `[Executing: ${toolUse.name}] (${toolTypeTags.join(' & ')})`
+        : `[Executing: ${toolUse.name}]`;
+      onTextChunk(`\n${executingHeader}\n`);
+      if (toolTypeTags.length) {
+        const availabilityParts: string[] = [];
+        if (mcpToolNames.length) {
+          availabilityParts.push(`MCP available: ${mcpToolNames.join(', ')}`);
+        }
+        if (a2aToolNames.length) {
+          availabilityParts.push(`A2A available: ${a2aToolNames.join(', ')}`);
+        }
+        if (availabilityParts.length) {
+          onTextChunk(`${availabilityParts.join(' | ')}\n`);
+        }
+      }
       onTextChunk(`${JSON.stringify(toolUse.input)}\n`);
 
       try {
