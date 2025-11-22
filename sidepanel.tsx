@@ -2376,11 +2376,12 @@ GUIDELINES:
         const a2aService = getA2AService();
 
         const hasMCPTools = mcpService.hasConnections() && mcpService.getTotalToolCount() > 0;
-        const hasA2AAgents = a2aService.hasConnections() && a2aService.getConnectionStatus().length > 0;
+        // Only show A2A agent if it's for the current site
+        const hasCurrentSiteAgent = currentSiteAgent !== null;
         const hasBrowserTools = browserToolsEnabled;
 
         // Hide entire panel if no tools available
-        if (!hasMCPTools && !hasA2AAgents && !hasBrowserTools) {
+        if (!hasMCPTools && !hasCurrentSiteAgent && !hasBrowserTools) {
           return null;
         }
 
@@ -2419,9 +2420,6 @@ GUIDELINES:
                 {(() => {
                   const mcpTools = mcpService.hasConnections()
                     ? mcpService.getToolsWithOrigin()
-                    : [];
-                  const a2aAgents = a2aService.hasConnections()
-                    ? a2aService.getConnectionStatus()
                     : [];
 
               return (
@@ -2462,23 +2460,19 @@ GUIDELINES:
                     </div>
                   )}
 
-                  {/* A2A Agents */}
-                  {hasA2AAgents && (
+                  {/* A2A Agent - Only for Current Site */}
+                  {hasCurrentSiteAgent && currentSiteAgent && (
                     <div>
                       <div style={{ fontWeight: '600', color: '#1f2937', marginBottom: '6px' }}>
-                        🤖 A2A Agents ({a2aAgents.length})
+                        🤖 A2A Agent (Current Site)
                       </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        {a2aAgents.map((agent: any, idx: number) => (
-                          <div key={idx} style={{ paddingLeft: '12px', fontSize: '11px' }}>
-                            <span style={{ color: '#16a34a', fontWeight: '500' }}>
-                              {agent.serverName}
-                            </span>
-                            <span style={{ color: '#9ca3af' }}>
-                              {' '}({agent.connected ? 'Connected' : 'Disconnected'})
-                            </span>
-                          </div>
-                        ))}
+                      <div style={{ paddingLeft: '12px', fontSize: '11px' }}>
+                        <span style={{ color: '#16a34a', fontWeight: '500' }}>
+                          {currentSiteAgent.serverName}
+                        </span>
+                        <span style={{ color: '#9ca3af' }}>
+                          {' '}(Connected)
+                        </span>
                       </div>
                     </div>
                   )}
