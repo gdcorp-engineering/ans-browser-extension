@@ -35,6 +35,17 @@ const getModelDisplayName = (modelId: string | undefined): string => {
   return MODEL_DISPLAY_NAMES[modelId] || modelId;
 };
 
+const BROWSER_TOOL_NAMES = new Set([
+  'navigate',
+  'clickElement',
+  'click',
+  'type',
+  'scroll',
+  'getPageContext',
+  'screenshot',
+  'pressKey',
+]);
+
 // Custom component to handle link clicks - opens in new tab
 const LinkComponent = ({ href, children }: { href?: string; children?: React.ReactNode }) => {
   const handleLinkClick = (e: React.MouseEvent) => {
@@ -180,6 +191,7 @@ function ChatSidebar() {
   const [currentTabId, setCurrentTabId] = useState<number | null>(null);
   const [trustedAgentOptIn, setTrustedAgentOptIn] = useState(true); // User opt-in for trusted agents
   const [currentSiteAgent, setCurrentSiteAgent] = useState<{ serverId: string; serverName: string } | null>(null);
+  const [showToolsPanel, setShowToolsPanel] = useState(false);
 
   // Load trustedAgentOptIn from storage on mount
   useEffect(() => {
@@ -1735,6 +1747,10 @@ GUIDELINES:
 
           // Prepare custom MCP and A2A tools if available
           let mcpTools: any[] | undefined;
+          let mcpToolNameSet: Set<string> | null = null;
+          let mcpToolInvoked = false;
+          let browserToolBlockCount = 0;
+          const MAX_BROWSER_TOOL_BLOCKS = 1;
           if (customMCPToolsRef.current) {
             const { formatToolsForAnthropic, formatA2AToolsForAnthropic } = await import('./mcp-tool-router');
             const { getA2AService } = await import('./a2a-service');
@@ -1750,6 +1766,7 @@ GUIDELINES:
 
             // Combine MCP and A2A tools
             mcpTools = [...formattedMCPTools, ...a2aTools];
+            mcpToolNameSet = new Set(mcpTools.map((tool) => tool.name));
 
             console.log(`🔌 Adding ${formattedMCPTools.length} MCP + ${a2aTools.length} A2A tools to Anthropic (with browser tools)`);
 
@@ -1796,21 +1813,34 @@ GUIDELINES:
             }
 
             // Check if this is an MCP tool
-            if (mcpTools) {
-              const isMCPTool = mcpTools.some(t => t.name === toolName);
+            if (mcpTools && mcpToolNameSet?.has(toolName)) {
+              mcpToolInvoked = true;
 
-              if (isMCPTool) {
-                // Execute MCP tool
-                try {
-                  const { getMCPService } = await import('./mcp-service');
-                  const mcpService = getMCPService();
-                  const result = await mcpService.executeToolCall(toolName, params);
-                  return result;
-                } catch (error: any) {
-                  console.error(`❌ MCP tool execution failed:`, error);
-                  return { error: error.message || 'MCP tool execution failed' };
-                }
+              // Execute MCP tool
+              try {
+                const { getMCPService } = await import('./mcp-service');
+                const mcpService = getMCPService();
+                const result = await mcpService.executeToolCall(toolName, params);
+                return result;
+              } catch (error: any) {
+                console.error(`❌ MCP tool execution failed:`, error);
+                return { error: error.message || 'MCP tool execution failed' };
               }
+            }
+
+            const shouldGateBrowserTools =
+              !!mcpToolNameSet && mcpToolNameSet.size > 0 && !mcpToolInvoked;
+
+            if (
+              shouldGateBrowserTools &&
+              BROWSER_TOOL_NAMES.has(toolName) &&
+              browserToolBlockCount < MAX_BROWSER_TOOL_BLOCKS
+            ) {
+              browserToolBlockCount += 1;
+              const warning =
+                'MCP or trusted agent tools are available. Please call one of them first before using browser automation.';
+              console.warn(`⚠️ ${warning}`);
+              return { success: false, error: warning };
             }
 
             // Show overlay before ANY browser tool execution
@@ -2310,6 +2340,126 @@ GUIDELINES:
           >
             {trustedAgentOptIn ? 'Opted In' : 'Opt In'}
           </button>
+        )}
+      </div>
+
+      {/* Available Tools Panel */}
+      <div style={{
+        borderBottom: '1px solid #d1d5db',
+        background: '#fafafa',
+      }}>
+        <button
+          onClick={() => setShowToolsPanel(!showToolsPanel)}
+          style={{
+            width: '100%',
+            padding: '8px 16px',
+            background: 'transparent',
+            border: 'none',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            cursor: 'pointer',
+            fontSize: '13px',
+            color: '#4b5563',
+            fontWeight: '500',
+          }}
+        >
+          <span>🔧 Available Tools</span>
+          <span style={{ fontSize: '10px' }}>{showToolsPanel ? '▼' : '▶'}</span>
+        </button>
+
+        {showToolsPanel && (
+          <div style={{
+            padding: '12px 16px',
+            fontSize: '12px',
+            maxHeight: '300px',
+            overflowY: 'auto',
+          }}>
+            {(() => {
+              const mcpService = getMCPService();
+              const a2aService = getA2AService();
+
+              const mcpTools = mcpService.hasConnections()
+                ? mcpService.getToolsWithOrigin()
+                : [];
+              const a2aAgents = a2aService.hasConnections()
+                ? a2aService.getConnectionStatus()
+                : [];
+
+              const hasMCPTools = mcpTools.length > 0;
+              const hasA2AAgents = a2aAgents.length > 0;
+              const hasBrowserTools = browserToolsEnabled;
+
+              if (!hasMCPTools && !hasA2AAgents && !hasBrowserTools) {
+                return (
+                  <div style={{ color: '#6b7280', fontStyle: 'italic' }}>
+                    No tools configured. Enable Browser Tools or add MCP/A2A servers in Settings.
+                  </div>
+                );
+              }
+
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {/* Browser Tools */}
+                  {hasBrowserTools && (
+                    <div>
+                      <div style={{ fontWeight: '600', color: '#1f2937', marginBottom: '6px' }}>
+                        🌐 Browser Tools ({browserToolsEnabled ? 'Enabled' : 'Disabled'})
+                      </div>
+                      <div style={{ paddingLeft: '12px', color: '#6b7280', fontSize: '11px' }}>
+                        navigate, click, type, scroll, screenshot, getPageContext, pressKey
+                      </div>
+                    </div>
+                  )}
+
+                  {/* MCP Tools */}
+                  {hasMCPTools && (
+                    <div>
+                      <div style={{ fontWeight: '600', color: '#1f2937', marginBottom: '6px' }}>
+                        🔌 MCP Tools ({mcpTools.length})
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        {mcpTools.slice(0, 10).map((tool: any, idx: number) => (
+                          <div key={idx} style={{ paddingLeft: '12px', fontSize: '11px' }}>
+                            <span style={{ color: '#2563eb', fontFamily: 'monospace' }}>
+                              {tool.toolName}
+                            </span>
+                            <span style={{ color: '#9ca3af' }}> ({tool.origin})</span>
+                          </div>
+                        ))}
+                        {mcpTools.length > 10 && (
+                          <div style={{ paddingLeft: '12px', fontSize: '11px', color: '#6b7280', fontStyle: 'italic' }}>
+                            ... and {mcpTools.length - 10} more
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* A2A Agents */}
+                  {hasA2AAgents && (
+                    <div>
+                      <div style={{ fontWeight: '600', color: '#1f2937', marginBottom: '6px' }}>
+                        🤖 A2A Agents ({a2aAgents.length})
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        {a2aAgents.map((agent: any, idx: number) => (
+                          <div key={idx} style={{ paddingLeft: '12px', fontSize: '11px' }}>
+                            <span style={{ color: '#16a34a', fontWeight: '500' }}>
+                              {agent.serverName}
+                            </span>
+                            <span style={{ color: '#9ca3af' }}>
+                              {' '}({agent.connected ? 'Connected' : 'Disconnected'})
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
         )}
       </div>
 
