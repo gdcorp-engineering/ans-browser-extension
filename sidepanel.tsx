@@ -359,10 +359,20 @@ function ChatSidebar() {
           }
         }
 
-        // Initialize A2A service with settings
+        // Initialize MCP and A2A services with settings
         if (result.atlasSettings.mcpServers && result.atlasSettings.mcpServers.length > 0) {
-          console.log('🚀 Initializing A2A service...');
+          console.log('🚀 Initializing MCP and A2A services...');
           try {
+            // Initialize MCP service
+            const mcpService = getMCPService();
+            await mcpService.connectToServers(result.atlasSettings.mcpServers);
+
+            if (mcpService.hasConnections()) {
+              const toolCount = mcpService.getTotalToolCount();
+              console.log(`✅ MCP service initialized - ${toolCount} tool(s) available`);
+            }
+
+            // Initialize A2A service
             const a2aService = getA2AService();
             await a2aService.connectToServers(result.atlasSettings.mcpServers);
             console.log('✅ A2A service initialized');
@@ -370,7 +380,7 @@ function ChatSidebar() {
             // Check for trusted agent after initialization
             setTimeout(() => checkForTrustedAgent(), 500);
           } catch (error) {
-            console.error('❌ Failed to initialize A2A service:', error);
+            console.error('❌ Failed to initialize MCP/A2A services:', error);
           }
         }
       } else {
