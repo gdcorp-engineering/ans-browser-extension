@@ -1631,11 +1631,28 @@ GUIDELINES:
       if (currentSiteAgent && trustedAgentOptIn) {
         console.log(`🔀 Routing message to A2A agent "${currentSiteAgent.serverName}" for current site (user opted in)`);
 
-        // Create assistant message placeholder
+        // Get info about other available tools
+        const mcpService = getMCPService();
+        const a2aService = getA2AService();
+        const mcpToolCount = mcpService.hasConnections() ? mcpService.getTotalToolCount() : 0;
+        const otherA2ACount = a2aService.getConnectionStatus().length - 1; // Minus current agent
+
+        // Build availability message
+        let availabilityNote = '';
+        const otherTools: string[] = [];
+        if (mcpToolCount > 0) otherTools.push(`${mcpToolCount} MCP tool(s)`);
+        if (otherA2ACount > 0) otherTools.push(`${otherA2ACount} other A2A agent(s)`);
+        if (browserToolsEnabled) otherTools.push('Browser Tools');
+
+        if (otherTools.length > 0) {
+          availabilityNote = `\n\n*Also available: ${otherTools.join(', ')}*`;
+        }
+
+        // Create assistant message placeholder with routing indicator
         const assistantMessage: Message = {
           id: (Date.now() + 1).toString(),
           role: 'assistant',
-          content: '',
+          content: `🤖 **Routing to A2A Agent:** ${currentSiteAgent.serverName}${availabilityNote}\n\n`,
         };
         setMessages(prev => [...prev, assistantMessage]);
 
@@ -1649,7 +1666,7 @@ GUIDELINES:
             const updated = [...prev];
             const lastMsg = updated[updated.length - 1];
             if (lastMsg && lastMsg.role === 'assistant') {
-              lastMsg.content = response;
+              lastMsg.content = `🤖 **Routing to A2A Agent:** ${currentSiteAgent.serverName}${availabilityNote}\n\n${response}`;
             }
             return updated;
           });
@@ -1659,7 +1676,7 @@ GUIDELINES:
             const updated = [...prev];
             const lastMsg = updated[updated.length - 1];
             if (lastMsg && lastMsg.role === 'assistant') {
-              lastMsg.content = `Error communicating with A2A agent: ${error.message}`;
+              lastMsg.content = `🤖 **Routing to A2A Agent:** ${currentSiteAgent.serverName}${availabilityNote}\n\n**Error:** ${error.message}`;
             }
             return updated;
           });
