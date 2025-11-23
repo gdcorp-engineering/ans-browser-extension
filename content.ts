@@ -298,7 +298,7 @@ function extractPageContext(): PageContext {
 }
 
 // Helper function to dispatch complete, realistic click event sequence
-function dispatchClickSequence(element: HTMLElement, x: number, y: number): void {
+async function dispatchClickSequence(element: HTMLElement, x: number, y: number): Promise<void> {
   console.log('🖱️  Dispatching complete click sequence...');
   console.log('🎯 Target element:', {
     tag: element.tagName,
@@ -330,8 +330,32 @@ function dispatchClickSequence(element: HTMLElement, x: number, y: number): void
                            element.hasAttribute('v-on:click');
   console.log('🎧 Has click listeners/handlers:', hasClickListeners ? 'Yes' : 'Unknown (may use addEventListener)');
 
-  // For complex apps like Slack, we need to focus first
-  console.log('1️⃣ Setting focus on element...');
+  // CRITICAL: For Slack and React apps, ONLY native clicks generate trusted events
+  // Synthetic events are marked isTrusted=false and ignored by security-sensitive apps
+
+  console.log('1️⃣ Finding best clickable element...');
+
+  // If it's a clickable parent, find the actual interactive child
+  const interactiveChild = element.querySelector('button, a, input, [role="button"], [role="link"], [onclick], [tabindex]') as HTMLElement;
+  if (interactiveChild && interactiveChild !== element) {
+    console.log('   Found interactive child:', interactiveChild.tagName, interactiveChild.className);
+    element = interactiveChild; // Target the child instead
+  }
+
+  // Look for parent clickable elements if current element seems non-interactive
+  if (!['A', 'BUTTON', 'INPUT', 'SELECT', 'TEXTAREA'].includes(element.tagName) &&
+      !element.hasAttribute('onclick') &&
+      !element.getAttribute('role')?.includes('button')) {
+    const clickableParent = element.closest('button, a, [role="button"], [role="link"], [onclick]') as HTMLElement;
+    if (clickableParent) {
+      console.log('   Found clickable parent:', clickableParent.tagName, clickableParent.className);
+      element = clickableParent;
+    }
+  }
+
+  console.log('2️⃣ Target element:', element.tagName, element.className);
+
+  // Set focus first (required for some elements)
   try {
     if (element instanceof HTMLElement) {
       element.focus();
@@ -339,20 +363,6 @@ function dispatchClickSequence(element: HTMLElement, x: number, y: number): void
     }
   } catch (error) {
     console.error('❌ Focus failed:', error);
-  }
-
-  // If it's a clickable parent, try clicking the actual interactive child
-  const interactiveChild = element.querySelector('button, a, input, [role="button"], [onclick]') as HTMLElement;
-  if (interactiveChild && interactiveChild !== element) {
-    console.log('2️⃣ Found interactive child, focusing it...');
-    console.log('   Child:', interactiveChild.tagName, interactiveChild.className);
-    try {
-      interactiveChild.focus();
-      element = interactiveChild; // Target the child for subsequent events
-      console.log('✅ Child focused, will target it');
-    } catch (error) {
-      console.error('❌ Child focus failed:', error);
-    }
   }
 
   // Dispatch complete event sequence synchronously for React apps
@@ -407,24 +417,50 @@ function dispatchClickSequence(element: HTMLElement, x: number, y: number): void
 
     console.log('✅ Complete event sequence dispatched');
 
-    // Step 5: Try native click as final attempt (generates trusted events)
-    console.log('4️⃣ Attempting native element.click()...');
-    try {
-      element.click();
-      console.log('✅ Native click executed');
-    } catch (error) {
-      console.error('❌ Native click failed:', error);
+    // Step 5: AGGRESSIVE NATIVE CLICK - This is the MOST IMPORTANT for Slack
+    // Native clicks are the ONLY way to generate trusted events
+    console.log('4️⃣ NATIVE CLICK (generates trusted=true events)...');
+
+    // Try multiple times with small delays (sometimes first click is ignored)
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        console.log(`   Attempt ${attempt}/3...`);
+        element.click();
+        console.log(`   ✅ Native click ${attempt} executed`);
+
+        // Small delay between attempts
+        if (attempt < 3) {
+          await new Promise(resolve => setTimeout(resolve, 50));
+        }
+      } catch (error) {
+        console.error(`   ❌ Native click ${attempt} failed:`, error);
+      }
     }
 
-    // Also try dispatching on the top element if different
-    if (topElement && topElement !== element) {
-      console.log('5️⃣ Also trying to click top element at coordinates...');
+    // Also try clicking parent/child elements with native click
+    const parent = element.parentElement;
+    if (parent && parent.tagName !== 'BODY' && parent.tagName !== 'HTML') {
+      console.log('5️⃣ Also trying native click on parent element...');
       try {
-        (topElement as HTMLElement).click();
-        topElement.dispatchEvent(new MouseEvent('click', { ...eventOptions, buttons: 0 }));
+        parent.click();
+        console.log('   ✅ Parent native click executed');
       } catch (error) {
-        console.error('❌ Top element click failed:', error);
+        console.error('   ❌ Parent click failed:', error);
       }
+    }
+
+    // Try clicking all children
+    const clickableChildren = element.querySelectorAll('button, a, [role="button"]');
+    if (clickableChildren.length > 0) {
+      console.log(`6️⃣ Trying native click on ${clickableChildren.length} clickable children...`);
+      clickableChildren.forEach((child, i) => {
+        try {
+          (child as HTMLElement).click();
+          console.log(`   ✅ Child ${i+1} clicked`);
+        } catch (error) {
+          console.error(`   ❌ Child ${i+1} failed:`, error);
+        }
+      });
     }
 
     console.log('✅ All click attempts completed');
@@ -434,7 +470,7 @@ function dispatchClickSequence(element: HTMLElement, x: number, y: number): void
 }
 
 // Execute actions on the page
-function executePageAction(
+async function executePageAction(
   action: string,
   target?: string,
   value?: string,
@@ -445,7 +481,7 @@ function executePageAction(
   key?: string,
   keys?: string[],
   destination?: { x: number; y: number }
-): any {
+): Promise<any> {
   try {
     switch (action) {
       case 'click':
@@ -521,7 +557,7 @@ function executePageAction(
           const clickY = rect.top + rect.height / 2;
 
           // Use complete click sequence for better compatibility
-          dispatchClickSequence(element, clickX, clickY);
+          await dispatchClickSequence(element, clickX, clickY);
 
           // Visual feedback
           highlightElement(element, coordinates || { x: clickX, y: clickY });

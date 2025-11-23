@@ -39,6 +39,7 @@ You can:
 - Provide information and assistance
 - Have helpful conversations
 - Use any MCP tools that are available
+- When MCP or trusted agent tools are available, ALWAYS inspect them first and call the one that directly satisfies the request before asking the user to enable browser tools. Only skip them if none match—explain your reasoning when you fall back.
 
 Be clear and direct when explaining that browser automation requires enabling Browser Tools.`,
       stream: true,
