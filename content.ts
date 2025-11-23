@@ -2809,8 +2809,7 @@ function showANSFloatingButtonInternal() {
     display: block;
   `;
 
-  // Add hover effects
-  const button = ansFloatingButton.querySelector('#ans-floating-btn') as HTMLButtonElement;
+  // Add hover effects (button already created above)
   if (button) {
     button.addEventListener('mouseenter', () => {
       button.style.transform = 'translateY(-2px)';
