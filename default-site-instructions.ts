@@ -40,17 +40,19 @@ Steps for simple issue key lookup:
 2. Type the issue key
 3. Press Enter
 
-Steps for assignee-based search:
-1. Look for and click the button labeled "JQL" near the search area
-2. Wait for JQL input field to appear
-3. Click into the JQL input field to focus it
-4. Clear any existing text in the field
-5. Type exactly: assignee = currentUser()
-6. Press Enter to execute search
-7. Wait for results to load
-8. Extract and return issue keys, summaries, and statuses
+Steps for finding bugs assigned to me:
+1. Take a screenshot first to see the page layout
+2. Look for "Filters" in the left sidebar navigation
+3. Click on "Filters"
+4. Look for existing filters like "My open issues" or "Assigned to me"
+5. Click on the appropriate filter
+6. Wait for results to load
+7. Extract and return issue keys, summaries, and statuses
 
-CRITICAL: You must click the JQL button FIRST before typing the query. Do not type JQL syntax into the regular search box or you will get a parsing error.
+If no suitable filter exists:
+1. Click "Create filter" or similar option
+2. Set up filter with assignee criteria
+3. Save and apply the filter
 
 Output: List of matching issues with keys, summaries, and current status
 
