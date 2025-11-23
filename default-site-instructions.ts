@@ -41,7 +41,7 @@ Steps:
    a. Click the "JQL" button to switch to JQL mode
    b. Clear any existing query
    c. Enter appropriate JQL query:
-      - My open bugs or issues assigned to me: assignee = currentUser() AND status NOT IN ("Done","Closed","Resolved","Cancelled")
+      - My open bugs or issues assigned to me: assignee = currentUser()
       - Issues mentioning keyword: text ~ "keyword"
    d. Press Enter or click search button
 3. Wait for results to load
