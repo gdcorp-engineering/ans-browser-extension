@@ -653,72 +653,11 @@ async function executePageAction(
             });
           }
 
-          // If element is an input or near an input, try to find the actual input field
-          // This improves accuracy for search boxes and text inputs
-          if (element) {
-            const tagName = element.tagName;
-
-            // If we clicked near but not on an input, try to find the nearest input
-            if (tagName !== 'INPUT' && tagName !== 'TEXTAREA' && element.getAttribute('contenteditable') !== 'true') {
-              // Check if clicked element contains an input
-              const inputInside = element.querySelector('input, textarea, [contenteditable="true"]') as HTMLElement;
-              if (inputInside) {
-                console.log(`💡 Found input field inside clicked element: ${inputInside.tagName}`);
-                element = inputInside;
-              } else {
-                // Try to find nearby visible input (within 100px)
-                const allInputs = Array.from(document.querySelectorAll('input[type="text"], input[type="search"], textarea')) as HTMLElement[];
-                const nearbyInput = allInputs.find(input => {
-                  const rect = input.getBoundingClientRect();
-                  const dx = Math.abs((rect.left + rect.width / 2) - coordinates.x);
-                  const dy = Math.abs((rect.top + rect.height / 2) - coordinates.y);
-                  const distance = Math.sqrt(dx * dx + dy * dy);
-                  return distance < 100 && rect.width > 0 && rect.height > 0; // Within 100px
-                });
-
-                if (nearbyInput) {
-                  console.log(`💡 Found nearby input field within 100px: ${nearbyInput.tagName}`);
-                  element = nearbyInput;
-                  // Update coordinates to center of input
-                  const rect = nearbyInput.getBoundingClientRect();
-                  coordinates = {
-                    x: rect.left + rect.width / 2,
-                    y: rect.top + rect.height / 2
-                  };
-                } else {
-                  // If still no input found, try to find the largest visible input/textarea on the page
-                  console.log('🔍 Searching for largest visible input field on page...');
-                  const allInputs = Array.from(document.querySelectorAll('input:not([type="hidden"]), textarea, [contenteditable="true"]')) as HTMLElement[];
-                  const visibleInputs = allInputs.filter(input => {
-                    const rect = input.getBoundingClientRect();
-                    return rect.width > 0 && rect.height > 0 &&
-                           rect.top >= 0 && rect.left >= 0 &&
-                           rect.bottom <= window.innerHeight &&
-                           rect.right <= window.innerWidth;
-                  });
-
-                  if (visibleInputs.length > 0) {
-                    // Find the largest input (by area)
-                    const largestInput = visibleInputs.reduce((largest, current) => {
-                      const largestRect = largest.getBoundingClientRect();
-                      const currentRect = current.getBoundingClientRect();
-                      const largestArea = largestRect.width * largestRect.height;
-                      const currentArea = currentRect.width * currentRect.height;
-                      return currentArea > largestArea ? current : largest;
-                    });
-
-                    console.log(`💡 Found largest visible input on page: ${largestInput.tagName}`);
-                    element = largestInput;
-                    const rect = largestInput.getBoundingClientRect();
-                    coordinates = {
-                      x: rect.left + rect.width / 2,
-                      y: rect.top + rect.height / 2
-                    };
-                  }
-                }
-              }
-            }
-          }
+          // DISABLED: Smart input-finding was redirecting clicks to wrong elements
+          // When AI provides explicit coordinates from screenshot, trust them exactly
+          // Previous behavior: searched 100px radius for inputs and redirected clicks
+          // Problem: clicks meant for links/buttons were landing on nearby search boxes
+          console.log('✓ Using exact coordinates from AI - no smart input search');
 
           if (element) {
             // Get element position for logging
