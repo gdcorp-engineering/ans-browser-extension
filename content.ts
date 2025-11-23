@@ -449,6 +449,17 @@ function executePageAction(
   try {
     switch (action) {
       case 'click':
+        // DEBUG: Log all click parameters
+        console.log('🔧 CLICK ACTION DEBUG:', {
+          selector,
+          target,
+          coordinates,
+          value,
+          hasCoordinates: !!coordinates,
+          hasSelector: !!selector,
+          hasTarget: !!target
+        });
+
         // Support selector, text-based, and coordinate-based clicking
         let element: Element | null = null;
 
@@ -527,7 +538,8 @@ function executePageAction(
         }
 
         // 5. If no element found but we have coordinates, use coordinate-based clicking
-        if (!element && !selector && !target && coordinates) {
+        // OR if we have coordinates, show debug markers regardless
+        if (coordinates) {
           console.log(`🎯 Click coordinates received: x=${coordinates.x}, y=${coordinates.y}`);
           console.log(`📏 Viewport size: ${window.innerWidth}x${window.innerHeight}`);
           console.log(`📏 Device pixel ratio: ${window.devicePixelRatio}`);
@@ -535,6 +547,7 @@ function executePageAction(
           console.log(`🖥️  Window size: ${window.outerWidth}x${window.outerHeight}`);
           console.log(`📱 Screen size: ${screen.width}x${screen.height}`);
 
+          // ALWAYS show debug marker when coordinates are provided (for debugging)
           // Add visual debug marker at click coordinates with crosshairs
           const debugMarker = document.createElement('div');
           debugMarker.style.cssText = `
@@ -604,7 +617,23 @@ function executePageAction(
             label.remove();
           }, 5000);
 
-          let element = document.elementFromPoint(coordinates.x, coordinates.y) as HTMLElement;
+          // If element was already found by selector/text but we also have coordinates,
+          // verify the element is actually at those coordinates
+          if (element) {
+            const rect = element.getBoundingClientRect();
+            const isInBounds = coordinates.x >= rect.left && coordinates.x <= rect.right &&
+                              coordinates.y >= rect.top && coordinates.y <= rect.bottom;
+            console.log(`✓ Found element by selector/text, coordinates ${isInBounds ? 'MATCH' : 'MISMATCH'}`);
+            if (!isInBounds) {
+              console.warn(`⚠️  Coordinates (${coordinates.x}, ${coordinates.y}) are NOT within element bounds!`);
+              console.warn(`   Element bounds:`, rect);
+            }
+          }
+
+          // Get element at coordinates (may override selector-found element if mismatch)
+          if (!element) {
+            element = document.elementFromPoint(coordinates.x, coordinates.y) as HTMLElement;
+          }
           console.log(`🎯 Element at coordinates:`, element?.tagName, element?.className);
 
           if (element) {
