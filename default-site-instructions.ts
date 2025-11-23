@@ -42,12 +42,11 @@ Steps for simple issue key lookup:
 
 Steps for finding bugs assigned to me:
 1. Take a screenshot first to see the page layout
-2. Look for "Filters" in the left sidebar navigation
-3. Click on "Filters"
-4. Look for existing filters like "My open issues" or "Assigned to me"
-5. Click on the appropriate filter
-6. Wait for results to load
-7. Extract and return issue keys, summaries, and statuses
+2. Click on "Filters" in the left sidebar
+3. Look for existing filters like "My open issues" or "Assigned to me"
+4. Click on the appropriate filter
+5. Wait for results to load
+6. Extract and return issue keys, summaries, and statuses
 
 If no suitable filter exists:
 1. Click "Create filter" or similar option
