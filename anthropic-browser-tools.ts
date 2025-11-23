@@ -445,13 +445,17 @@ Remember: Take your time, verify each step, and describe what you see before act
           // Extract base64 data from data URL
           const base64Data = result.screenshot.split(',')[1];
           const viewport = result.viewport || { width: 1280, height: 800, devicePixelRatio: 1 };
+          const dpr = viewport.devicePixelRatio || 1;
+          const coordinateInstructions = dpr > 1
+            ? `IMPORTANT: This is a high-DPI display (devicePixelRatio=${dpr}). When measuring coordinates from this screenshot, DIVIDE by ${dpr} to get viewport coordinates. Example: if you measure (940, 882) in the image, use click({x: ${Math.round(940/dpr)}, y: ${Math.round(882/dpr)}}).`
+            : '';
           toolResults.push({
             type: 'tool_result',
             tool_use_id: toolUse.id,
             content: [
               {
                 type: 'text',
-                text: `Screenshot: ${viewport.width}×${viewport.height}px. Top-left=(0,0), Bottom-right=(${viewport.width},${viewport.height})`,
+                text: `Screenshot: ${viewport.width}×${viewport.height}px viewport (image is ${viewport.width * dpr}×${viewport.height * dpr}px). Top-left=(0,0), Bottom-right=(${viewport.width},${viewport.height}). ${coordinateInstructions}`,
               },
               {
                 type: 'image',
