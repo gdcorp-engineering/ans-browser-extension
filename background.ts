@@ -53,10 +53,10 @@ async function updatePageTitle(tabId: number, isActive: boolean) {
       type: 'UPDATE_AGENT_MODE_TITLE',
       isActive: isActive
     });
-    console.log(`📝 Page title update ${isActive ? 'started' : 'stopped'} for tab ${tabId}`, response);
+    console.log('📝 Page title update', isActive ? 'started' : 'stopped', 'for tab', tabId, response);
   } catch (error) {
     // Log error for debugging
-    console.warn(`⚠️ Could not update page title for tab ${tabId}:`, error);
+    console.warn('⚠️ Could not update page title for tab', tabId, ':', error);
   }
 }
 
@@ -339,7 +339,7 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
         }
       }
     } catch (error: any) {
-      console.error(`❌ Error ensuring content script for tab ${tabId}:`, error.message);
+      console.error('❌ Error ensuring content script for tab', tabId, ':', error.message);
       throw error;
     }
   }

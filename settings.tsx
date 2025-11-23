@@ -13,28 +13,51 @@ import {
 
 const PROVIDER_MODELS = {
   google: [
-    { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', description: '1M token context' },
+    { id: 'gemini-2.5-pro-preview-06-05', name: 'Gemini 2.5 Pro Preview (06-05)', description: 'Latest preview' },
+    { id: 'gemini-2.5-flash-preview-05-20', name: 'Gemini 2.5 Flash Preview (05-20)', description: 'Latest flash preview' },
     { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', description: 'Fast and efficient' },
-    { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash Lite', description: 'Optimized for speed' },
+    { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', description: '1M token context' },
+    { id: 'gemini-2.5-flash-thinking-exp-01-21', name: 'Gemini 2.5 Flash Thinking', description: 'Thinking model' },
+    { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash', description: 'Previous generation' },
+    { id: 'gemini-2.0-flash-lite', name: 'Gemini 2.0 Flash Lite', description: 'Lightweight' },
+    { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro', description: 'Stable' },
+    { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash', description: 'Fast' },
   ],
   anthropic: [
     { id: 'claude-sonnet-4-5-20250929', name: 'Claude Sonnet 4.5', description: 'Latest and most capable' },
-    { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', description: 'Most intelligent model' },
+    { id: 'claude-haiku-4-5-20251110', name: 'Claude Haiku 4.5', description: 'Fast and efficient' },
+    { id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet 4', description: 'Previous flagship' },
+    { id: 'claude-3-7-sonnet-20250219', name: 'Claude 3.7 Sonnet', description: 'Extended context' },
     { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku', description: 'Fastest model' },
+    { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', description: 'Most intelligent model' },
     { id: 'claude-3-opus-20240229', name: 'Claude 3 Opus', description: 'Previous generation' },
+    { id: 'claude-3-haiku-20240307', name: 'Claude 3 Haiku', description: 'Previous generation' },
   ],
   openai: [
+    { id: 'gpt-5.1', name: 'GPT-5.1', description: 'Latest flagship' },
+    { id: 'gpt-5.1-codex', name: 'GPT-5.1 Codex', description: 'Code specialized' },
+    { id: 'gpt-5.1-codex-mini', name: 'GPT-5.1 Codex Mini', description: 'Fast coding' },
+    { id: 'gpt-5', name: 'GPT-5', description: 'Flagship model' },
+    { id: 'o3', name: 'o3', description: 'Advanced reasoning' },
+    { id: 'o4-mini', name: 'o4-mini', description: 'Fast reasoning' },
+    { id: 'o1', name: 'o1', description: 'Reasoning model' },
+    { id: 'o1-mini', name: 'o1-mini', description: 'Efficient reasoning' },
+    { id: 'gpt-4.1', name: 'GPT-4.1', description: 'Enhanced GPT-4' },
+    { id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', description: 'Fast GPT-4' },
+    { id: 'gpt-4.1-nano', name: 'GPT-4.1 Nano', description: 'Lightweight' },
     { id: 'gpt-4o', name: 'GPT-4o', description: 'Most capable' },
     { id: 'gpt-4o-mini', name: 'GPT-4o Mini', description: 'Fast and affordable' },
     { id: 'gpt-4-turbo', name: 'GPT-4 Turbo', description: 'Previous generation' },
+    { id: 'gpt-4', name: 'GPT-4', description: 'Classic' },
+    { id: 'gpt-3.5-turbo', name: 'GPT-3.5 Turbo', description: 'Legacy' },
   ],
 };
 
 function SettingsPage() {
   const [settings, setSettings] = useState<Settings>({
-    provider: 'google',
+    provider: 'anthropic',
     apiKey: '',
-    model: 'gemini-2.5-pro',
+    model: 'claude-sonnet-4-5-20250929',
     toolMode: 'tool-router',
     composioApiKey: '',
     mcpEnabled: false,
@@ -57,6 +80,118 @@ function SettingsPage() {
   const [activeTab, setActiveTab] = useState<'connected' | 'marketplace' | 'custom'>('connected');
   const [fetchLogs, setFetchLogs] = useState<string[]>([]);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [updateChecking, setUpdateChecking] = useState(false);
+  const [updateAvailable, setUpdateAvailable] = useState<{ version: string; downloadUrl: string; releaseNotes?: string; artifactName?: string } | null>(null);
+  const [updateError, setUpdateError] = useState<string | null>(null);
+  const [updateMessage, setUpdateMessage] = useState<string | null>(null);
+
+  const CURRENT_VERSION = '1.5.4'; // This should match manifest.json version
+  const GITHUB_REPO = 'gdcorp-im/ans-browser-extension-v1-temp';
+  const WORKFLOW_NAME = 'build.yml';
+
+  // Compare semantic versions (e.g., "1.5.4" vs "1.5.3")
+  const compareVersions = (v1: string, v2: string): number => {
+    const parts1 = v1.split('.').map(Number);
+    const parts2 = v2.split('.').map(Number);
+
+    for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
+      const part1 = parts1[i] || 0;
+      const part2 = parts2[i] || 0;
+
+      if (part1 > part2) return 1;  // v1 is newer
+      if (part1 < part2) return -1; // v2 is newer
+    }
+
+    return 0; // versions are equal
+  };
+
+  const checkForUpdates = async () => {
+    setUpdateChecking(true);
+    setUpdateError(null);
+    setUpdateMessage(null);
+    setUpdateAvailable(null);
+
+    try {
+      // Fetch latest workflow runs for the build workflow
+      const workflowRunsUrl = `https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/${WORKFLOW_NAME}/runs?status=success&per_page=1`;
+      const runsResponse = await fetch(workflowRunsUrl);
+
+      if (!runsResponse.ok) {
+        // Handle specific error cases
+        if (runsResponse.status === 404) {
+          throw new Error('Repository or workflow not found. Update checking may not be available for this repository.');
+        } else if (runsResponse.status === 403) {
+          throw new Error('Access denied. Repository may be private or rate limit exceeded.');
+        } else {
+          throw new Error(`Failed to check for updates: ${runsResponse.status} ${runsResponse.statusText}`);
+        }
+      }
+
+      const runsData = await runsResponse.json();
+
+      if (!runsData.workflow_runs || runsData.workflow_runs.length === 0) {
+        setUpdateMessage('No successful builds found. The workflow may not have run yet.');
+        return;
+      }
+
+      const latestRun = runsData.workflow_runs[0];
+
+      // Extract version from commit message or use workflow run number
+      const commitMessage = latestRun.head_commit?.message || '';
+      const versionMatch = commitMessage.match(/v?(\d+\.\d+\.\d+)/);
+      const latestVersion = versionMatch ? versionMatch[1] : `build-${latestRun.run_number}`;
+
+      // Compare versions
+      const comparison = compareVersions(latestVersion, CURRENT_VERSION);
+
+      // Get artifacts for this run (with error handling)
+      let artifact = null;
+      try {
+        const artifactsUrl = `https://api.github.com/repos/${GITHUB_REPO}/actions/runs/${latestRun.id}/artifacts`;
+        const artifactsResponse = await fetch(artifactsUrl);
+        
+        if (artifactsResponse.ok) {
+          const artifactsData = await artifactsResponse.json();
+
+          // Find the latest artifact (prefer prod, then dev, then any extension artifact)
+          const prodArtifact = artifactsData.artifacts?.find((a: any) => 
+            a.name.startsWith('extension-prod-v') || a.name === 'extension-prod'
+          );
+          const devArtifact = artifactsData.artifacts?.find((a: any) => 
+            a.name.startsWith('extension-dev-v') || a.name === 'extension-dev'
+          );
+          const anyExtensionArtifact = artifactsData.artifacts?.find((a: any) => 
+            a.name.startsWith('extension-')
+          );
+          
+          artifact = prodArtifact || devArtifact || anyExtensionArtifact;
+        }
+      } catch (artifactError) {
+        // Artifact fetch failed, but we can still show version info
+        console.warn('Failed to fetch artifacts:', artifactError);
+      }
+
+      // Build download URL - link to workflow run page where user can download artifacts
+      const downloadUrl = `https://github.com/${GITHUB_REPO}/actions/runs/${latestRun.id}`;
+
+      setUpdateAvailable({
+        version: latestVersion,
+        downloadUrl,
+        releaseNotes: commitMessage || 'Check GitHub Actions for details',
+        artifactName: artifact?.name || undefined
+      });
+    } catch (error) {
+      console.error('Update check failed:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to check for updates';
+      setUpdateError(errorMessage);
+      // Don't show error for 404/403 - these are expected for private repos or missing workflows
+      if (errorMessage.includes('not found') || errorMessage.includes('Access denied')) {
+        setUpdateMessage('Update checking is not available. You can manually check for updates in the GitHub repository.');
+      }
+    } finally {
+      setUpdateChecking(false);
+    }
+  };
 
   useEffect(() => {
     // Load settings from chrome.storage
@@ -170,17 +305,31 @@ function SettingsPage() {
   };
 
   const handleToggleServer = (id: string) => {
+    console.log('Toggle server called for id:', id);
+    console.log('Current settings.mcpServers:', settings.mcpServers);
+
+    // Create a completely new array to ensure React detects the change
+    const updatedServers = (settings.mcpServers || []).map(s => {
+      if (s.id === id) {
+        console.log('Toggling server:', s.name, 'from', s.enabled, 'to', !s.enabled);
+        return { ...s, enabled: !s.enabled };
+      }
+      return { ...s };
+    });
+
     const newSettings = {
       ...settings,
-      mcpServers: (settings.mcpServers || []).map(s =>
-        s.id === id ? { ...s, enabled: !s.enabled } : s
-      ),
+      mcpServers: updatedServers,
     };
 
+    console.log('New settings:', newSettings);
+
+    // Force state update with new reference
     setSettings(newSettings);
 
     // Auto-save and notify sidebar
     chrome.storage.local.set({ atlasSettings: newSettings }, () => {
+      console.log('Settings saved to storage');
       chrome.runtime.sendMessage({ type: 'SETTINGS_UPDATED', action: 'mcp_changed' }, () => {
         if (chrome.runtime.lastError) {
           console.log('Sidebar not active, but settings saved');
@@ -289,6 +438,153 @@ function SettingsPage() {
       </div>
 
       <div className="settings-content">
+        {/* Update Section */}
+        <div className="setting-group" style={{ background: '#f8f9fa', padding: '16px', borderRadius: '8px', marginBottom: '24px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+            <div>
+              <label style={{ marginBottom: '4px', display: 'block' }}>Extension Updates</label>
+              <span style={{ fontSize: '13px', color: '#666' }}>Current version: {CURRENT_VERSION}</span>
+            </div>
+            <button
+              onClick={checkForUpdates}
+              disabled={updateChecking}
+              style={{
+                padding: '8px 16px',
+                background: updateChecking ? '#6c757d' : '#007bff',
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: updateChecking ? 'not-allowed' : 'pointer',
+                fontSize: '13px',
+                fontWeight: '500'
+              }}
+            >
+              {updateChecking ? '⏳ Checking...' : '🔄 Check for Updates'}
+            </button>
+          </div>
+
+          {updateMessage && (
+            <div style={{
+              padding: '12px',
+              background: '#d4edda',
+              border: '1px solid #c3e6cb',
+              borderRadius: '6px',
+              color: '#155724',
+              fontSize: '14px'
+            }}>
+              {updateMessage}
+            </div>
+          )}
+
+          {updateError && (
+            <div style={{
+              padding: '12px',
+              background: '#f8d7da',
+              border: '1px solid #f5c6cb',
+              borderRadius: '6px',
+              color: '#721c24',
+              fontSize: '14px'
+            }}>
+              ⚠️ {updateError}
+            </div>
+          )}
+
+          {updateAvailable && (
+            <div style={{
+              padding: '16px',
+              background: '#fff3cd',
+              border: '1px solid #ffc107',
+              borderRadius: '6px'
+            }}>
+              <div style={{ marginBottom: '12px' }}>
+                <strong style={{ color: '#856404', fontSize: '15px' }}>
+                  {(() => {
+                    const comparison = compareVersions(updateAvailable.version, CURRENT_VERSION);
+                    if (comparison > 0) {
+                      return `🎉 Update Available: Version ${updateAvailable.version}`;
+                    } else if (comparison === 0) {
+                      return `🔄 Reinstall Current Version: ${updateAvailable.version}`;
+                    } else {
+                      return `⬇️ Latest Release: Version ${updateAvailable.version}`;
+                    }
+                  })()}
+                </strong>
+              </div>
+              {updateAvailable.releaseNotes && (
+                <div style={{
+                  fontSize: '13px',
+                  color: '#856404',
+                  marginBottom: '12px',
+                  maxHeight: '100px',
+                  overflowY: 'auto',
+                  whiteSpace: 'pre-wrap'
+                }}>
+                  {updateAvailable.releaseNotes}
+                </div>
+              )}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px' }}>
+                <button
+                  onClick={() => window.open(updateAvailable.downloadUrl, '_blank')}
+                  style={{
+                    padding: '10px 16px',
+                    background: '#28a745',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    fontSize: '13px',
+                    fontWeight: '600'
+                  }}
+                >
+                  📥 Download Update
+                </button>
+                <button
+                  onClick={() => {
+                    // Open Chrome extensions page to show the path
+                    chrome.tabs.create({
+                      url: 'chrome://extensions/?id=' + chrome.runtime.id
+                    });
+
+                    // Show helpful alert
+                    setTimeout(() => {
+                      alert('📂 Finding Your Install Folder:\n\n1. The Chrome extensions page just opened\n2. Make sure "Developer mode" is enabled (toggle in top-right)\n3. Find "GoDaddy ANS Chat Sidebar" extension\n4. Look for "Loaded from:" - that shows your install folder path\n5. You can click the blue folder path to open it in Finder/Explorer');
+                    }, 500);
+                  }}
+                  style={{
+                    padding: '10px 16px',
+                    background: '#007bff',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    fontSize: '13px',
+                    fontWeight: '600'
+                  }}
+                >
+                  📂 Show Install Path
+                </button>
+              </div>
+              <div style={{
+                padding: '12px',
+                background: '#fff',
+                border: '1px solid #ffc107',
+                borderRadius: '6px',
+                fontSize: '12px',
+                color: '#333'
+              }}>
+                <strong>📋 Update Instructions:</strong>
+                <ol style={{ margin: '8px 0 0 0', paddingLeft: '20px' }}>
+                  <li>Click <strong>"Download Update"</strong> → Sign in with SSO → Download <strong>extension-prod</strong> artifact</li>
+                  <li>Click <strong>"Show Install Path"</strong> to open Chrome's extension management page</li>
+                  <li>On that page, find this extension and note the path shown under "ID" (for unpacked extensions, you'll see the folder path)</li>
+                  <li>Extract the downloaded zip file and replace all files in that folder</li>
+                  <li>Go back to <code>chrome://extensions/</code> and click the reload button (↻) for this extension</li>
+                </ol>
+              </div>
+            </div>
+          )}
+        </div>
+
         <div className="setting-group">
           <label>AI Provider</label>
           <select
@@ -303,9 +599,7 @@ function SettingsPage() {
             }}
             className="model-select"
           >
-            <option value="google">Google Gemini</option>
             <option value="anthropic">Anthropic Claude</option>
-            <option value="openai">OpenAI</option>
           </select>
         </div>
 
@@ -374,14 +668,14 @@ function SettingsPage() {
           <div className="api-key-input-wrapper">
             <input
               type="text"
-              value={settings.customBaseUrl || ''}
+              value={settings.customBaseUrl || 'https://caas-gocode-prod.caas-prod.prod.onkatana.net'}
               onChange={(e) => setSettings({ ...settings, customBaseUrl: e.target.value })}
-              placeholder="e.g., https://your-custom-endpoint.com"
+              placeholder="https://caas-gocode-prod.caas-prod.prod.onkatana.net"
               className="api-key-input"
             />
           </div>
           <p className="help-text">
-            Leave empty to use default provider endpoint. Enter a custom API endpoint to use your own provider.
+            GoCode API endpoint for Claude requests.
           </p>
         </div>
 
@@ -456,13 +750,38 @@ function SettingsPage() {
 
         {settings.mcpEnabled && (
           <div className="setting-group">
-            <label>ANS API Token</label>
-            <div className="api-key-input-wrapper">
+            <label>ANS Authentication</label>
+            <button
+              onClick={() => {
+                window.open('https://ra.int.dev-godaddy.com/', '_blank');
+              }}
+              style={{
+                padding: '12px 20px',
+                background: '#007bff',
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontSize: '14px',
+                fontWeight: '500',
+                marginBottom: '10px',
+                width: '100%'
+              }}
+            >
+              🔐 Sign In to ANS
+            </button>
+            <p className="help-text">
+              Click the button above to sign in to ANS. Once signed in, the extension will automatically use your browser cookies to access the ANS API.
+              <br />
+              <br />
+              <strong>Advanced:</strong> If cookie authentication doesn't work, you can manually enter a Bearer token below (optional).
+            </p>
+            <div className="api-key-input-wrapper" style={{ marginTop: '10px' }}>
               <input
                 type={showAnsToken ? 'text' : 'password'}
                 value={settings.ansApiToken || ''}
                 onChange={(e) => setSettings({ ...settings, ansApiToken: e.target.value })}
-                placeholder="eyJraWQiOi... (paste your Bearer token)"
+                placeholder="Optional: Manual Bearer token (eyJraWQiOi...)"
                 className="api-key-input"
               />
               <button

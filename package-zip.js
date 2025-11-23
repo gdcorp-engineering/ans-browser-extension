@@ -5,7 +5,7 @@
  * Users can download, extract, and load in Chrome
  */
 
-import { execSync } from 'child_process';
+import { execSync, spawnSync } from 'child_process';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'node:url';
 import { existsSync, readFileSync, mkdirSync } from 'fs';
@@ -53,19 +53,61 @@ const latestZipPath = resolve(outputDir, latestZipFileName);
 
 console.log('🔨 Creating ZIP file...');
 
+// Sanitize path to prevent command injection
+const sanitizePath = (path) => {
+  // Only allow alphanumeric, dots, dashes, underscores, slashes, and colons (for Windows drives)
+  if (!/^[a-zA-Z0-9._/\\: -]+$/.test(path)) {
+    throw new Error('Invalid path characters detected');
+  }
+  // Resolve to absolute path to prevent directory traversal
+  return resolve(path);
+};
+
 const createZip = (targetPath) => {
   try {
+    // Sanitize and validate paths
+    const sanitizedTargetPath = sanitizePath(targetPath);
+    const sanitizedExtensionDir = sanitizePath(extensionDir);
+    
+    // Verify target path is within expected directory structure
+    if (!sanitizedTargetPath.startsWith(resolve(__dirname))) {
+      throw new Error('Target path outside expected directory');
+    }
+    
     // Use zip command (available on macOS and Linux, or install on Windows)
-    const command = `cd "${extensionDir}" && zip -r "${targetPath}" . -x "*.DS_Store" "*.git*"`;
-    execSync(command, { stdio: 'inherit' });
+    // Use spawnSync with separate arguments to avoid shell injection
+    const zipResult = spawnSync(
+      'zip',
+      ['-r', sanitizedTargetPath, '.', '-x', '*.DS_Store', '*.git*'],
+      { 
+        cwd: sanitizedExtensionDir,
+        stdio: 'inherit'
+      }
+    );
+    if (zipResult.error) {
+      throw zipResult.error;
+    }
     return true;
   } catch (error) {
     // Try alternative method for Windows
     if (process.platform === 'win32') {
       try {
-        // Try PowerShell Compress-Archive
-        const psCommand = `Compress-Archive -Path "${extensionDir}\\*" -DestinationPath "${targetPath}" -Force`;
-        execSync(`powershell -Command "${psCommand}"`, { stdio: 'inherit' });
+        // Sanitize paths again
+        const sanitizedTargetPath = sanitizePath(targetPath);
+        const sanitizedExtensionDir = sanitizePath(extensionDir);
+        
+        // Use spawnSync with separate arguments to avoid injection
+        const result = spawnSync(
+          'powershell',
+          [
+            '-Command',
+            `Compress-Archive -Path "${sanitizedExtensionDir}\\*" -DestinationPath "${sanitizedTargetPath}" -Force`
+          ],
+          { stdio: 'inherit' }
+        );
+        if (result.error) {
+          throw result.error;
+        }
         return true;
       } catch (psError) {
         return false;
