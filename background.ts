@@ -101,6 +101,11 @@ chrome.storage.local.get('browserMemory', (result) => {
 
 // Listen for messages from the sidebar and content scripts
 chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
+  // Ignore RECORDING_RESPONSE messages - these are handled by the messageListener in the microphone handler
+  if (request && request.type === 'RECORDING_RESPONSE') {
+    return false; // Let other listeners handle it
+  }
+  
   // Get current tab info
   if (request.type === 'GET_TAB_INFO') {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
@@ -108,7 +113,8 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
         sendResponse({
           url: tabs[0].url,
           title: tabs[0].title,
-          id: tabs[0].id
+          id: tabs[0].id,
+          favIconUrl: tabs[0].favIconUrl
         });
       }
     });
@@ -125,6 +131,206 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
       }
     });
     return true;
+  }
+
+  // Open URL in new tab (for opening settings pages)
+  if (request.type === 'OPEN_URL') {
+    chrome.tabs.create({ url: request.url }).then(() => {
+      sendResponse({ success: true });
+    }).catch((error) => {
+      sendResponse({ success: false, error: error.message });
+    });
+    return true;
+  }
+
+  // Handle microphone recording via offscreen document
+  if (request.type === 'START_RECORDING' || request.type === 'STOP_RECORDING' || request.type === 'CHECK_MIC_PERMISSION') {
+    // Store sendResponse to ensure it's available
+    const sendResponseFn = sendResponse;
+    
+    (async () => {
+      try {
+        console.log(`[Background] Received ${request.type} request from:`, _sender.url || 'unknown');
+        
+        // Ensure offscreen document exists
+        await ensureOffscreenDocument();
+        console.log('[Background] Offscreen document ensured');
+        
+        // Verify offscreen document is ready by checking if it exists
+        const hasDocument = await chrome.offscreen.hasDocument();
+        if (!hasDocument) {
+          console.error('[Background] Offscreen document does not exist after creation');
+          sendResponseFn({ 
+            success: false, 
+            error: 'Failed to create offscreen document' 
+          });
+          return;
+        }
+        
+        // Create a unique request ID to match responses
+        const requestId = `mic_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        const requestWithId = { ...request, requestId };
+        
+        // Create a promise to handle the response
+        let messageListener: ((message: any, msgSender: chrome.runtime.MessageSender) => boolean) | null = null;
+        let resolved = false;
+        
+        const responsePromise = new Promise<any>((resolve) => {
+          messageListener = (message: any, msgSender: chrome.runtime.MessageSender) => {
+            if (resolved) return false; // Already resolved, ignore
+            
+            // Ignore messages from background script itself (service worker)
+            const senderUrl = msgSender.url || '';
+            if (!senderUrl || senderUrl.includes('background.js') || senderUrl.includes('service_worker')) {
+              return false; // Ignore messages from background script
+            }
+            
+            // Check if this is a RECORDING_RESPONSE message (from offscreen)
+            const isRecordingResponse = message && message.type === 'RECORDING_RESPONSE';
+            
+            // Check if this is a response from offscreen document
+            // Offscreen documents have URLs like: chrome-extension://<id>/offscreen.html
+            // OR it's a RECORDING_RESPONSE (which always comes from offscreen)
+            const isFromOffscreen = senderUrl.includes('offscreen.html') || 
+                                    senderUrl.includes('/offscreen') ||
+                                    isRecordingResponse;
+            // Check if it's a response message
+            const isResponse = message && (message.success !== undefined || message.hasPermission !== undefined || isRecordingResponse);
+            // Match by requestId - must match exactly
+            const matchesRequest = message && message.requestId === requestId;
+            
+            console.log('[Background] Message received in listener:', {
+              from: senderUrl.substring(0, 80),
+              messageType: message?.type,
+              isRecordingResponse,
+              isFromOffscreen,
+              isResponse,
+              matchesRequest,
+              hasRequestId: message?.requestId,
+              expectedRequestId: requestId
+            });
+            
+            // Match RECORDING_RESPONSE messages with matching requestId
+            if (isRecordingResponse && matchesRequest) {
+              console.log('[Background] ✅ Received matching response from offscreen:', message);
+              resolved = true;
+              if (messageListener) {
+                chrome.runtime.onMessage.removeListener(messageListener);
+              }
+              // Extract response data (remove type and requestId)
+              const { type, requestId, ...cleanResponse } = message;
+              resolve(cleanResponse);
+              return true; // Indicate we handled this message
+            }
+            
+            // Don't handle other messages - let other listeners process them
+            return false;
+          };
+          
+          chrome.runtime.onMessage.addListener(messageListener);
+          console.log('[Background] Message listener added, waiting for response from offscreen...');
+          
+          // Set timeout to avoid hanging
+          setTimeout(() => {
+            if (!resolved && messageListener) {
+              resolved = true;
+              chrome.runtime.onMessage.removeListener(messageListener);
+              console.log('[Background] ❌ Timeout waiting for offscreen response');
+              console.log('[Background] Debug: Check if offscreen document is receiving messages');
+              resolve({ 
+                success: false, 
+                error: 'Timeout waiting for offscreen document response. The offscreen document may not be receiving messages.' 
+              });
+            }
+          }, 20000); // Increased timeout to 20 seconds
+        });
+        
+        // Send message to offscreen document
+        console.log('[Background] Sending message to offscreen document:', requestWithId.type, 'requestId:', requestId);
+        console.log('[Background] Message payload:', JSON.stringify(requestWithId));
+        
+        try {
+          // Send message to offscreen document
+          // The response will come back via our messageListener as a RECORDING_RESPONSE message
+          chrome.runtime.sendMessage(requestWithId).then(() => {
+            console.log('[Background] Message sent to offscreen, waiting for RECORDING_RESPONSE...');
+          }).catch((error) => {
+            console.error('[Background] Error sending message:', error);
+            if (messageListener) {
+              chrome.runtime.onMessage.removeListener(messageListener);
+            }
+              if (!resolved) {
+                resolved = true;
+                sendResponseFn({ 
+                  success: false, 
+                  error: `Failed to send message: ${error.message}` 
+                });
+              }
+          });
+          
+          // Check for immediate connection errors
+          if (chrome.runtime.lastError) {
+            const errorMsg = chrome.runtime.lastError.message;
+            console.error('[Background] chrome.runtime.lastError:', errorMsg);
+            if (errorMsg.includes('Could not establish connection') || 
+                errorMsg.includes('Receiving end does not exist')) {
+              console.error('[Background] Offscreen document may not be receiving messages');
+              if (messageListener) {
+                chrome.runtime.onMessage.removeListener(messageListener);
+              }
+              if (!resolved) {
+                resolved = true;
+                sendResponseFn({ 
+                  success: false, 
+                  error: 'Offscreen document is not responding. Please reload the extension.' 
+                });
+              }
+            }
+          }
+        } catch (error: any) {
+          console.error('[Background] Exception sending message:', error);
+          // Remove listener before responding
+          if (messageListener) {
+            chrome.runtime.onMessage.removeListener(messageListener);
+          }
+          sendResponseFn({ 
+            success: false, 
+            error: error.message || 'Failed to send message to offscreen document' 
+          });
+          return;
+        }
+        
+        // Wait for response and send it back
+        const response = await responsePromise;
+        console.log('[Background] Received response from offscreen, sending to sidepanel:', JSON.stringify(response));
+        
+        // Ensure sendResponse is called
+        try {
+          sendResponseFn(response);
+          console.log('[Background] ✅ sendResponse called successfully');
+        } catch (sendError: any) {
+          console.error('[Background] ❌ Error calling sendResponse:', sendError);
+          console.error('[Background] sendError details:', {
+            name: sendError?.name,
+            message: sendError?.message
+          });
+          // The message channel might have closed - this is a Chrome extension limitation
+          // The sidepanel will get a timeout or connection error
+        }
+      } catch (error: any) {
+        console.error('[Background] Error in microphone handler:', error);
+        console.error('[Background] Error stack:', error.stack);
+        try {
+          sendResponseFn({ 
+            success: false, 
+            error: error.message || 'Failed to communicate with offscreen document' 
+          });
+        } catch (sendErr) {
+          console.error('[Background] Failed to send error response:', sendErr);
+        }
+      }
+    })();
+    return true; // Keep channel open for async response
   }
 
   // Track sidebar opened (from sidepanel visibility change)
@@ -642,6 +848,15 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
     return true;
   }
 
+  // Get browser memory
+  if (request.type === 'GET_BROWSER_MEMORY') {
+    chrome.storage.local.get(['browserMemory'], (result) => {
+      const storedMemory = result.browserMemory || memory;
+      sendResponse({ success: true, memory: storedMemory });
+    });
+    return true;
+  }
+
   // Page loaded notification from content script
   if (request.type === 'PAGE_LOADED') {
     console.log('Page loaded:', request.url);
@@ -721,6 +936,78 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
     return true;
   }
 });
+
+// Ensure offscreen document exists for microphone access
+async function ensureOffscreenDocument(): Promise<void> {
+  const existingContexts = await chrome.offscreen.hasDocument();
+  if (existingContexts) {
+    console.log('[Background] Offscreen document already exists');
+    // Verify it's ready by sending a ping
+    const isReady = await pingOffscreenDocument();
+    if (isReady) {
+      console.log('[Background] Offscreen document is ready');
+      return;
+    } else {
+      console.log('[Background] Offscreen document exists but not responding, waiting...');
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+  }
+
+  console.log('[Background] Creating offscreen document for microphone access...');
+  try {
+    await chrome.offscreen.createDocument({
+      url: 'offscreen.html',
+      reasons: ['USER_MEDIA'],
+      justification: 'Microphone access for voice dictation in sidepanel'
+    });
+    console.log('[Background] Offscreen document created');
+    
+    // Wait for the offscreen document to initialize and be ready
+    let attempts = 0;
+    const maxAttempts = 10;
+    while (attempts < maxAttempts) {
+      await new Promise(resolve => setTimeout(resolve, 300));
+      const isReady = await pingOffscreenDocument();
+      if (isReady) {
+        console.log('[Background] Offscreen document is ready after', attempts + 1, 'attempts');
+        return;
+      }
+      attempts++;
+    }
+    console.warn('[Background] Offscreen document created but not responding to ping');
+  } catch (error: any) {
+    console.error('[Background] Error creating offscreen document:', error);
+    throw error;
+  }
+}
+
+// Ping offscreen document to verify it's ready
+async function pingOffscreenDocument(): Promise<boolean> {
+  return new Promise((resolve) => {
+    const timeout = setTimeout(() => {
+      resolve(false);
+    }, 1000);
+    
+    const listener = (message: any, sender: chrome.runtime.MessageSender) => {
+      if (message && message.type === 'PONG' && sender.url && sender.url.includes('offscreen.html')) {
+        clearTimeout(timeout);
+        chrome.runtime.onMessage.removeListener(listener);
+        resolve(true);
+      }
+    };
+    
+    chrome.runtime.onMessage.addListener(listener);
+    
+    // Send ping
+    chrome.runtime.sendMessage({ type: 'PING' }, () => {
+      if (chrome.runtime.lastError) {
+        clearTimeout(timeout);
+        chrome.runtime.onMessage.removeListener(listener);
+        resolve(false);
+      }
+    });
+  });
+}
 
 // Clean up agent mode state when tabs are closed
 chrome.tabs.onRemoved.addListener((tabId) => {

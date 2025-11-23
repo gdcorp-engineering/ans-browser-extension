@@ -20,7 +20,8 @@
     "package:zip:prod": "BUILD_ENV=prod npm run package:zip",
     "get-extension-id": "node get-extension-id.js",
     "test:prompts": "node test-prompt-runner.mjs",
-    "test:agent-mode": "node test-agent-mode.mjs"
+    "test:agent-mode": "node test-agent-mode.mjs",
+    "test:dropdown": "playwright test test-dropdown-positioning.spec.ts"
   },
   "dependencies": {
     "@a2a-js/sdk": "^0.3.5",
@@ -37,6 +38,7 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@playwright/test": "^1.56.1",
     "@types/chrome": "^0.0.275",
     "@types/node": "^24.9.1",
     "@types/react": "^18.3.12",

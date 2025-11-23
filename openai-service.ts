@@ -19,26 +19,72 @@ Get your GoCode Key from [GoCode (Alpha) - How to Get Started](https://secureser
 
 Include this link and instruction in Step 3 when asking for the GoCode Key.`;
 
+  // Build messages with image support
+  const buildMessages = (messages: Message[]) => {
+    return messages.map(m => {
+      const messageContent: any[] = [];
+      
+      // Add text content
+      if (m.content) {
+        messageContent.push({
+          type: 'text',
+          text: m.content
+        });
+      }
+      
+      // Add images if present
+      if (m.images && m.images.length > 0) {
+        m.images.forEach(img => {
+          messageContent.push({
+            type: 'image_url',
+            image_url: {
+              url: `data:${img.mime_type};base64,${img.data}`
+            }
+          });
+        });
+      }
+      
+      return {
+        role: m.role === 'assistant' ? 'assistant' : 'user',
+        content: messageContent.length === 1 && messageContent[0].type === 'text' 
+          ? m.content 
+          : messageContent
+      };
+    });
+  };
+
+  const requestBody: any = {
+    model,
+    messages: [
+      {
+        role: 'system',
+        content: systemInstruction,
+      },
+      ...buildMessages(messages),
+    ],
+    stream: true,
+  };
+
+  // Add file metadata and mode if using GoCaaS (customBaseUrl)
+  const lastUserMessage = messages.filter(m => m.role === 'user').pop();
+  if (customBaseUrl) {
+    if (lastUserMessage?.chat_files_metadata && lastUserMessage.chat_files_metadata.length > 0) {
+      requestBody.chat_files_metadata = lastUserMessage.chat_files_metadata;
+    }
+    // Add mode parameter for GoCaaS integration (create_image, thinking, deep_research, study_and_learn, web_search, canvas, browser_memory)
+    if (lastUserMessage?.mode) {
+      requestBody.mode = lastUserMessage.mode;
+      console.log(`🔵 [OpenAI Service] Mode parameter included: ${lastUserMessage.mode}`);
+    }
+  }
+
   const fetchOptions: RequestInit = {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${apiKey}`,
     },
-    body: JSON.stringify({
-      model,
-      messages: [
-        {
-          role: 'system',
-          content: systemInstruction,
-        },
-        ...messages.map(m => ({
-          role: m.role === 'assistant' ? 'assistant' : 'user',
-          content: m.content,
-        })),
-      ],
-      stream: true,
-    }),
+    body: JSON.stringify(requestBody),
   };
 
   // Only add signal if it's a valid AbortSignal instance
@@ -90,4 +136,3 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
     }
   }
 }
-

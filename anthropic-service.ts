@@ -18,6 +18,63 @@ Get your GoCode Key from [GoCode (Alpha) - How to Get Started](https://secureser
 
 Include this link and instruction in Step 3 when asking for the GoCode Key.`;
 
+  // Build messages with image support
+  const buildMessages = (messages: Message[]) => {
+    return messages.map(m => {
+      const content: any[] = [];
+      
+      // Add text content
+      if (m.content) {
+        content.push({
+          type: 'text',
+          text: m.content
+        });
+      }
+      
+      // Add images if present
+      if (m.images && m.images.length > 0) {
+        m.images.forEach(img => {
+          content.push({
+            type: 'image',
+            source: {
+              type: 'base64',
+              media_type: img.mime_type,
+              data: img.data
+            }
+          });
+        });
+      }
+      
+      return {
+        role: m.role,
+        content: content.length === 1 && content[0].type === 'text'
+          ? m.content
+          : content
+      };
+    });
+  };
+
+  const requestBody: any = {
+    model,
+    max_tokens: 4096,
+    system: systemInstruction,
+    messages: buildMessages(messages),
+    stream: true,
+  };
+
+  // Add file metadata and mode if using GoCaaS (customBaseUrl)
+  const lastUserMessage = messages.filter(m => m.role === 'user').pop();
+  if (customBaseUrl) {
+    if (lastUserMessage?.chat_files_metadata && lastUserMessage.chat_files_metadata.length > 0) {
+      requestBody.chat_files_metadata = lastUserMessage.chat_files_metadata;
+    }
+    // Add mode parameter for GoCaaS integration (create_image, thinking, deep_research, study_and_learn, web_search, canvas, browser_memory)
+    if (lastUserMessage?.mode) {
+      requestBody.mode = lastUserMessage.mode;
+      console.log(`🔵 [Anthropic Service] Mode parameter included: ${lastUserMessage.mode}`);
+    }
+  }
+
   const fetchOptions: RequestInit = {
     method: 'POST',
     headers: {
@@ -25,16 +82,7 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
       'x-api-key': apiKey,
       'anthropic-version': '2023-06-01',
     },
-    body: JSON.stringify({
-      model,
-      max_tokens: 4096,
-      system: systemInstruction,
-      messages: messages.map(m => ({
-        role: m.role,
-        content: m.content,
-      })),
-      stream: true,
-    }),
+    body: JSON.stringify(requestBody),
   };
 
   // Only add signal if it's a valid AbortSignal instance

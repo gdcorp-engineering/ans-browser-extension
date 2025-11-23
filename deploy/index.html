@@ -190,10 +190,59 @@
                 Follow these simple steps to install the extension in just a few minutes.
             </div>
             
+            <div class="step" style="background: #fff3cd; border-left-color: #ffc107;">
+                <h2 style="color: #856404;">📋 Prerequisites - Get Your API Keys Ready</h2>
+                <p style="margin-left: 0; margin-top: 10px; color: #856404;">
+                    Before installing, make sure you have the following API keys ready. You'll need them to configure the extension after installation.
+                </p>
+                
+                <div style="margin-top: 20px; margin-left: 0;">
+                    <h3 style="color: #856404; margin-bottom: 10px; font-size: 16px;">🔑 Required: GoCode API Key</h3>
+                    <p style="margin-left: 0; margin-bottom: 10px;">
+                        The extension requires a GoCode API key to function. Get your key from:
+                    </p>
+                    <div style="margin-left: 0; margin-bottom: 15px;">
+                        <a href="https://caas.godaddy.com/gocode/my-api-keys" target="_blank" class="button" style="margin-top: 0;">
+                            🔗 Get GoCode API Key
+                        </a>
+                    </div>
+                </div>
+                
+                <div style="margin-top: 20px; margin-left: 0;">
+                    <h3 style="color: #856404; margin-bottom: 10px; font-size: 16px;">🔐 Optional: ANS API Token</h3>
+                    <p style="margin-left: 0; margin-bottom: 10px;">
+                        To access ANS Business Services, you'll need an ANS API token (JWT). Get your token from:
+                    </p>
+                    <div style="margin-left: 0; margin-bottom: 15px;">
+                        <a href="https://ra.int.dev-godaddy.com/v1/agents" target="_blank" class="button" style="margin-top: 0;">
+                            🔗 Get ANS API Token
+                        </a>
+                    </div>
+                    <p style="margin-left: 0; font-size: 13px; color: #666;">
+                        The token should start with <code style="background: #f0f0f0; padding: 2px 6px; border-radius: 3px;">eyJ</code> (JWT format).
+                    </p>
+                </div>
+                
+                <div style="margin-top: 20px; margin-left: 0;">
+                    <h3 style="color: #856404; margin-bottom: 10px; font-size: 16px;">⚙️ Optional: MCP Server Configurations</h3>
+                    <p style="margin-left: 0; margin-bottom: 10px;">
+                        If you want to configure custom Model Context Protocol (MCP) servers for additional integrations, have your MCP server details ready:
+                    </p>
+                    <ul style="margin-left: 20px; margin-top: 5px;">
+                        <li>Server name</li>
+                        <li>Server URL</li>
+                        <li>API key (if required)</li>
+                    </ul>
+                    <p style="margin-left: 0; font-size: 13px; color: #666; margin-top: 10px;">
+                        <strong>Note:</strong> ANS API token and MCP server configuration are optional and can be set up later in the extension settings.
+                    </p>
+                </div>
+            </div>
+            
             <div class="step">
                 <span class="step-number">1</span>
                 <h2>Download the Extension</h2>
-                <p>Download the extension ZIP file. It will be saved to your Downloads folder.</p>
+                <p>Download the extension ZIP file to your computer.</p>
                 <div class="download-section">
                     <h2>📥 Download Extension</h2>
                     <p style="margin-bottom: 15px;">Click the button below to download the extension ZIP file:</p>
@@ -206,7 +255,7 @@
             <div class="step">
                 <span class="step-number">2</span>
                 <h2>Extract the ZIP File</h2>
-                <p><strong>Find the downloaded ZIP file</strong> in your Downloads folder, then:</p>
+                <p><strong>Find the downloaded ZIP file</strong> on your computer (usually in your Downloads folder), then:</p>
                 <ul>
                     <li><strong>Windows:</strong> Right-click the ZIP file → "Extract All" → Choose a location (like Desktop)</li>
                     <li><strong>Mac:</strong> Double-click the ZIP file (it will extract automatically)</li>
@@ -259,7 +308,17 @@
                 <span class="step-number">6</span>
                 <h2>Verify Installation</h2>
                 <p>You should see "Agent Chat Powered by GoDaddy ANS" in your extensions list with a toggle switch turned ON.</p>
-                <p>Look for the extension icon in Chrome's toolbar (top right, near the address bar).</p>
+                <p><strong>Pin the extension to your toolbar:</strong></p>
+                <ul>
+                    <li>Look for the <strong>puzzle piece icon</strong> (🧩) in Chrome's toolbar (top right, near the address bar)</li>
+                    <li>Click the puzzle piece icon to open the extensions menu</li>
+                    <li>Find "Agent Chat Powered by GoDaddy ANS" in the list</li>
+                    <li>Click the <strong>pin icon</strong> (📌) next to the extension to pin it to your toolbar</li>
+                    <li>The extension icon should now appear directly in your toolbar for easy access</li>
+                </ul>
+                <div class="note" style="margin-top: 15px;">
+                    <strong>💡 Tip:</strong> If you don't see the puzzle piece icon, the extension may already be pinned. Look for the extension icon directly in the toolbar.
+                </div>
             </div>
             
             <div class="warning">
@@ -268,7 +327,7 @@
                     <li>Can't find "Load unpacked"? Make sure Developer mode is ON</li>
                     <li>Extension shows as "Off"? Click the toggle switch to turn it ON</li>
                     <li>Can't find the extracted folder? Check your Downloads or Desktop folder</li>
-                    <li>Still having issues? Contact your IT support team</li>
+                    <li>Still having issues? Contact #temp-ans-browser-extension</li>
                 </ul>
             </div>
             

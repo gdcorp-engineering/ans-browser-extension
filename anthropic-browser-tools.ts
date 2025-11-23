@@ -157,26 +157,30 @@ export async function streamAnthropicWithBrowserTools(
 
   console.log('🔧 Total merged tools:', allTools.length);
   console.log('🔧 All tool names:', allTools.map((t: any) => t.name).join(', '));
-  console.log('🔧 Starting with', conversationMessages.length, 'messages (limited from', messages.length, ')');
+    console.log('🔧 Starting with', conversationMessages.length, 'messages (limited from', messages.length, ')');
 
-  const MAX_TURNS = 20; // Increased from 10 to 20 for complex tasks
-  let turnCount = 0;
+    // Get mode from last user message if using GoCaaS (customBaseUrl)
+    const lastUserMessage = messages.filter(m => m.role === 'user').pop();
+    const mode = customBaseUrl && lastUserMessage?.mode ? lastUserMessage.mode : undefined;
 
-  while (turnCount < MAX_TURNS) {
-    turnCount++;
+    const MAX_TURNS = 20; // Increased from 10 to 20 for complex tasks
+    let turnCount = 0;
 
-    console.log('🔧 Anthropic Browser Tools - Turn', turnCount);
-    console.log('📤 Sending request with tools:', allTools.map((t: any) => t.name));
+    while (turnCount < MAX_TURNS) {
+      turnCount++;
 
-    const requestBody = {
-      model,
-      max_tokens: 4096,
-      tools: allTools,
-      messages: conversationMessages.map(m => ({
-        role: m.role,
-        content: m.content,
-      })),
-      system: `You are a helpful AI assistant with browser automation capabilities. You can navigate to websites, click elements, type text, scroll pages, and take screenshots.
+      console.log('🔧 Anthropic Browser Tools - Turn', turnCount);
+      console.log('📤 Sending request with tools:', allTools.map((t: any) => t.name));
+
+      const requestBody: any = {
+        model,
+        max_tokens: 4096,
+        tools: allTools,
+        messages: conversationMessages.map(m => ({
+          role: m.role,
+          content: m.content,
+        })),
+        system: `You are a helpful AI assistant with browser automation capabilities. You can navigate to websites, click elements, type text, scroll pages, and take screenshots.
 
 TASK COMPLETION REQUIREMENTS:
 1. COMPLETE THE FULL TASK: Do not stop until you have:
@@ -286,6 +290,12 @@ PERFORMANCE TIPS:
 
 When the user asks you to interact with a page, follow this workflow carefully. Always try DOM methods first!`,
     };
+
+    // Add mode parameter for GoCaaS integration if using customBaseUrl
+    if (customBaseUrl && mode) {
+      requestBody.mode = mode;
+      console.log(`🔵 [Anthropic Browser Tools] Mode parameter included: ${mode}`);
+    }
 
     console.log('📤 Request body:', JSON.stringify(requestBody, null, 2));
 

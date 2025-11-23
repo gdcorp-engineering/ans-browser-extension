@@ -2,7 +2,7 @@
 import { z } from 'zod';
 
 export type ToolMode = 'tool-router';
-export type Provider = 'anthropic';
+export type Provider = 'google' | 'anthropic' | 'openai';
 
 export type ProtocolType = 'mcp' | 'a2a';
 
@@ -60,6 +60,12 @@ export interface Message {
   role: 'user' | 'assistant';
   content: string;
   toolCalls?: GeminiFunctionCall[];
+  // File metadata for GoCaaS OI integration
+  chat_files_metadata?: Array<{ id: string; name: string }>;
+  // Image data for direct API calls (base64 encoded)
+  images?: Array<{ data: string; mime_type: string }>;
+  // Special mode for GoCaaS integration
+  mode?: 'create_image' | 'thinking' | 'deep_research' | 'study_and_learn' | 'web_search' | 'canvas' | 'browser_memory';
 }
 
 export interface ChatHistory {

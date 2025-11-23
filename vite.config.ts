@@ -86,6 +86,7 @@ export default defineConfig({
         settings: resolve(__dirname, 'settings.html'),
         background: resolve(__dirname, 'background.ts'),
         content: resolve(__dirname, 'content.ts'),
+        offscreen: resolve(__dirname, 'offscreen.html'),
       },
       output: {
         entryFileNames: (chunkInfo) => {

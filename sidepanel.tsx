@@ -2,15 +2,15 @@ import { useState, useEffect, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import type { Settings, MCPClient, Message, ChatHistory } from './types';
+import type { Settings, MCPClient, Message, ChatHistory, Provider } from './types';
 import { GeminiResponseSchema } from './types';
 import { experimental_createMCPClient, stepCountIs } from 'ai';
 import { streamAnthropic } from './anthropic-service';
 import { streamAnthropicWithBrowserTools } from './anthropic-browser-tools';
 import { streamOpenAI } from './openai-service';
 import { getMCPService, resetMCPService } from './mcp-service';
-import { getA2AService, resetA2AService } from './a2a-service';
-import { getToolDescription, mergeToolDefinitions } from './mcp-tool-router';
+import { getA2AService } from './a2a-service';
+import { getToolDescription } from './mcp-tool-router';
 import { findAgentForCurrentSite, agentNameToDomain } from './site-detector';
 
 // Model ID to display name mapping
@@ -58,14 +58,14 @@ const PROVIDER_MODELS = {
 
 // Onboarding Step 3 message template with instructions for getting GoCode Key
 // This template should be used when generating the Step 3 onboarding message
-const ONBOARDING_STEP_3_MESSAGE = `Step 3: GoCode Key
-
-Please provide your GoCode Key. This is your API key for the GoCode service.
-
-**How to get your GoCode Key:**
-Get your GoCode Key from [GoCode (Alpha) - How to Get Started](https://secureservernet.sharepoint.com/sites/AIHub/SitePages/Meet-GoCode-(Alpha)--Your-smarter-gateway-to-AI-providers%E2%80%94Now-with-self-issued-keys-for-IDEs-and-CLIs.aspx#how-to-get-started-(alpha))
-
-Paste your GoCode Key here:`;
+// const ONBOARDING_STEP_3_MESSAGE = `Step 3: GoCode Key
+//
+// Please provide your GoCode Key. This is your API key for the GoCode service.
+//
+// **How to get your GoCode Key:**
+// Get your GoCode Key from [GoCode (Alpha) - How to Get Started](https://secureservernet.sharepoint.com/sites/AIHub/SitePages/Meet-GoCode-(Alpha)--Your-smarter-gateway-to-AI-providers%E2%80%94Now-with-self-issued-keys-for-IDEs-and-CLIs.aspx#how-to-get-started-(alpha))
+//
+// Paste your GoCode Key here:`;
 
 // Chat History Storage Configuration
 const CHAT_HISTORY_KEY = 'atlasChatHistory';
@@ -128,13 +128,13 @@ async function saveChatHistory(chat: ChatHistory): Promise<void> {
 }
 
 // Delete a chat from history
-async function deleteChatHistory(chatId: string): Promise<void> {
-  const chats = await loadChatHistory();
-  const filteredChats = chats.filter(c => c.id !== chatId);
-  chrome.storage.local.set({ [CHAT_HISTORY_KEY]: filteredChats }, () => {
-    console.log(`🗑️ Deleted chat ${chatId}`);
-  });
-}
+// async function deleteChatHistory(chatId: string): Promise<void> {
+//   const chats = await loadChatHistory();
+//   const filteredChats = chats.filter(c => c.id !== chatId);
+//   chrome.storage.local.set({ [CHAT_HISTORY_KEY]: filteredChats }, () => {
+//     console.log(`🗑️ Deleted chat ${chatId}`);
+//   });
+// }
 
 // Save current chat to history
 async function saveCurrentChat(
@@ -303,12 +303,12 @@ const MessageParser = ({ content }: { content: string }) => {
         return `Clicking the ${readableSelector}`;
       }
       // Last resort: use tool name
-      const friendlyName = toolName.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+      const friendlyName = toolName.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase());
       return `Executing ${friendlyName}`;
     });
     
     // Also handle cases without description tag
-    cleaned = cleaned.replace(/<(\w+)>[\s\S]*?<selector>(.*?)<\/selector>[\s\S]*?<\/\1>/gi, (match, toolName, selector) => {
+    cleaned = cleaned.replace(/<(\w+)>[\s\S]*?<selector>(.*?)<\/selector>[\s\S]*?<\/\1>/gi, (_match, _toolName, selector) => {
       const readableSelector = selector.trim()
         .replace(/button:has-text\(["'](.*?)["']\)/i, '$1 button')
         .replace(/:/g, ' ')
@@ -389,11 +389,75 @@ const MessageParser = ({ content }: { content: string }) => {
   );
 };
 
+// Tab favicon component with fallback
+function TabFavicon({ favIconUrl, size = 16 }: { favIconUrl?: string; size?: number }) {
+  const [faviconError, setFaviconError] = useState(false);
+  
+  if (favIconUrl && !faviconError) {
+    return (
+      <img 
+        src={favIconUrl} 
+        alt="" 
+        style={{ 
+          width: `${size}px`, 
+          height: `${size}px`, 
+          flexShrink: 0,
+          objectFit: 'contain'
+        }} 
+        onError={() => setFaviconError(true)}
+      />
+    );
+  }
+  
+  return <span style={{ fontSize: `${size}px` }}>🔷</span>;
+}
+
+// Tab chip component with favicon support
+function TabChip({ tab, onRemove }: { tab: { id: string; url: string; title: string; tabId: number; favIconUrl?: string }; onRemove: () => void }) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '6px',
+        padding: '4px 8px',
+        backgroundColor: '#262626',
+        borderRadius: '6px',
+        fontSize: '13px',
+        color: '#ffffff',
+        maxWidth: '100%',
+        flexShrink: 1,
+        minWidth: 0
+      }}
+    >
+      <TabFavicon favIconUrl={tab.favIconUrl} size={16} />
+      <span style={{ maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 1 }}>
+        {tab.title}
+      </span>
+      <button
+        type="button"
+        onClick={onRemove}
+        style={{
+          background: 'transparent',
+          border: 'none',
+          cursor: 'pointer',
+          padding: '2px',
+          display: 'flex',
+          alignItems: 'center',
+          color: '#8e8ea0'
+        }}
+      >
+        <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>close</span>
+      </button>
+    </div>
+  );
+}
+
 function ChatSidebar() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
-  const [showSettings, setShowSettings] = useState(false);
+  const [, setShowSettings] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -419,6 +483,23 @@ function ChatSidebar() {
   const [trustedAgentOptIn, setTrustedAgentOptIn] = useState(true); // User opt-in for trusted agents
   const [currentSiteAgent, setCurrentSiteAgent] = useState<{ serverId: string; serverName: string } | null>(null);
   const [samplePrompts, setSamplePrompts] = useState<string[]>([]);
+  const [showAddFilesMenu, setShowAddFilesMenu] = useState(false);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [selectedFiles, setSelectedFiles] = useState<Array<{ id: string; name: string; file: File }>>([]);
+  const [selectedTabs, setSelectedTabs] = useState<Array<{ id: string; url: string; title: string; tabId: number; favIconUrl?: string }>>([]);
+  const [selectedScreenshots, setSelectedScreenshots] = useState<Array<{ id: string; dataUrl: string; timestamp: number }>>([]);
+  const [previewImage, setPreviewImage] = useState<{ src: string; type: 'screenshot' | 'file' } | null>(null);
+  const [isCapturingScreenshot, setIsCapturingScreenshot] = useState(false);
+  const [currentTabInfo, setCurrentTabInfo] = useState<{ url: string; title: string; id: number; favIconUrl?: string } | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [chatMode, setChatMode] = useState<'create_image' | 'thinking' | 'deep_research' | 'study_and_learn' | 'web_search' | 'canvas' | 'browser_memory' | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  // const mediaRecorderRef = useRef<HTMLDivElement>(null);
+  const addFilesMenuRef = useRef<HTMLDivElement>(null);
+  const moreMenuRef = useRef<HTMLDivElement>(null);
+  const moreButtonRef = useRef<HTMLButtonElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const inputFormRef = useRef<HTMLFormElement>(null);
 
   // Load trustedAgentOptIn from storage on mount
   useEffect(() => {
@@ -680,7 +761,7 @@ function ChatSidebar() {
     const title = context.title || '';
     const url = (context.url || '').toLowerCase();
     const textContent = context.textContent || '';
-    const lowerContent = textContent.toLowerCase();
+    // const lowerContent = textContent.toLowerCase();
     const links = context.links || [];
     const forms = context.forms || [];
     const interactiveElements = context.interactiveElements || [];
@@ -793,7 +874,7 @@ function ChatSidebar() {
   // Priority: URL patterns > Article > Documentation > Video > Search > E-commerce > Generic
   const detectPageType = (characteristics: any, context?: any): string => {
     const url = characteristics.url || (context?.url || '').toLowerCase();
-    const title = characteristics.title || (context?.title || '').toLowerCase();
+    // const title = characteristics.title || (context?.title || '').toLowerCase();
     
     // Check URL patterns first (most reliable)
     const urlHasDocs = /\/docs\/|\/documentation\/|\/guide\/|\/tutorial\//i.test(url) ||
@@ -1428,7 +1509,7 @@ function ChatSidebar() {
           
           // Also save to persisted storage if we have messages
           try {
-            const [tab] = await chrome.tabs.get(currentId).catch(() => [null]);
+            const tab = await chrome.tabs.get(currentId).catch(() => null);
             const url = tab?.url;
             console.log('💾 Saving chat for tab:', currentId, `${messagesToSave.length} messages`, 'hasActiveStream:', hasActiveStream, 'existing chatId:', currentChatIdRef.current);
             const chatId = await saveCurrentChat(messagesToSave, currentId, url, currentChatIdRef.current);
@@ -1694,7 +1775,7 @@ function ChatSidebar() {
       // Debounced save to persisted storage (save after 2 seconds of no changes)
       const saveTimeout = setTimeout(async () => {
         try {
-          const [tab] = await chrome.tabs.get(currentTabId).catch(() => [null]);
+          const tab = await chrome.tabs.get(currentTabId).catch(() => null);
           const url = tab?.url;
           const chatId = await saveCurrentChat(messages, currentTabId, url, currentChatIdRef.current);
           if (chatId) {
@@ -2758,7 +2839,7 @@ TASK COMPLETION REQUIREMENTS:
             // Final save when task completes
             (async () => {
               try {
-                const [tab] = await chrome.tabs.get(streamTabId).catch(() => [null]);
+                const tab = await chrome.tabs.get(streamTabId).catch(() => null);
                 const url = tab?.url;
                 const chatId = await saveCurrentChat(updated, streamTabId, url, currentChatIdRef.current);
                 if (chatId) {
@@ -2790,7 +2871,7 @@ TASK COMPLETION REQUIREMENTS:
             // Final save when max turns reached
             (async () => {
               try {
-                const [tab] = await chrome.tabs.get(streamTabId).catch(() => [null]);
+                const tab = await chrome.tabs.get(streamTabId).catch(() => null);
                 const url = tab?.url;
                 const chatId = await saveCurrentChat(updated, streamTabId, url, currentChatIdRef.current);
                 if (chatId) {
@@ -2830,7 +2911,7 @@ TASK COMPLETION REQUIREMENTS:
                 // Save in background without blocking
                 (async () => {
                   try {
-                    const [tab] = await chrome.tabs.get(streamTabId).catch(() => [null]);
+                    const tab = await chrome.tabs.get(streamTabId).catch(() => null);
                     const url = tab?.url;
                     await saveCurrentChat(updated, streamTabId, url, currentChatIdRef.current);
                     const chats = await loadChatHistory();
@@ -2983,6 +3064,7 @@ TASK COMPLETION REQUIREMENTS:
       console.error('Full error object:', error);
       
       // Clean up stream tracking on error
+      const streamTabId = activeStreamTabIdRef.current;
       if (activeStreamTabIdRef.current === streamTabId) {
         activeStreamTabIdRef.current = null;
         if (streamTabId !== null && streamAbortControllerRef.current[streamTabId]) {
@@ -2993,6 +3075,7 @@ TASK COMPLETION REQUIREMENTS:
       throw error;
     } finally {
       // Clean up stream tracking when function completes (success or error)
+      const streamTabId = activeStreamTabIdRef.current;
       if (activeStreamTabIdRef.current === streamTabId) {
         activeStreamTabIdRef.current = null;
         if (streamTabId !== null && streamAbortControllerRef.current[streamTabId]) {
@@ -3394,7 +3477,7 @@ TASK COMPLETION REQUIREMENTS:
             // Save in background without blocking
             (async () => {
               try {
-                const [tab] = await chrome.tabs.get(streamTabId).catch(() => [null]);
+                const tab = await chrome.tabs.get(streamTabId).catch(() => null);
                 const url = tab?.url;
                 await saveCurrentChat(updated, streamTabId, url, currentChatIdRef.current);
                 const chats = await loadChatHistory();
@@ -3434,7 +3517,7 @@ TASK COMPLETION REQUIREMENTS:
       // Final save when stream completes
       if (streamTabId !== null && streamMessagesRef.current.length > 0) {
         try {
-          const [tab] = await chrome.tabs.get(streamTabId).catch(() => [null]);
+          const tab = await chrome.tabs.get(streamTabId).catch(() => null);
           const url = tab?.url;
           const chatId = await saveCurrentChat(streamMessagesRef.current, streamTabId, url, currentChatIdRef.current);
           if (chatId) {
@@ -3525,18 +3608,53 @@ Get your GoCode Key from [GoCode (Alpha) - How to Get Started](https://secureser
 
 Include this link and instruction in Step 3 when asking for the GoCode Key.`;
 
+    // Build message parts including images
+    const buildMessageParts = (message: Message) => {
+      const parts: any[] = [{ text: message.content || '' }];
+      
+      // Add images if present (for direct API calls)
+      if (message.images && message.images.length > 0) {
+        message.images.forEach(img => {
+          parts.push({
+            inline_data: {
+              mime_type: img.mime_type,
+              data: img.data
+            }
+          });
+        });
+      }
+      
+      return parts;
+    };
+
+    // Build request body
+    const requestBody: any = {
+      contents: messages.map(m => ({
+        role: m.role === 'user' ? 'user' : 'model',
+        parts: buildMessageParts(m),
+      })),
+      systemInstruction: {
+        parts: [{ text: systemInstruction }],
+      },
+    };
+
+    // Add file metadata and mode if using GoCaaS (customBaseUrl)
+    const lastUserMessage = messages.filter(m => m.role === 'user').pop();
+    if (isCustomProvider) {
+      if (lastUserMessage?.chat_files_metadata && lastUserMessage.chat_files_metadata.length > 0) {
+        requestBody.chat_files_metadata = lastUserMessage.chat_files_metadata;
+      }
+      // Add mode parameter for GoCaaS integration (create_image, thinking, deep_research, study_and_learn, web_search, canvas, browser_memory)
+      if (lastUserMessage?.mode) {
+        requestBody.mode = lastUserMessage.mode;
+        console.log(`🔵 [Google Service] Mode parameter included: ${lastUserMessage.mode}`);
+      }
+    }
+
     const response = await fetch(url, {
       method: 'POST',
       headers,
-      body: JSON.stringify({
-        contents: messages.map(m => ({
-          role: m.role === 'user' ? 'user' : 'model',
-          parts: [{ text: m.content || '' }],
-        })),
-        systemInstruction: {
-          parts: [{ text: systemInstruction }],
-        },
-      }),
+      body: JSON.stringify(requestBody),
       signal,
     });
 
@@ -3618,7 +3736,7 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
                 // Save in background without blocking
                 (async () => {
                   try {
-                    const [tab] = await chrome.tabs.get(streamTabId).catch(() => [null]);
+                    const tab = await chrome.tabs.get(streamTabId).catch(() => null);
                     const url = tab?.url;
                     await saveCurrentChat(updated, streamTabId, url, currentChatIdRef.current);
                     const chats = await loadChatHistory();
@@ -3662,7 +3780,7 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
     // Final save when stream completes
     if (streamTabId !== null && streamMessagesRef.current.length > 0) {
       try {
-        const [tab] = await chrome.tabs.get(streamTabId).catch(() => [null]);
+        const tab = await chrome.tabs.get(streamTabId).catch(() => null);
         const url = tab?.url;
         const chatId = await saveCurrentChat(streamMessagesRef.current, streamTabId, url, currentChatIdRef.current);
         if (chatId) {
@@ -3693,15 +3811,115 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
       console.log('Could not get page context:', error);
     }
 
+    // Include attached tabs info in message
+    let tabContext = '';
+    if (selectedTabs.length > 0) {
+      tabContext = '\n\n[Attached Tabs]\n';
+      selectedTabs.forEach(tab => {
+        tabContext += `- ${tab.title}\n  URL: ${tab.url}\n`;
+      });
+    }
+
+    // Upload files and screenshots, collect metadata
+    const chatFilesMetadata: Array<{ id: string; name: string }> = [];
+    const imageData: Array<{ data: string; mime_type: string }> = [];
+
+    // Upload regular files to GoCaaS if using GoCaaS
+    for (const fileItem of selectedFiles) {
+      if (settings?.customBaseUrl) {
+        // Using GoCaaS - upload file and get ID
+        const fileMetadata = await uploadFileToGoCaaS(fileItem.file);
+        if (fileMetadata) {
+          chatFilesMetadata.push(fileMetadata);
+        } else {
+          // Upload failed, include as image data if it's an image
+          if (fileItem.file.type.startsWith('image/')) {
+            const reader = new FileReader();
+            const dataUrl = await new Promise<string>((resolve, reject) => {
+              reader.onload = () => resolve(reader.result as string);
+              reader.onerror = reject;
+              reader.readAsDataURL(fileItem.file);
+            });
+            const base64Data = dataUrl.split(',')[1];
+            imageData.push({
+              data: base64Data,
+              mime_type: fileItem.file.type
+            });
+          }
+        }
+      } else {
+        // Not using GoCaaS - include images as image data for direct API calls
+        if (fileItem.file.type.startsWith('image/')) {
+          const reader = new FileReader();
+          const dataUrl = await new Promise<string>((resolve, reject) => {
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(fileItem.file);
+          });
+          const base64Data = dataUrl.split(',')[1];
+          imageData.push({
+            data: base64Data,
+            mime_type: fileItem.file.type
+          });
+        }
+      }
+    }
+
+    // Handle screenshots - convert to files and upload, or include as image data
+    for (const screenshot of selectedScreenshots) {
+      if (settings?.customBaseUrl) {
+        // Using GoCaaS - convert screenshot to file and upload
+        const screenshotFile = dataUrlToFile(screenshot.dataUrl, `screenshot-${screenshot.id}.png`);
+        const fileMetadata = await uploadFileToGoCaaS(screenshotFile);
+        if (fileMetadata) {
+          chatFilesMetadata.push(fileMetadata);
+        } else {
+          // Upload failed, include as image data
+          const base64Data = screenshot.dataUrl.split(',')[1];
+          imageData.push({
+            data: base64Data,
+            mime_type: 'image/png'
+          });
+        }
+      } else {
+        // Not using GoCaaS - include as image data
+        const base64Data = screenshot.dataUrl.split(',')[1];
+        imageData.push({
+          data: base64Data,
+          mime_type: 'image/png'
+        });
+      }
+    }
+
+    // Include attached screenshots info in message text (for context)
+    let screenshotContext = '';
+    if (selectedScreenshots.length > 0) {
+      screenshotContext = '\n\n[Attached Screenshots]\n';
+      selectedScreenshots.forEach((screenshot, index) => {
+        screenshotContext += `Screenshot ${index + 1} (captured at ${new Date(screenshot.timestamp).toLocaleTimeString()})\n`;
+      });
+    }
+
     const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
-      content: messageText + pageContext,
+      content: messageText + pageContext + tabContext + screenshotContext,
+      ...(chatFilesMetadata.length > 0 && { chat_files_metadata: chatFilesMetadata }),
+      ...(imageData.length > 0 && { images: imageData }),
+      ...(chatMode && { mode: chatMode }),
     };
 
     const newMessages = [...messages, userMessage];
     setMessages(newMessages);
     setInput(''); // Clear input field
+    // Clear selected files after sending (file metadata would be included in GoCaaS field_mappings as chat_files_metadata)
+    setSelectedFiles([]);
+    // Clear selected tabs after sending
+    setSelectedTabs([]);
+    // Clear selected screenshots after sending
+    setSelectedScreenshots([]);
+    // Clear chat mode after sending
+    setChatMode(null);
     setIsLoading(true);
     setIsUserScrolled(false); // Reset scroll state when user sends message
     
@@ -3832,10 +4050,10 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
                   const a2aService = getA2AService();
 
                   // Connect to MCP servers
-                  await mcpService.connectToServers(settings.mcpServers);
+                  await mcpService.connectToServers(settings.mcpServers || []);
 
                   // Connect to A2A servers
-                  await a2aService.connectToServers(settings.mcpServers);
+                  await a2aService.connectToServers(settings.mcpServers || []);
 
                   if (mcpService.hasConnections()) {
                     customMCPToolsRef.current = mcpService.getAggregatedTools();
@@ -4087,13 +4305,13 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
             customMCPInitPromiseRef.current = (async () => {
               try {
                 console.log('🔌 Initializing custom MCP/A2A servers...');
-                console.log('📋 Servers to connect:', settings.mcpServers.map(s => `${s.name} (${s.enabled ? 'enabled' : 'disabled'}, ${s.protocol || 'mcp'})`));
+                console.log('📋 Servers to connect:', (settings.mcpServers || []).map(s => `${s.name} (${s.enabled ? 'enabled' : 'disabled'}, ${s.protocol || 'mcp'})`));
 
                 const mcpService = getMCPService();
                 const a2aService = getA2AService();
 
-                await mcpService.connectToServers(settings.mcpServers);
-                await a2aService.connectToServers(settings.mcpServers);
+                await mcpService.connectToServers(settings.mcpServers || []);
+                await a2aService.connectToServers(settings.mcpServers || []);
 
                 if (mcpService.hasConnections()) {
                   customMCPToolsRef.current = mcpService.getAggregatedTools();
@@ -4369,7 +4587,7 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
                   // Save in background without blocking
                   (async () => {
                     try {
-                      const [tab] = await chrome.tabs.get(streamTabId).catch(() => [null]);
+                      const tab = await chrome.tabs.get(streamTabId).catch(() => null);
                       const url = tab?.url;
                       await saveCurrentChat(updated, streamTabId, url, currentChatIdRef.current);
                       const chats = await loadChatHistory();
@@ -4501,6 +4719,487 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
     await submitMessage(input);
   };
 
+  // Handle file selection
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    const newFiles = files.map(file => ({
+      id: `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      name: file.name,
+      file: file
+    }));
+    setSelectedFiles(prev => [...prev, ...newFiles]);
+    setShowAddFilesMenu(false);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  // Handle file removal
+  const handleFileRemove = (fileId: string) => {
+    setSelectedFiles(prev => prev.filter(f => f.id !== fileId));
+  };
+
+  // Handle tab removal
+  const handleTabRemove = (tabId: string) => {
+    setSelectedTabs(prev => prev.filter(t => t.id !== tabId));
+  };
+
+  // Handle screenshot removal
+  const handleScreenshotRemove = (screenshotId: string) => {
+    setSelectedScreenshots(prev => prev.filter(s => s.id !== screenshotId));
+  };
+
+  // Upload file to GoCaaS and get file ID
+  const uploadFileToGoCaaS = async (file: File): Promise<{ id: string; name: string } | null> => {
+    if (!settings?.customBaseUrl) {
+      // Not using GoCaaS, return null to handle as direct API call
+      return null;
+    }
+
+    try {
+      const baseUrl = settings.customBaseUrl;
+      const endpoint = baseUrl.endsWith('/') 
+        ? `${baseUrl}v1/files`
+        : `${baseUrl}/v1/files`;
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${settings.apiKey}`,
+        },
+        body: formData,
+      });
+
+      if (!response.ok) {
+        console.warn('File upload to GoCaaS failed, will include as image data instead');
+        return null;
+      }
+
+      const result = await response.json();
+      // GoCaaS returns file with id and name
+      return {
+        id: result.id || `${Date.now()}_${file.name}`,
+        name: result.name || file.name
+      };
+    } catch (error) {
+      console.warn('Error uploading file to GoCaaS:', error);
+      return null;
+    }
+  };
+
+  // Convert screenshot data URL to File object
+  const dataUrlToFile = (dataUrl: string, filename: string): File => {
+    const arr = dataUrl.split(',');
+    const mime = arr[0].match(/:(.*?);/)?.[1] || 'image/png';
+    const bstr = atob(arr[1]);
+    let n = bstr.length;
+    const u8arr = new Uint8Array(n);
+    while (n--) {
+      u8arr[n] = bstr.charCodeAt(n);
+    }
+    return new File([u8arr], filename, { type: mime });
+  };
+
+  // Handle "Attach screenshot" menu item
+  const handleAttachScreenshot = async () => {
+    try {
+      setShowAddFilesMenu(false);
+      setIsCapturingScreenshot(true);
+      // Take screenshot using the executeTool function
+      const result = await executeTool('screenshot', {});
+      if (result && result.success && result.screenshot) {
+        const newScreenshot = {
+          id: `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          dataUrl: result.screenshot,
+          timestamp: Date.now()
+        };
+        setSelectedScreenshots(prev => [...prev, newScreenshot]);
+      } else {
+        alert(result?.error || 'Failed to capture screenshot');
+      }
+    } catch (error: any) {
+      console.error('Error capturing screenshot:', error);
+      alert(`Failed to capture screenshot: ${error.message || 'Unknown error'}`);
+    } finally {
+      setIsCapturingScreenshot(false);
+    }
+  };
+
+  // Fetch current tab info
+  const fetchCurrentTabInfo = async () => {
+    try {
+      const response = await chrome.runtime.sendMessage({ type: 'GET_TAB_INFO' });
+      if (response && response.url && response.title) {
+        setCurrentTabInfo({
+          url: response.url,
+          title: response.title,
+          id: response.id,
+          favIconUrl: response.favIconUrl
+        });
+      }
+    } catch (error) {
+      console.error('Failed to fetch current tab info:', error);
+      setCurrentTabInfo(null);
+    }
+  };
+
+  // Handle "Add photos & files" menu item
+  const handleAddFiles = () => {
+    fileInputRef.current?.click();
+    setShowAddFilesMenu(false);
+  };
+
+  // Handle "Attach tab" menu item
+  const handleAttachTab = () => {
+    if (currentTabInfo) {
+      const newTab = {
+        id: `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        url: currentTabInfo.url,
+        title: currentTabInfo.title,
+        tabId: currentTabInfo.id,
+        favIconUrl: currentTabInfo.favIconUrl
+      };
+      setSelectedTabs(prev => [...prev, newTab]);
+      setShowAddFilesMenu(false);
+    }
+  };
+
+  // Handle "Web search" menu item
+  const handleWebSearch = () => {
+    setChatMode('web_search');
+    setShowMoreMenu(false);
+    setShowAddFilesMenu(false);
+  };
+
+  // Handle "Canvas" menu item
+  const handleCanvas = () => {
+    setChatMode('canvas');
+    setShowMoreMenu(false);
+    setShowAddFilesMenu(false);
+  };
+
+  // Handle "Browser memory" menu item
+  const handleBrowserMemory = () => {
+    setChatMode('browser_memory');
+    setShowMoreMenu(false);
+    setShowAddFilesMenu(false);
+  };
+
+  // Handle voice recording - use offscreen document for microphone access
+  const handleVoiceRecording = async () => {
+    if (isRecording) {
+      // Stop recording via offscreen document
+      // Immediately set state to false to provide immediate feedback
+      setIsRecording(false);
+      
+      try {
+        console.log('[Sidepanel] Stopping recording...');
+        const response = await new Promise<any>((resolve, reject) => {
+          chrome.runtime.sendMessage({ type: 'STOP_RECORDING' }, (response) => {
+            if (chrome.runtime.lastError) {
+              console.error('[Sidepanel] chrome.runtime.lastError:', chrome.runtime.lastError.message);
+              reject(new Error(chrome.runtime.lastError.message));
+              return;
+            }
+            console.log('[Sidepanel] Received STOP_RECORDING response:', response);
+            resolve(response);
+          });
+        });
+        
+        if (!response) {
+          console.error('[Sidepanel] No response received when stopping recording');
+          // State already set to false, just show error
+          alert('No response from extension when stopping recording. Recording may have stopped anyway.');
+          return;
+        }
+        
+        if (response.success && response.audioBlob) {
+          // Convert base64 back to blob
+          const responseData = await fetch(response.audioBlob);
+          const audioBlob = await responseData.blob();
+          await transcribeAudio(audioBlob);
+        } else {
+          console.error('[Sidepanel] Stop recording failed:', response.error);
+          // State already set to false, just show error
+          alert(response.error || 'Failed to stop recording');
+        }
+      } catch (error: any) {
+        console.error('[Sidepanel] Error stopping recording:', error);
+        // State already set to false, just show error
+        alert(`Failed to stop recording: ${error.message || 'Unknown error'}`);
+      }
+    } else {
+      // Start recording via offscreen document
+      try {
+        console.log('[Sidepanel] Starting recording via offscreen document...');
+        const response = await new Promise<any>((resolve, reject) => {
+          chrome.runtime.sendMessage({ type: 'START_RECORDING' }, (response) => {
+            if (chrome.runtime.lastError) {
+              console.error('[Sidepanel] chrome.runtime.lastError:', chrome.runtime.lastError.message);
+              reject(new Error(chrome.runtime.lastError.message));
+              return;
+            }
+            console.log('[Sidepanel] Received response:', response);
+            resolve(response);
+          });
+        });
+        
+        if (!response) {
+          console.error('[Sidepanel] No response received');
+          alert('No response from extension. Please check console and reload extension.');
+          return;
+        }
+        
+        if (response.success) {
+          setIsRecording(true);
+          console.log('[Sidepanel] Recording started successfully');
+        } else {
+          // Handle permission errors
+          let errorMessage = response.error || 'Failed to start recording';
+          let showSettingsLink = false;
+          
+          if (errorMessage.includes('NotAllowedError') || 
+              errorMessage.includes('PermissionDeniedError') ||
+              errorMessage.includes('PermissionDismissedError') ||
+              errorMessage.includes('permission was denied') ||
+              errorMessage.includes('dismissed') ||
+              errorMessage.toLowerCase().includes('permission')) {
+            
+            // Both dismissed and denied need the same fix - reset extension
+            errorMessage = 'Microphone permission was denied for the extension.\n\n' +
+              '⚠️ IMPORTANT: The extension needs its own microphone permission (separate from the website).\n\n' +
+              'The permission prompt is not appearing because permission was previously denied.\n\n' +
+              'To fix this, you MUST reset the extension:\n' +
+              '1. Go to chrome://extensions\n' +
+              '2. Find "Agent Chat Powered by GoDaddy ANS"\n' +
+              '3. Click "Remove" to uninstall the extension\n' +
+              '4. Reload the extension from artifacts/Dev folder\n' +
+              '5. Click the microphone button again\n' +
+              '6. When the permission prompt appears, click "Allow"\n\n' +
+              'Would you like to open the extensions page?';
+            showSettingsLink = true;
+          } else if (errorMessage.includes('NotFoundError') || errorMessage.includes('No microphone found')) {
+            errorMessage = 'No microphone found. Please connect a microphone and try again.';
+          } else if (errorMessage.includes('NotReadableError') || errorMessage.includes('already in use')) {
+            errorMessage = 'Microphone is already in use by another application. Please close other apps and try again.';
+          } else if (errorMessage.includes('Timeout')) {
+            errorMessage = 'Request timed out. The extension may not be responding. Please try again or reload the extension.';
+          }
+          
+          if (showSettingsLink) {
+            const userConfirmed = window.confirm(errorMessage);
+            if (userConfirmed) {
+              chrome.runtime.sendMessage({ 
+                type: 'OPEN_URL', 
+                url: 'chrome://extensions' 
+              });
+            }
+          } else {
+            alert(errorMessage);
+          }
+        }
+      } catch (error: any) {
+        console.error('[Sidepanel] Error starting recording:', error);
+        console.error('[Sidepanel] Error details:', {
+          name: error?.name,
+          message: error?.message,
+          stack: error?.stack
+        });
+        
+        let errorMsg = error.message || 'Unknown error';
+        if (error.message?.includes('Could not establish connection')) {
+          errorMsg = 'Extension background script is not responding. Please reload the extension.';
+        } else if (error.message?.includes('Extension context invalidated')) {
+          errorMsg = 'Extension was reloaded. Please refresh this page.';
+        }
+        
+        alert(`Failed to start recording: ${errorMsg}`);
+      }
+    }
+  };
+
+  // Transcribe audio using GoCaaS API
+  const transcribeAudio = async (audioBlob: Blob) => {
+    if (!settings) {
+      console.error('[Sidepanel] Cannot transcribe: no settings');
+      return;
+    }
+    
+    // Validate blob
+    if (!audioBlob || audioBlob.size === 0) {
+      console.error('[Sidepanel] Cannot transcribe: empty audio blob');
+      alert('No audio data recorded. Please try again.');
+      return;
+    }
+    
+    // Check blob size (Whisper has limits, typically 25MB)
+    const maxSize = 25 * 1024 * 1024; // 25MB
+    if (audioBlob.size > maxSize) {
+      console.error('[Sidepanel] Audio blob too large:', audioBlob.size);
+      alert('Recording is too long. Please record a shorter message.');
+      return;
+    }
+
+    try {
+      // Convert blob to base64
+      const reader = new FileReader();
+      reader.onerror = (error) => {
+        console.error('[Sidepanel] FileReader error:', error);
+        alert('Failed to read audio file. Please try again.');
+      };
+      reader.onloadend = async () => {
+        const base64Audio = (reader.result as string).split(',')[1];
+        const baseUrl = settings.customBaseUrl || 'https://api.openai.com';
+        
+        // Try GoCaaS transcription endpoint first, fallback to OpenAI format
+        const endpoint = baseUrl.endsWith('/') 
+          ? `${baseUrl}v1/audio/transcriptions`
+          : `${baseUrl}/v1/audio/transcriptions`;
+
+        try {
+          // Try GoCaaS format first
+          const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${settings.apiKey}`,
+            },
+            body: JSON.stringify({
+              provider: 'openai',
+              providerOptions: {
+                model: 'whisper-1',
+                audio: `data:audio/webm;base64,${base64Audio}`
+              }
+            }),
+          });
+
+          if (!response.ok) {
+            throw new Error('GoCaaS transcription failed');
+          }
+
+          const data = await response.json();
+          const transcribedText = data.text || data.transcription || data.result?.text || '';
+          if (transcribedText) {
+            setInput(prev => prev + (prev ? ' ' : '') + transcribedText);
+          } else {
+            console.warn('[Sidepanel] No transcription text in response:', data);
+            alert('No transcription received. Please try again.');
+          }
+        } catch (goCaaSError) {
+          // Fallback: try direct OpenAI format if GoCaaS format fails
+          console.log('GoCaaS format failed, trying OpenAI format:', goCaaSError);
+          const formData = new FormData();
+          formData.append('file', audioBlob, 'audio.webm');
+          formData.append('model', 'whisper-1');
+
+          const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${settings.apiKey}`,
+            },
+            body: formData,
+          });
+
+          if (!response.ok) {
+            throw new Error('Transcription failed');
+          }
+
+          const data = await response.json();
+          const transcribedText = data.text || '';
+          if (transcribedText) {
+            setInput(prev => prev + (prev ? ' ' : '') + transcribedText);
+          } else {
+            console.warn('[Sidepanel] No transcription text in OpenAI response:', data);
+            alert('No transcription received. Please try again.');
+          }
+        }
+      };
+      reader.readAsDataURL(audioBlob);
+    } catch (error) {
+      console.error('Error transcribing audio:', error);
+      alert('Failed to transcribe audio. Please try again.');
+    }
+  };
+
+  // Handle keyboard shortcuts
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    // Handle "/" key to open "Add files and more" menu
+    if (e.key === '/' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+      const target = e.target as HTMLInputElement;
+      if (target.value === '' || target.selectionStart === 0) {
+        e.preventDefault();
+        setShowAddFilesMenu(true);
+      }
+    }
+  };
+
+  // Fetch current tab info when menu opens
+  useEffect(() => {
+    if (showAddFilesMenu) {
+      fetchCurrentTabInfo();
+    }
+  }, [showAddFilesMenu]);
+
+  // Position dropdown above the chat field
+  useEffect(() => {
+    if (showAddFilesMenu && addFilesMenuRef.current && dropdownRef.current && inputFormRef.current) {
+      const updatePosition = () => {
+        if (addFilesMenuRef.current && dropdownRef.current && inputFormRef.current) {
+          const buttonRect = addFilesMenuRef.current.getBoundingClientRect();
+          const inputFormRect = inputFormRef.current.getBoundingClientRect();
+          const dropdownRect = dropdownRef.current.getBoundingClientRect();
+          const dropdownHeight = dropdownRect.height || dropdownRef.current.offsetHeight;
+          
+          // Position above the input form (not just the button) with 8px gap
+          const topPosition = inputFormRect.top - dropdownHeight - 8;
+          
+          dropdownRef.current.style.left = `${buttonRect.left}px`;
+          dropdownRef.current.style.top = `${Math.max(8, topPosition)}px`; // Ensure it doesn't go above viewport
+        }
+      };
+      
+      // Initial positioning
+      requestAnimationFrame(() => {
+        requestAnimationFrame(updatePosition); // Double RAF to ensure layout is complete
+      });
+      
+      // Update on resize/scroll
+      window.addEventListener('resize', updatePosition);
+      window.addEventListener('scroll', updatePosition);
+      
+      return () => {
+        window.removeEventListener('resize', updatePosition);
+        window.removeEventListener('scroll', updatePosition);
+      };
+    }
+  }, [showAddFilesMenu]);
+
+  // Close menus when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      const isInsideAddFilesMenu = (addFilesMenuRef.current && addFilesMenuRef.current.contains(target)) ||
+                                   (dropdownRef.current && dropdownRef.current.contains(target));
+      const isInsideMoreMenu = (moreButtonRef.current && moreButtonRef.current.contains(target)) ||
+                               (moreMenuRef.current && moreMenuRef.current.contains(target));
+      
+      if (showAddFilesMenu && !isInsideAddFilesMenu) {
+        setShowAddFilesMenu(false);
+      }
+      if (showMoreMenu && !isInsideMoreMenu) {
+        setShowMoreMenu(false);
+      }
+    };
+
+    if (showAddFilesMenu || showMoreMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showAddFilesMenu, showMoreMenu]);
+
   // Check if user is scrolled to bottom
   const isAtBottom = () => {
     if (!messagesContainerRef.current) return true;
@@ -4551,7 +5250,7 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
     return (
       <div className="chat-container">
         <div className="welcome-message" style={{ padding: '40px 20px' }}>
-          <h2>Welcome! Get Ready to Harness the Agentic Web</h2>
+          <h2>Welcome! Get Ready for the Agentic Open Web</h2>
           <div style={{
             marginBottom: '24px',
             display: 'inline-flex',
@@ -5104,11 +5803,419 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
         </div>
       )}
 
-      <form className="input-form" onSubmit={handleSubmit}>
+      {/* File chips display */}
+      {selectedFiles.length > 0 && (
+        <div style={{
+          padding: '8px 16px',
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: '8px',
+          borderTop: '1px solid #333333',
+          backgroundColor: '#1a1a1a'
+        }}>
+          {selectedFiles.map((file) => (
+            <div
+              key={file.id}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '4px 8px',
+                backgroundColor: '#262626',
+                borderRadius: '6px',
+                fontSize: '13px',
+                color: '#ffffff'
+              }}
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>attach_file</span>
+              <span style={{ maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {file.name}
+              </span>
+              <button
+                type="button"
+                onClick={() => handleFileRemove(file.id)}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: '2px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  color: '#8e8ea0'
+                }}
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>close</span>
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Tab chips display */}
+      {selectedTabs.length > 0 && (
+        <div style={{
+          padding: '8px 16px',
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: '8px',
+          borderTop: selectedFiles.length > 0 ? '1px solid #333333' : 'none',
+          backgroundColor: '#1a1a1a',
+          position: 'relative',
+          zIndex: 1,
+          maxWidth: '100%',
+          overflow: 'hidden'
+        }}>
+          {selectedTabs.map((tab) => (
+            <TabChip 
+              key={tab.id}
+              tab={tab}
+              onRemove={() => handleTabRemove(tab.id)}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Screenshot chips display */}
+      {(selectedScreenshots.length > 0 || isCapturingScreenshot) && (
+        <div style={{
+          padding: '8px 16px',
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: '8px',
+          borderTop: (selectedFiles.length > 0 || selectedTabs.length > 0) ? '1px solid #333333' : 'none',
+          backgroundColor: '#1a1a1a'
+        }}>
+          {isCapturingScreenshot && (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '4px 8px',
+                backgroundColor: '#262626',
+                borderRadius: '6px',
+                fontSize: '13px',
+                color: '#ffffff'
+              }}
+            >
+              <div style={{
+                width: '32px',
+                height: '24px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: '#1a1a1a',
+                borderRadius: '4px',
+                flexShrink: 0
+              }}>
+                <div style={{
+                  width: '16px',
+                  height: '16px',
+                  border: '2px solid #60a5fa',
+                  borderTopColor: 'transparent',
+                  borderRadius: '50%',
+                  animation: 'spin 0.8s linear infinite'
+                }} />
+              </div>
+              <span style={{ fontSize: '12px', color: '#8e8ea0' }}>
+                Capturing...
+              </span>
+            </div>
+          )}
+          {selectedScreenshots.map((screenshot) => (
+            <div
+              key={screenshot.id}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '4px 8px',
+                backgroundColor: '#262626',
+                borderRadius: '6px',
+                fontSize: '13px',
+                color: '#ffffff',
+                cursor: 'pointer',
+                transition: 'background-color 0.15s ease'
+              }}
+              onClick={() => setPreviewImage({ src: screenshot.dataUrl, type: 'screenshot' })}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = '#2a2a2a';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = '#262626';
+              }}
+            >
+              <img 
+                src={screenshot.dataUrl} 
+                alt="Screenshot" 
+                style={{ 
+                  width: '32px', 
+                  height: '24px', 
+                  objectFit: 'cover',
+                  borderRadius: '4px',
+                  flexShrink: 0,
+                  pointerEvents: 'none'
+                }} 
+              />
+              <span style={{ fontSize: '12px', color: '#8e8ea0' }}>
+                Screenshot
+              </span>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleScreenshotRemove(screenshot.id);
+                }}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: '2px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  color: '#8e8ea0'
+                }}
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>close</span>
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <form className="input-form" onSubmit={handleSubmit} ref={inputFormRef}>
+        {/* Hidden file input */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          style={{ display: 'none' }}
+          onChange={handleFileSelect}
+        />
+
+        {/* Add files and more button */}
+        <div style={{ position: 'relative' }} ref={addFilesMenuRef}>
+          <button
+            type="button"
+            onClick={() => setShowAddFilesMenu(!showAddFilesMenu)}
+            className="add-files-button"
+            title="Add files and more (Press /)"
+            disabled={isLoading || (!settings && !onboardingState?.active)}
+          >
+            +
+          </button>
+        </div>
+
+        {/* Dropdown menu */}
+          {showAddFilesMenu && (
+            <div className="add-files-dropdown" ref={dropdownRef}>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  handleAddFiles();
+                }}
+                className="dropdown-menu-item"
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: '20px' }}>attach_file</span>
+                <span>Add photos & files</span>
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  handleAttachTab();
+                }}
+                className="dropdown-menu-item"
+                disabled={!currentTabInfo}
+                style={{ 
+                  opacity: currentTabInfo ? 1 : 0.6,
+                  flexDirection: 'row',
+                  alignItems: currentTabInfo ? 'flex-start' : 'center'
+                }}
+              >
+                <TabFavicon favIconUrl={currentTabInfo?.favIconUrl} size={20} />
+                {currentTabInfo ? (
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 }}>
+                    <div style={{ fontWeight: 500, lineHeight: '1.4' }}>Attach tab</div>
+                    <div style={{ fontSize: '12px', color: '#8e8ea0', wordBreak: 'break-word', lineHeight: '1.3' }}>
+                      {currentTabInfo.title}
+                    </div>
+                  </div>
+                ) : (
+                  <span>Attach tab</span>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  handleAttachScreenshot();
+                }}
+                className="dropdown-menu-item"
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: '20px' }}>crop_free</span>
+                <span>Attach screenshot</span>
+              </button>
+              <div style={{
+                width: '100%',
+                height: '1px',
+                backgroundColor: '#333333',
+                margin: '4px 0'
+              }} />
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  setChatMode('create_image');
+                  setShowAddFilesMenu(false);
+                }}
+                className={`dropdown-menu-item ${chatMode === 'create_image' ? 'active' : ''}`}
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: '20px' }}>image</span>
+                <span>Create image</span>
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  setChatMode('thinking');
+                  setShowAddFilesMenu(false);
+                }}
+                className={`dropdown-menu-item ${chatMode === 'thinking' ? 'active' : ''}`}
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: '20px' }}>lightbulb</span>
+                <span>Thinking</span>
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  setChatMode('deep_research');
+                  setShowAddFilesMenu(false);
+                }}
+                className={`dropdown-menu-item ${chatMode === 'deep_research' ? 'active' : ''}`}
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: '20px' }}>travel_explore</span>
+                <span>Deep research</span>
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  setChatMode('study_and_learn');
+                  setShowAddFilesMenu(false);
+                }}
+                className={`dropdown-menu-item ${chatMode === 'study_and_learn' ? 'active' : ''}`}
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: '20px' }}>menu_book</span>
+                <span>Study and learn</span>
+              </button>
+              <div style={{ position: 'relative' }}>
+                <button
+                  ref={moreButtonRef}
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    setShowMoreMenu(!showMoreMenu);
+                  }}
+                  onMouseDown={(e) => {
+                    e.stopPropagation();
+                  }}
+                  className="dropdown-menu-item"
+                  style={{
+                    backgroundColor: showMoreMenu ? '#2a2a2a' : 'transparent',
+                    border: showMoreMenu ? '2px solid #2563eb' : 'none',
+                    borderRadius: showMoreMenu ? '4px' : '0',
+                    margin: showMoreMenu ? '0' : '0'
+                  }}
+                >
+                  <span className="material-symbols-outlined" style={{ fontSize: '20px' }}>more_horiz</span>
+                  <span>More</span>
+                  <span style={{ marginLeft: 'auto', fontSize: '12px' }}>▶</span>
+                </button>
+                
+                {/* More submenu - positioned to the right of More button */}
+                {showMoreMenu && (
+                  <div 
+                    ref={moreMenuRef}
+                    style={{
+                      position: 'absolute',
+                      left: '100%',
+                      top: 0,
+                      marginLeft: '4px',
+                      backgroundColor: '#1a1a1a',
+                      border: '1px solid #333',
+                      borderRadius: '8px',
+                      padding: '8px 0',
+                      minWidth: '200px',
+                      boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+                      zIndex: 10001,
+                      display: 'flex',
+                      flexDirection: 'column'
+                    }}
+                    onMouseDown={(e) => {
+                      e.stopPropagation();
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                    }}
+                  >
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  handleWebSearch();
+                }}
+                className={`dropdown-menu-item ${chatMode === 'web_search' ? 'active' : ''}`}
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: '20px' }}>public</span>
+                <span>Web search</span>
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  handleCanvas();
+                }}
+                className={`dropdown-menu-item ${chatMode === 'canvas' ? 'active' : ''}`}
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: '20px' }}>draw</span>
+                <span>Canvas</span>
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  handleBrowserMemory();
+                }}
+                className={`dropdown-menu-item ${chatMode === 'browser_memory' ? 'active' : ''}`}
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: '20px' }}>layers</span>
+                <span>Browser memory</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
         <input
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
+          onKeyDown={handleKeyDown}
           placeholder={
             onboardingState?.active 
               ? (onboardingState.step === 'provider' 
@@ -5120,11 +6227,33 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
                   : "Type your response...")
               : !settings 
               ? "Loading settings..." 
+              : chatMode === 'create_image'
+              ? "Describe the image you want to create..."
+              : chatMode === 'thinking'
+              ? "Ask a question for deep thinking..."
+              : chatMode === 'deep_research'
+              ? "Ask a question for deep research..."
+              : chatMode === 'study_and_learn'
+              ? "Ask a question to study and learn..."
               : "Ask me anything"
           }
           disabled={isLoading || (!settings && !onboardingState?.active)}
           className="chat-input"
         />
+
+        {/* Voice dictation button */}
+        <button
+          type="button"
+          onClick={handleVoiceRecording}
+          className={`voice-button ${isRecording ? 'recording' : ''}`}
+          title="Voice dictation"
+          disabled={isLoading || (!settings && !onboardingState?.active)}
+        >
+          <span className="material-symbols-outlined" style={{ fontSize: '20px', lineHeight: '1' }}>
+            {isRecording ? 'mic' : 'mic'}
+          </span>
+        </button>
+
         {isLoading ? (
           <button
             type="button"
@@ -5144,6 +6273,169 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
           </button>
         )}
       </form>
+
+      {chatMode && (
+        <div 
+          style={{
+            padding: '12px 16px',
+            backgroundColor: '#1a1a1a',
+            borderTop: '1px solid #333333',
+            display: 'block',
+            visibility: 'visible',
+            opacity: 1,
+            width: '100%',
+            boxSizing: 'border-box',
+            position: 'relative',
+            zIndex: 1
+          }}
+          onMouseEnter={(e) => {
+            const closeIcon = e.currentTarget.querySelector('.mode-close-icon') as HTMLElement;
+            if (closeIcon) {
+              closeIcon.style.display = 'flex';
+            }
+          }}
+          onMouseLeave={(e) => {
+            const closeIcon = e.currentTarget.querySelector('.mode-close-icon') as HTMLElement;
+            if (closeIcon) {
+              closeIcon.style.display = 'none';
+            }
+          }}
+        >
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            position: 'relative'
+          }}>
+            <button
+              type="button"
+              className="mode-close-icon"
+              onClick={(e) => {
+                e.stopPropagation();
+                setChatMode(null);
+              }}
+              style={{
+                display: 'none',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: 'transparent',
+                border: 'none',
+                color: '#60a5fa',
+                cursor: 'pointer',
+                padding: '4px',
+                borderRadius: '50%',
+                width: '20px',
+                height: '20px',
+                fontSize: '16px',
+                lineHeight: '1',
+                fontFamily: 'inherit',
+                transition: 'background-color 0.15s ease',
+                flexShrink: 0
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = 'rgba(96, 165, 250, 0.1)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'transparent';
+              }}
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: '16px', lineHeight: '1' }}>close</span>
+            </button>
+            <span className="material-symbols-outlined" style={{ fontSize: '20px', lineHeight: '1', color: '#60a5fa', flexShrink: 0 }}>
+              {chatMode === 'create_image' ? 'image' : 
+               chatMode === 'thinking' ? 'lightbulb' : 
+               chatMode === 'deep_research' ? 'travel_explore' : 
+               chatMode === 'study_and_learn' ? 'menu_book' :
+               chatMode === 'web_search' ? 'public' :
+               chatMode === 'canvas' ? 'draw' :
+               'layers'}
+            </span>
+            <span style={{ lineHeight: '1', color: '#60a5fa', fontSize: '14px' }}>
+              {chatMode === 'create_image' ? 'Create image' : 
+               chatMode === 'thinking' ? 'Thinking' : 
+               chatMode === 'deep_research' ? 'Deep research' : 
+               chatMode === 'study_and_learn' ? 'Study and learn' :
+               chatMode === 'web_search' ? 'Web search' :
+               chatMode === 'canvas' ? 'Canvas' :
+               'Browser memory'}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Image Preview Modal */}
+      {previewImage && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.9)',
+            zIndex: 10000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '20px',
+            cursor: 'pointer'
+          }}
+          onClick={() => setPreviewImage(null)}
+        >
+          <div
+            style={{
+              position: 'relative',
+              maxWidth: '90vw',
+              maxHeight: '90vh',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <img
+              src={previewImage.src}
+              alt="Preview"
+              style={{
+                maxWidth: '100%',
+                maxHeight: '90vh',
+                objectFit: 'contain',
+                borderRadius: '8px'
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => setPreviewImage(null)}
+              style={{
+                position: 'absolute',
+                top: '-40px',
+                right: '0',
+                background: 'transparent',
+                border: 'none',
+                color: '#ffffff',
+                cursor: 'pointer',
+                fontSize: '32px',
+                padding: '8px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: '50%',
+                width: '40px',
+                height: '40px',
+                transition: 'background-color 0.15s ease'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.2)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'transparent';
+              }}
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: '32px' }}>close</span>
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

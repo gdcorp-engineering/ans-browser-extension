@@ -12,7 +12,8 @@
     "webNavigation",
     "scripting",
     "contextMenus",
-    "cookies"
+    "cookies",
+    "offscreen"
   ],
   "host_permissions": [
     "<all_urls>"

@@ -6,7 +6,7 @@ This document compares the current **ANS Browser Extension** codebase against th
 
 ### Overview
 
-The original repository was a **ChatGPT Atlas alternative** - an open-source browser extension that provides AI-powered browser automation using Gemini Computer Use. The current codebase has been **extensively customized for GoDaddy's internal use** with deep integration into GoDaddy's **Agent Naming System (ANS)** infrastructure.
+The original repository was a **ChatGPT Atlas alternative** - an open-source browser extension that provides AI-powered browser automation using Gemini Computer Use. The current codebase has been **extensively customized for GoDaddy's internal use** with deep integration into GoDaddy's **Agent Name Service (ANS)** infrastructure.
 
 ### Key Transformation
 
