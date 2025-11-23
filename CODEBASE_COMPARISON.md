@@ -601,6 +601,6 @@ The codebase has evolved to be **more user-friendly and accessible** while maint
 
 ---
 
-*Document generated: 2025-01-XX*
-*Last updated: Based on current codebase state*
+*Document generated: November 22, 2025*
+*Last updated: November 22, 2025*
 
