@@ -299,7 +299,7 @@ function extractPageContext(): PageContext {
 
 // Helper function to dispatch complete, realistic click event sequence
 async function dispatchClickSequence(element: HTMLElement, x: number, y: number): Promise<void> {
-  console.log('🖱️  Dispatching complete click sequence...');
+  console.log('🖱️  Starting NATIVE-ONLY click sequence...');
   console.log('🎯 Target element:', {
     tag: element.tagName,
     id: element.id,
@@ -310,7 +310,8 @@ async function dispatchClickSequence(element: HTMLElement, x: number, y: number)
     'pointer-events': window.getComputedStyle(element).pointerEvents,
     visibility: window.getComputedStyle(element).visibility,
     display: window.getComputedStyle(element).display,
-    zIndex: window.getComputedStyle(element).zIndex
+    zIndex: window.getComputedStyle(element).zIndex,
+    offsetParent: element.offsetParent?.tagName || 'none'
   });
 
   // Check if element is actually clickable at this position
@@ -319,7 +320,12 @@ async function dispatchClickSequence(element: HTMLElement, x: number, y: number)
     console.warn('⚠️  Element at coordinates is different from target!');
     console.warn('   Target:', element.tagName, element.className);
     console.warn('   Actual top element:', topElement?.tagName, (topElement as HTMLElement)?.className);
-    console.warn('   There might be an overlay or the element is not the topmost at these coordinates');
+
+    // Try to click the actual top element if it's different
+    if (topElement && topElement !== element) {
+      console.log('   📍 Will try clicking the actual top element instead');
+      element = topElement as HTMLElement;
+    }
   }
 
   // Check for click event listeners
@@ -353,84 +359,43 @@ async function dispatchClickSequence(element: HTMLElement, x: number, y: number)
     }
   }
 
-  console.log('2️⃣ Target element:', element.tagName, element.className);
+  console.log('2️⃣ Final target element:', element.tagName, element.className);
+
+  // Scroll element into view first
+  try {
+    element.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'center' });
+    console.log('✅ Scrolled into view');
+    await new Promise(resolve => setTimeout(resolve, 100)); // Wait for scroll
+  } catch (error) {
+    console.error('❌ Scroll failed:', error);
+  }
 
   // Set focus first (required for some elements)
   try {
-    if (element instanceof HTMLElement) {
+    if (element instanceof HTMLElement && typeof element.focus === 'function') {
       element.focus();
       console.log('✅ Focus set');
+      await new Promise(resolve => setTimeout(resolve, 50)); // Wait for focus handlers
     }
   } catch (error) {
     console.error('❌ Focus failed:', error);
   }
 
-  // Dispatch complete event sequence synchronously for React apps
-  console.log('3️⃣ Dispatching complete event sequence...');
-  const eventOptions = {
-    bubbles: true,
-    cancelable: true,
-    view: window,
-    clientX: x,
-    clientY: y,
-    screenX: x,
-    screenY: y,
-    button: 0,
-    buttons: 1,
-    detail: 1,
-    composed: true
-  };
-
-  const pointerOptions = {
-    ...eventOptions,
-    pointerId: 1,
-    width: 1,
-    height: 1,
-    pressure: 0.5,
-    tangentialPressure: 0,
-    tiltX: 0,
-    tiltY: 0,
-    twist: 0,
-    pointerType: 'mouse',
-    isPrimary: true
-  };
-
+  // STRATEGY: Use ONLY native clicks (no synthetic events)
+  // Synthetic events with isTrusted=false can confuse React and be blocked
   try {
-    // Step 1: Mouse enter events
-    element.dispatchEvent(new MouseEvent('mouseenter', { ...eventOptions, buttons: 0 }));
-    element.dispatchEvent(new MouseEvent('mouseover', eventOptions));
-    element.dispatchEvent(new MouseEvent('mousemove', eventOptions));
+    console.log('3️⃣ NATIVE CLICK ONLY (generates trusted=true events)...');
 
-    // Step 2: Focus events (critical for React apps)
-    element.dispatchEvent(new FocusEvent('focusin', { bubbles: true, cancelable: true }));
-    element.dispatchEvent(new FocusEvent('focus', { bubbles: false, cancelable: true }));
-
-    // Step 3: Complete pointer/mouse down sequence
-    element.dispatchEvent(new PointerEvent('pointerdown', pointerOptions));
-    element.dispatchEvent(new MouseEvent('mousedown', eventOptions));
-
-    // Step 4: Up and click events (synchronous for React)
-    element.dispatchEvent(new PointerEvent('pointerup', { ...pointerOptions, buttons: 0 }));
-    element.dispatchEvent(new MouseEvent('mouseup', { ...eventOptions, buttons: 0 }));
-    element.dispatchEvent(new PointerEvent('click', { ...pointerOptions, buttons: 0 }));
-    element.dispatchEvent(new MouseEvent('click', { ...eventOptions, buttons: 0 }));
-
-    console.log('✅ Complete event sequence dispatched');
-
-    // Step 5: AGGRESSIVE NATIVE CLICK - This is the MOST IMPORTANT for Slack
-    // Native clicks are the ONLY way to generate trusted events
-    console.log('4️⃣ NATIVE CLICK (generates trusted=true events)...');
-
-    // Try multiple times with small delays (sometimes first click is ignored)
-    for (let attempt = 1; attempt <= 3; attempt++) {
+    // Try multiple times with delays (React event handlers need time to attach)
+    for (let attempt = 1; attempt <= 5; attempt++) {
       try {
-        console.log(`   Attempt ${attempt}/3...`);
+        console.log(`   Attempt ${attempt}/5...`);
         element.click();
-        console.log(`   ✅ Native click ${attempt} executed`);
+        console.log(`   ✅ Native click ${attempt} executed (isTrusted: true)`);
 
-        // Small delay between attempts
-        if (attempt < 3) {
-          await new Promise(resolve => setTimeout(resolve, 50));
+        // Delay between attempts - give React time to process
+        if (attempt < 5) {
+          await new Promise(resolve => setTimeout(resolve, 150));
         }
       } catch (error) {
         console.error(`   ❌ Native click ${attempt} failed:`, error);
