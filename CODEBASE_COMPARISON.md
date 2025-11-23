@@ -84,7 +84,68 @@ The original repository was a **ChatGPT Atlas alternative** - an open-source bro
   - Verification badges
   - Protocol type (MCP/A2A)
 
-### 4. **Floating Button Feature** 🎯
+### 4. **Intelligent Sample Prompts System** 💡
+
+**New Feature in `sidepanel.tsx`:**
+- **Context-Aware Prompt Generation**: Automatically generates 3 contextual prompts based on current page content
+- **Dynamic Page Analysis**: Analyzes page characteristics (content length, links, forms, keywords, URL patterns)
+- **Page Type Detection**: Intelligently detects 8+ page types (E-commerce, Article, Documentation, Search, Social, Video, Form, Generic)
+- **Topic Extraction**: Extracts main topics using frequency analysis for personalized prompts
+- **Auto-Regeneration**: Prompts update when switching tabs, navigating, or refreshing pages
+
+**Key Improvements:**
+- **No Hardcoded Domains**: Works across any website by analyzing actual DOM content
+- **Comprehensive Coverage**: Handles news sites, e-commerce, documentation, search results, social media, videos, forms
+- **Smart Prompt Selection**: Different prompt templates for each page type
+- **User-Friendly**: One-click prompt submission to start conversations
+
+**Implementation:**
+```typescript
+// sidepanel.tsx - Sample prompts system
+- analyzePageCharacteristics() - Comprehensive page analysis
+- detectPageType() - Priority-based page type detection
+- extractMainTopics() - Frequency-based topic extraction
+- generateSamplePrompts() - Context-aware prompt generation
+```
+
+### 5. **DOM vs Screenshot Fallback Logic** 🎯
+
+**Major Intelligence Improvement in `anthropic-browser-tools.ts`:**
+- **DOM-First Strategy**: Always prefers DOM-based methods over screenshots
+- **Modal-Aware Logic**: Detects modals and prioritizes DOM access (modals always accessible via DOM)
+- **Intelligent Fallback**: Only uses screenshots as absolute last resort
+- **Performance Optimization**: DOM methods are faster and more reliable than screenshot-based clicking
+
+**Key Improvements:**
+- **Modal Detection Priority**: If `hasActiveModals` is true, NEVER uses screenshots - modals are always accessible via DOM
+- **Framework-Agnostic**: Works with React, Vue, Angular, Jira, and all modern web frameworks
+- **Element Prioritization**: Elements in modals get +20 priority boost
+- **Smart Workflow**: 
+  1. Get page context (DOM structure)
+  2. Check authentication status
+  3. Handle modals (DOM methods only)
+  4. Use DOM selectors (preferred)
+  5. Screenshots only if DOM methods fail
+
+**System Prompt Logic:**
+```typescript
+// anthropic-browser-tools.ts lines 186-229
+CRITICAL: ALWAYS PREFER DOM-BASED METHODS OVER SCREENSHOTS
+- NEVER use screenshots if hasActiveModals is true
+- NEVER use screenshots for Jira Cloud or React-based modals
+- Only use screenshots if:
+  * No modals present
+  * DOM methods fail after multiple attempts
+  * Visual layout understanding needed
+```
+
+**Benefits:**
+- **Faster Execution**: DOM methods are instant vs screenshot processing
+- **More Reliable**: Direct element access vs coordinate-based clicking
+- **Better for Modals**: Modals are always accessible via DOM, not screenshots
+- **Framework Support**: Works with all modern web frameworks
+
+### 6. **Floating Button Feature** 🎯
 
 **New in `content.ts`:**
 - Floating "Ask GoDaddy ANS" button on web pages
@@ -102,7 +163,7 @@ The original repository was a **ChatGPT Atlas alternative** - an open-source bro
 - State management for sidebar open/closed
 ```
 
-### 5. **Enhanced Modal Detection** 🎭
+### 7. **Enhanced Modal Detection** 🎭
 
 **Major Improvements in `content.ts`:**
 - **Framework-agnostic detection**: Supports React, Vue, Angular, Material-UI, Ant Design, Bootstrap, Chakra UI, Semantic UI, and more
@@ -118,7 +179,7 @@ The original repository was a **ChatGPT Atlas alternative** - an open-source bro
 // Lines 688-794: Close button detection with international support
 ```
 
-### 6. **Agent Mode Visual Indicators** ◉
+### 8. **Agent Mode Visual Indicators** ◉
 
 **New Features:**
 - **Page Title Indicator**: Adds "◉ [AI]" prefix to page title when agent mode is active
@@ -133,7 +194,7 @@ The original repository was a **ChatGPT Atlas alternative** - an open-source bro
 // background.ts lines 25-61: Tab badge and title updates
 ```
 
-### 7. **Enterprise Deployment Infrastructure** 🚀
+### 9. **Enterprise Deployment Infrastructure** 🚀
 
 **New Files:**
 - `katana.yaml` - Katana deployment configuration
@@ -164,7 +225,7 @@ The original repository was a **ChatGPT Atlas alternative** - an open-source bro
 - `KATANA_DEPLOYMENT_TROUBLESHOOTING.md` - Troubleshooting guide
 - `ALB_HEALTH_CHECK_DEBUG.md` - Health check debugging
 
-### 8. **Enhanced Type Definitions** 📝
+### 10. **Enhanced Type Definitions** 📝
 
 **New Types in `types.ts`:**
 ```typescript
@@ -174,7 +235,7 @@ The original repository was a **ChatGPT Atlas alternative** - an open-source bro
 - ANSBusinessService: Complete interface for ANS marketplace businesses
 ```
 
-### 9. **Testing and Validation Infrastructure** 🧪
+### 11. **Testing and Validation Infrastructure** 🧪
 
 **New Test Files:**
 - `test-a2a-connection.mjs` - A2A protocol testing
@@ -191,7 +252,7 @@ The original repository was a **ChatGPT Atlas alternative** - an open-source bro
 - `TEST_RESULTS.md`
 - `PROMPT-VALIDATION-GUIDE.md`
 
-### 10. **Branding and UI Customization** 🎨
+### 12. **Branding and UI Customization** 🎨
 
 **Changes:**
 - Extension name: "Agent Chat Powered by GoDaddy ANS"
