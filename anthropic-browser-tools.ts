@@ -283,11 +283,13 @@ Preference order:
 2. clickElement with selector: clickElement({selector: "button.login"})
 3. Coordinate click (last resort): click({x: 100, y: 200})
 
-For coordinates:
+For coordinates (use ONLY when DOM methods fail):
 - Take screenshot first to see exact location
-- Measure from top-left (0,0)
-- Click CENTER of elements
-- Use viewport dimensions as bounds
+- Screenshot shows viewport - measure from top-left corner (0,0)
+- Measure to the CENTER of the target element, not edges
+- Be precise - off by even 20-30 pixels can miss the target
+- Double-check your measurement before clicking
+- If click misses, take new screenshot and measure again more carefully
 
 ⌨️ TYPING TEXT:
 1. Focus field first if needed: clickElement to focus

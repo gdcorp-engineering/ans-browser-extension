@@ -41,12 +41,21 @@ Steps for simple issue key lookup:
 3. Press Enter
 
 Steps for finding bugs assigned to me:
+OPTION 1 - Use page tabs (if available):
+1. Take a screenshot to see the page
+2. If you see "Assigned to me" tab at the top of the page, try clickElement({text: "Assigned to me"})
+3. If clickElement fails, look for the tab position and use coordinates as last resort
+4. Wait for results to load
+
+OPTION 2 - Use Filters sidebar (most reliable):
 1. Take a screenshot first to see the page layout
 2. Click on "Filters" in the left sidebar
 3. Look for existing filters like "My open issues" or "Assigned to me"
 4. Click on the appropriate filter
 5. Wait for results to load
-6. Extract and return issue keys, summaries, and statuses
+
+After getting results:
+- Extract and return issue keys, summaries, and statuses from the page
 
 If no suitable filter exists:
 1. Click "Create filter" or similar option
