@@ -1610,6 +1610,7 @@ function showBrowserAutomationOverlay() {
       box-shadow: 0 4px 12px rgba(0, 122, 255, 0.4);
       transition: all 0.2s ease;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      pointer-events: auto;
     " onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 16px rgba(0, 122, 255, 0.5)';"
        onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 12px rgba(0, 122, 255, 0.4)';">
       🛑 Take Over Control
@@ -1621,7 +1622,7 @@ function showBrowserAutomationOverlay() {
     left: 50%;
     transform: translateX(-50%);
     z-index: 999999;
-    pointer-events: auto;
+    pointer-events: none;
   `;
 
   // Handle button click
