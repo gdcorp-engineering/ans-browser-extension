@@ -81,12 +81,12 @@ function SettingsPage() {
   const [fetchLogs, setFetchLogs] = useState<string[]>([]);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [updateChecking, setUpdateChecking] = useState(false);
-  const [updateAvailable, setUpdateAvailable] = useState<{ version: string; downloadUrl: string; releaseNotes?: string } | null>(null);
+  const [updateAvailable, setUpdateAvailable] = useState<{ version: string; downloadUrl: string; releaseNotes?: string; artifactName?: string } | null>(null);
   const [updateError, setUpdateError] = useState<string | null>(null);
   const [updateMessage, setUpdateMessage] = useState<string | null>(null);
 
   const CURRENT_VERSION = '1.5.4'; // This should match manifest.json version
-  const GITHUB_REPO = 'gdcorp-engineering/ans-browser-extension';
+  const GITHUB_REPO = 'gdcorp-im/ans-browser-extension-v1-temp';
   const WORKFLOW_NAME = 'build.yml';
 
   // Compare semantic versions (e.g., "1.5.4" vs "1.5.3")
@@ -112,18 +112,26 @@ function SettingsPage() {
     setUpdateAvailable(null);
 
     try {
-      // Fetch latest workflow runs for Prod environment
+      // Fetch latest workflow runs for the build workflow
       const workflowRunsUrl = `https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/${WORKFLOW_NAME}/runs?status=success&per_page=1`;
       const runsResponse = await fetch(workflowRunsUrl);
 
       if (!runsResponse.ok) {
-        throw new Error(`Failed to check for updates: ${runsResponse.status}`);
+        // Handle specific error cases
+        if (runsResponse.status === 404) {
+          throw new Error('Repository or workflow not found. Update checking may not be available for this repository.');
+        } else if (runsResponse.status === 403) {
+          throw new Error('Access denied. Repository may be private or rate limit exceeded.');
+        } else {
+          throw new Error(`Failed to check for updates: ${runsResponse.status} ${runsResponse.statusText}`);
+        }
       }
 
       const runsData = await runsResponse.json();
 
       if (!runsData.workflow_runs || runsData.workflow_runs.length === 0) {
-        throw new Error('No successful builds found');
+        setUpdateMessage('No successful builds found. The workflow may not have run yet.');
+        return;
       }
 
       const latestRun = runsData.workflow_runs[0];
@@ -136,33 +144,50 @@ function SettingsPage() {
       // Compare versions
       const comparison = compareVersions(latestVersion, CURRENT_VERSION);
 
-      // Get artifacts for this run
-      const artifactsUrl = `https://api.github.com/repos/${GITHUB_REPO}/actions/runs/${latestRun.id}/artifacts`;
-      const artifactsResponse = await fetch(artifactsUrl);
-      const artifactsData = await artifactsResponse.json();
+      // Get artifacts for this run (with error handling)
+      let artifact = null;
+      try {
+        const artifactsUrl = `https://api.github.com/repos/${GITHUB_REPO}/actions/runs/${latestRun.id}/artifacts`;
+        const artifactsResponse = await fetch(artifactsUrl);
+        
+        if (artifactsResponse.ok) {
+          const artifactsData = await artifactsResponse.json();
 
-      // Find the Prod artifact
-      const prodArtifact = artifactsData.artifacts?.find((a: any) => a.name === 'extension-prod');
-
-      // Always show update available (for debugging/testing)
-      // Show appropriate message based on version comparison
-      let versionMessage = '';
-      if (comparison > 0) {
-        versionMessage = `Update Available: Version ${latestVersion}`;
-      } else if (comparison === 0) {
-        versionMessage = `Reinstall Current Version: ${latestVersion}`;
-      } else {
-        versionMessage = `Downgrade to Release Version: ${latestVersion} (from dev ${CURRENT_VERSION})`;
+          // Find the latest artifact (prefer prod, then dev, then any extension artifact)
+          const prodArtifact = artifactsData.artifacts?.find((a: any) => 
+            a.name.startsWith('extension-prod-v') || a.name === 'extension-prod'
+          );
+          const devArtifact = artifactsData.artifacts?.find((a: any) => 
+            a.name.startsWith('extension-dev-v') || a.name === 'extension-dev'
+          );
+          const anyExtensionArtifact = artifactsData.artifacts?.find((a: any) => 
+            a.name.startsWith('extension-')
+          );
+          
+          artifact = prodArtifact || devArtifact || anyExtensionArtifact;
+        }
+      } catch (artifactError) {
+        // Artifact fetch failed, but we can still show version info
+        console.warn('Failed to fetch artifacts:', artifactError);
       }
+
+      // Build download URL - link to workflow run page where user can download artifacts
+      const downloadUrl = `https://github.com/${GITHUB_REPO}/actions/runs/${latestRun.id}`;
 
       setUpdateAvailable({
         version: latestVersion,
-        downloadUrl: `https://github.com/${GITHUB_REPO}/actions/runs/${latestRun.id}`,
-        releaseNotes: commitMessage || 'Check GitHub Actions for details'
+        downloadUrl,
+        releaseNotes: commitMessage || 'Check GitHub Actions for details',
+        artifactName: artifact?.name || undefined
       });
     } catch (error) {
       console.error('Update check failed:', error);
-      setUpdateError(error instanceof Error ? error.message : 'Failed to check for updates');
+      const errorMessage = error instanceof Error ? error.message : 'Failed to check for updates';
+      setUpdateError(errorMessage);
+      // Don't show error for 404/403 - these are expected for private repos or missing workflows
+      if (errorMessage.includes('not found') || errorMessage.includes('Access denied')) {
+        setUpdateMessage('Update checking is not available. You can manually check for updates in the GitHub repository.');
+      }
     } finally {
       setUpdateChecking(false);
     }
