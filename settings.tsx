@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { Settings, MCPServerConfig, SiteInstruction } from './types';
+import { DEFAULT_SITE_INSTRUCTIONS } from './default-site-instructions';
 import {
   fetchTrustedBusinesses,
   searchBusinesses,
@@ -140,7 +141,35 @@ function SettingsPage() {
     // Load settings from chrome.storage
     chrome.storage.local.get(['atlasSettings'], (result) => {
       if (result.atlasSettings) {
-        setSettings(result.atlasSettings);
+        const loadedSettings = result.atlasSettings;
+
+        // Merge default site instructions with user's custom ones
+        const userInstructions = loadedSettings.siteInstructions || [];
+        const userInstructionIds = new Set(userInstructions.map((i: SiteInstruction) => i.id));
+
+        // Add default instructions that don't already exist
+        const defaultsToAdd = DEFAULT_SITE_INSTRUCTIONS.filter(
+          (defaultInst) => !userInstructionIds.has(defaultInst.id)
+        );
+
+        const mergedInstructions = [...defaultsToAdd, ...userInstructions];
+
+        setSettings({
+          ...loadedSettings,
+          siteInstructions: mergedInstructions
+        });
+      } else {
+        // First time setup - include defaults
+        setSettings({
+          provider: 'anthropic',
+          apiKey: '',
+          model: 'claude-sonnet-4-5-20250929',
+          toolMode: 'tool-router',
+          composioApiKey: '',
+          mcpEnabled: false,
+          mcpServers: [],
+          siteInstructions: DEFAULT_SITE_INSTRUCTIONS,
+        });
       }
     });
   }, []);

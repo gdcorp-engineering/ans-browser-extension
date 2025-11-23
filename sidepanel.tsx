@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import type { Settings, MCPClient, Message } from './types';
+import type { Settings, MCPClient, Message, SiteInstruction } from './types';
 import { GeminiResponseSchema } from './types';
 import { experimental_createMCPClient, stepCountIs } from 'ai';
 import { streamAnthropic } from './anthropic-service';
@@ -11,6 +11,7 @@ import { getMCPService, resetMCPService } from './mcp-service';
 import { getA2AService, resetA2AService } from './a2a-service';
 import { getToolDescription, mergeToolDefinitions } from './mcp-tool-router';
 import { findAgentForCurrentSite, agentNameToDomain } from './site-detector';
+import { DEFAULT_SITE_INSTRUCTIONS } from './default-site-instructions';
 
 // Model ID to display name mapping
 const MODEL_DISPLAY_NAMES: Record<string, string> = {
@@ -369,7 +370,25 @@ function ChatSidebar() {
   const loadSettings = async (forceRefresh = false) => {
     chrome.storage.local.get(['atlasSettings'], async (result) => {
       if (result.atlasSettings) {
-        setSettings(result.atlasSettings);
+        const loadedSettings = result.atlasSettings;
+
+        // Merge default site instructions with user's custom ones
+        const userInstructions = loadedSettings.siteInstructions || [];
+        const userInstructionIds = new Set(userInstructions.map((i: SiteInstruction) => i.id));
+
+        // Add default instructions that don't already exist
+        const defaultsToAdd = DEFAULT_SITE_INSTRUCTIONS.filter(
+          (defaultInst) => !userInstructionIds.has(defaultInst.id)
+        );
+
+        const mergedInstructions = [...defaultsToAdd, ...userInstructions];
+
+        const mergedSettings = {
+          ...loadedSettings,
+          siteInstructions: mergedInstructions
+        };
+
+        setSettings(mergedSettings);
 
         const settingsHash = JSON.stringify(result.atlasSettings);
         const hasSettingsChanged = forceRefresh || settingsHash !== settingsHashRef.current;
