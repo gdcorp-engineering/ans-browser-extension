@@ -2,7 +2,7 @@
 import { z } from 'zod';
 
 export type ToolMode = 'tool-router';
-export type Provider = 'google' | 'anthropic' | 'openai';
+export type Provider = 'anthropic';
 
 export type ProtocolType = 'mcp' | 'a2a';
 
@@ -84,6 +84,31 @@ export interface PageContext {
     id: string;
     action: string;
     inputs: Array<{ name: string; type: string }>
+  }>;
+  interactiveElements?: Array<{
+    tag: string;
+    text: string;
+    value?: string;
+    selector: string;
+    type?: string;
+    ariaLabel?: string;
+    visible: boolean;
+    priority?: number;
+    bounds?: { x: number; y: number; width: number; height: number };
+    inModal?: boolean;
+  }>;
+  searchInputs?: Array<{
+    selector: string;
+    type: string;
+    id: string;
+    name: string;
+    placeholder: string;
+    'aria-label': string | null;
+    'data-automation-id': string | null;
+    role: string | null;
+    className: string;
+    visible: boolean;
+    dimensions: { width: number; height: number; top: number; left: number };
   }>;
   metadata: {
     description?: string;

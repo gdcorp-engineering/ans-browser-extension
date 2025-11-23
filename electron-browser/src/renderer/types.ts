@@ -18,7 +18,7 @@ export interface Message {
 }
 
 export interface Settings {
-  provider?: 'google' | 'anthropic' | 'openai';
+  provider?: 'anthropic';
   googleApiKey: string;
   composioApiKey?: string;
   model: string;
@@ -58,7 +58,7 @@ export const MessageSchema = z.object({
 export const ChatHistorySchema = z.array(MessageSchema);
 
 export const SettingsSchema = z.object({
-  provider: z.enum(['google', 'anthropic', 'openai']).optional(),
+  provider: z.enum(['anthropic']).optional(),
   googleApiKey: z.string(),
   composioApiKey: z.string().optional(),
   model: z.string(),

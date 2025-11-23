@@ -419,6 +419,22 @@ function ChatSidebar() {
   const [trustedAgentOptIn, setTrustedAgentOptIn] = useState(true); // User opt-in for trusted agents
   const [currentSiteAgent, setCurrentSiteAgent] = useState<{ serverId: string; serverName: string } | null>(null);
   const [samplePrompts, setSamplePrompts] = useState<string[]>([]);
+
+  // Load trustedAgentOptIn from storage on mount
+  useEffect(() => {
+    chrome.storage.local.get(['trustedAgentOptIn'], (result) => {
+      console.log('Loading trustedAgentOptIn from storage:', result.trustedAgentOptIn);
+      if (result.trustedAgentOptIn !== undefined) {
+        setTrustedAgentOptIn(result.trustedAgentOptIn);
+      }
+    });
+  }, []);
+
+  // Save trustedAgentOptIn to storage whenever it changes
+  useEffect(() => {
+    console.log('Saving trustedAgentOptIn to storage:', trustedAgentOptIn);
+    chrome.storage.local.set({ trustedAgentOptIn });
+  }, [trustedAgentOptIn]);
   const abortControllerRef = useRef<AbortController | null>(null);
   const mcpClientRef = useRef<MCPClient | null>(null);
   const mcpToolsRef = useRef<Record<string, unknown> | null>(null);
@@ -436,6 +452,7 @@ function ChatSidebar() {
   const activeStreamTabIdRef = useRef<number | null>(null); // Track which tab has an active stream
   const streamMessagesRef = useRef<Message[]>([]); // Track messages during streaming
   const streamAbortControllerRef = useRef<Record<number, AbortController>>({}); // Track abort controllers per tab
+  const lastTypedSelectorRef = useRef<string | null>(null); // Store last typed selector for Enter key (from PR #7)
 
   // Helper function to notify background script about agent mode status
   const notifyAgentModeStatus = (isActive: boolean, tabId: number | null) => {
@@ -493,8 +510,10 @@ function ChatSidebar() {
           coordinates: parameters.x !== undefined ? { x: parameters.x, y: parameters.y } : undefined
         }, handleResponse);
       } else if (toolName === 'type') {
-        chrome.runtime.sendMessage({ 
-          type: 'EXECUTE_ACTION', 
+        // Store the selector for later use with pressKey
+        lastTypedSelectorRef.current = parameters.selector;
+        chrome.runtime.sendMessage({
+          type: 'EXECUTE_ACTION',
           action: 'fill',
           target: parameters.selector,
           value: parameters.text
@@ -536,10 +555,13 @@ function ChatSidebar() {
           maxResults: parameters.maxResults
         }, handleResponse);
       } else if (toolName === 'pressKey') {
-        chrome.runtime.sendMessage({ 
-          type: 'EXECUTE_ACTION', 
+        // Use provided selector or fall back to last typed selector
+        const selectorToUse = parameters.selector || lastTypedSelectorRef.current;
+        chrome.runtime.sendMessage({
+          type: 'EXECUTE_ACTION',
           action: 'press_key',
-          key: parameters.key
+          key: parameters.key,
+          selector: selectorToUse // Pass selector to ensure correct element has focus
         }, handleResponse);
       } else if (toolName === 'clearInput') {
         chrome.runtime.sendMessage({ 
@@ -3070,10 +3092,16 @@ TASK COMPLETION REQUIREMENTS:
       case 'type_text':
       case 'keyboard_input':
       case 'input_text':
-        return await executeTool('type', { 
-          selector: 'input:focus, textarea:focus, [contenteditable="true"]:focus', 
+        const typeSelector = args.selector || 'input:focus, textarea:focus, [contenteditable="true"]:focus';
+        const typeResult = await executeTool('type', {
+          selector: typeSelector,
           text: args.text || args.input || args.content
         });
+
+        // Note: Enter key is now automatically pressed immediately after typing
+        // for search inputs (happens in content script without losing focus)
+
+        return typeResult;
       
       case 'scroll':
       case 'scroll_down':
@@ -3123,10 +3151,10 @@ TASK COMPLETION REQUIREMENTS:
       
       case 'press_key':
       case 'key_press':
+      case 'pressKey':
         // Handle special keys like Enter, Tab, etc.
-        return await executeTool('type', { 
-          selector: 'input:focus, textarea:focus, [contenteditable="true"]:focus', 
-          text: args.key || args.keyCode
+        return await executeTool('pressKey', {
+          key: args.key || args.keyCode || 'Enter'
         });
       
       case 'type_text_at':
@@ -3155,7 +3183,7 @@ TASK COMPLETION REQUIREMENTS:
         }
 
         // Use keyboard_type action which simulates actual keyboard typing
-        const typeResult = await new Promise<any>((resolve) => {
+        const keyboardTypeResult = await new Promise<any>((resolve) => {
           chrome.runtime.sendMessage(
             {
               type: 'EXECUTE_ACTION',
@@ -3174,7 +3202,7 @@ TASK COMPLETION REQUIREMENTS:
           await executeTool('pressKey', { key: 'Enter' });
         }
 
-        return typeResult;
+        return keyboardTypeResult;
       
       case 'key_combination':
         // Press keyboard key combinations like ["Control", "A"] or ["Enter"]
@@ -4875,25 +4903,30 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
       {settings?.provider && settings?.model && (
         <div style={{
           padding: '8px 16px',
-          background: currentSiteAgent ? '#dcfce7' : '#f3f4f6',
-          borderBottom: currentSiteAgent ? '1px solid #86efac' : '1px solid #d1d5db',
+          background: (currentSiteAgent && trustedAgentOptIn) ? '#dcfce7' : '#f3f4f6',
+          borderBottom: (currentSiteAgent && trustedAgentOptIn) ? '1px solid #86efac' : '1px solid #d1d5db',
           fontSize: '13px',
-          color: currentSiteAgent ? '#166534' : '#6b7280',
+          color: (currentSiteAgent && trustedAgentOptIn) ? '#166534' : '#6b7280',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '16px' }}>{currentSiteAgent ? '✓' : '○'}</span>
+            <span style={{ fontSize: '16px' }}>{(currentSiteAgent && trustedAgentOptIn) ? '✓' : '○'}</span>
             <span>
-              {currentSiteAgent
+              {(currentSiteAgent && trustedAgentOptIn)
                 ? `Trusted agent available: ${agentNameToDomain(currentSiteAgent.serverName)}`
                 : 'Trusted agent not available'}
             </span>
           </div>
           {currentSiteAgent && (
             <button
-              onClick={() => setTrustedAgentOptIn(!trustedAgentOptIn)}
+              onClick={() => {
+                console.log('Opt In button clicked. Current state:', trustedAgentOptIn);
+                const newState = !trustedAgentOptIn;
+                console.log('Setting new state:', newState);
+                setTrustedAgentOptIn(newState);
+              }}
               style={{
                 padding: '4px 12px',
                 fontSize: '12px',
@@ -4904,7 +4937,7 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
                 cursor: 'pointer',
                 fontWeight: '500',
               }}
-              title={trustedAgentOptIn ? 'Click to use Claude/Gemini instead' : 'Click to use trusted agent'}
+              title={trustedAgentOptIn ? 'Click to opt out and use Claude/Gemini instead' : 'Click to opt in and use trusted agent'}
             >
               {trustedAgentOptIn ? 'Opted In' : 'Opt In'}
             </button>

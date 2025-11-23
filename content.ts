@@ -1146,6 +1146,30 @@ function extractPageContext(): PageContext {
   // Add flag to page context indicating modals are present (prevents screenshot fallback)
   const hasActiveModals = modals.some(m => m.isVisible && m.interactiveElements > 0);
 
+  // Find all search-related inputs for debugging (from PR #7)
+  const searchInputs = Array.from(
+    document.querySelectorAll('input[type="search"], input[type="text"]')
+  )
+    .map(el => {
+      const input = el as HTMLInputElement;
+      const rect = input.getBoundingClientRect();
+      return {
+        selector: getElementSelector(input),
+        type: input.type,
+        id: input.id,
+        name: input.name,
+        placeholder: input.placeholder,
+        'aria-label': input.getAttribute('aria-label'),
+        'data-automation-id': input.getAttribute('data-automation-id'),
+        role: input.getAttribute('role'),
+        className: input.className,
+        visible: rect.width > 0 && rect.height > 0 && rect.top >= 0,
+        dimensions: { width: rect.width, height: rect.height, top: rect.top, left: rect.left }
+      };
+    })
+    .filter(input => input.visible)
+    .slice(0, 10); // Limit to first 10 visible inputs
+
   return {
     url: window.location.href,
     title: document.title,
@@ -1154,6 +1178,7 @@ function extractPageContext(): PageContext {
     images,
     forms,
     interactiveElements,
+    searchInputs, // NEW: List of all visible search/text inputs for debugging (from PR #7)
     metadata: {
       description: getMetaContent('description') || getMetaContent('og:description'),
       keywords: getMetaContent('keywords'),
@@ -1183,11 +1208,122 @@ function extractPageContext(): PageContext {
   };
 }
 
+// Helper function to dispatch complete, realistic click event sequence
+function dispatchClickSequence(element: HTMLElement, x: number, y: number): void {
+  console.log('🖱️  Dispatching complete click sequence...');
+  console.log('🎯 Target element:', {
+    tag: element.tagName,
+    id: element.id,
+    className: element.className,
+    type: (element as any).type,
+    disabled: (element as any).disabled,
+    readOnly: (element as any).readOnly,
+    'pointer-events': window.getComputedStyle(element).pointerEvents,
+    visibility: window.getComputedStyle(element).visibility,
+    display: window.getComputedStyle(element).display,
+    zIndex: window.getComputedStyle(element).zIndex
+  });
+
+  // Check if element is actually clickable at this position
+  const topElement = document.elementFromPoint(x, y);
+  if (topElement !== element) {
+    console.warn('⚠️  Element at coordinates is different from target!');
+    console.warn('   Target:', element.tagName, element.className);
+    console.warn('   Actual top element:', topElement?.tagName, (topElement as HTMLElement)?.className);
+    console.warn('   There might be an overlay or the element is not the topmost at these coordinates');
+  }
+
+  // Check for click event listeners
+  const hasClickListeners = (element as any).onclick ||
+                           element.getAttribute('onclick') ||
+                           element.hasAttribute('ng-click') ||
+                           element.hasAttribute('@click') ||
+                           element.hasAttribute('v-on:click');
+  console.log('🎧 Has click listeners/handlers:', hasClickListeners ? 'Yes' : 'Unknown (may use addEventListener)');
+
+  // Try NATIVE click first (generates trusted events)
+  console.log('1️⃣ Attempting native element.click()...');
+  try {
+    element.click();
+    console.log('✅ Native click executed');
+  } catch (error) {
+    console.error('❌ Native click failed:', error);
+  }
+
+  // If it's a clickable parent, try clicking the actual interactive child
+  const interactiveChild = element.querySelector('button, a, input, [role="button"], [onclick]') as HTMLElement;
+  if (interactiveChild && interactiveChild !== element) {
+    console.log('2️⃣ Found interactive child, clicking it...');
+    console.log('   Child:', interactiveChild.tagName, interactiveChild.className);
+    try {
+      interactiveChild.click();
+      console.log('✅ Child click executed');
+    } catch (error) {
+      console.error('❌ Child click failed:', error);
+    }
+  }
+
+  // Dispatch synthetic events as additional attempt
+  console.log('3️⃣ Dispatching synthetic events...');
+  const eventOptions = {
+    bubbles: true,
+    cancelable: true,
+    view: window,
+    clientX: x,
+    clientY: y,
+    screenX: x,
+    screenY: y,
+    button: 0,
+    buttons: 1,
+    detail: 1,
+    composed: true
+  };
+
+  const pointerOptions = {
+    ...eventOptions,
+    pointerId: 1,
+    width: 1,
+    height: 1,
+    pressure: 0.5,
+    tangentialPressure: 0,
+    tiltX: 0,
+    tiltY: 0,
+    twist: 0,
+    pointerType: 'mouse',
+    isPrimary: true
+  };
+
+  try {
+    // Complete event sequence on the element
+    element.dispatchEvent(new PointerEvent('pointerdown', pointerOptions));
+    element.dispatchEvent(new MouseEvent('mousedown', eventOptions));
+
+    // Small delay to simulate real mouse timing
+    setTimeout(() => {
+      element.dispatchEvent(new PointerEvent('pointerup', { ...pointerOptions, buttons: 0 }));
+      element.dispatchEvent(new MouseEvent('mouseup', { ...eventOptions, buttons: 0 }));
+      element.dispatchEvent(new PointerEvent('click', { ...pointerOptions, buttons: 0 }));
+      element.dispatchEvent(new MouseEvent('click', { ...eventOptions, buttons: 0 }));
+      console.log('✅ Synthetic events dispatched with delay');
+    }, 50);
+
+    // Also try dispatching on the top element if different
+    if (topElement && topElement !== element) {
+      console.log('4️⃣ Also trying to click top element at coordinates...');
+      (topElement as HTMLElement).click();
+    }
+
+    console.log('✅ All click attempts completed');
+  } catch (error) {
+    console.error('❌ Error dispatching events:', error);
+  }
+}
+
 // Execute actions on the page
 function executePageAction(
-  action: string, 
-  target?: string, 
-  value?: string, 
+  action: string,
+  target?: string,
+  value?: string,
   selector?: string,
   coordinates?: { x: number; y: number },
   direction?: string,
@@ -1259,16 +1395,8 @@ function executePageAction(
           const clickX = rect.left + rect.width / 2;
           const clickY = rect.top + rect.height / 2;
 
-          ['mousedown', 'mouseup', 'click'].forEach(eventType => {
-            const event = new MouseEvent(eventType, {
-              bubbles: true,
-              cancelable: true,
-              view: window,
-              clientX: clickX,
-              clientY: clickY
-            });
-            element!.dispatchEvent(event);
-          });
+          // Use complete click sequence for better compatibility
+          dispatchClickSequence(element, clickX, clickY);
 
           // Visual feedback
           highlightElement(element, coordinates || { x: clickX, y: clickY });
@@ -1290,31 +1418,95 @@ function executePageAction(
           console.log(`📏 Viewport size: ${window.innerWidth}x${window.innerHeight}`);
           console.log(`📏 Device pixel ratio: ${window.devicePixelRatio}`);
           console.log(`📜 Document scroll: x=${window.scrollX}, y=${window.scrollY}`);
+          console.log(`🖥️  Window size: ${window.outerWidth}x${window.outerHeight}`);
+          console.log(`📱 Screen size: ${screen.width}x${screen.height}`);
 
-          // Add visual debug marker at click coordinates
+          // Add visual debug marker at click coordinates with crosshairs
           const debugMarker = document.createElement('div');
           debugMarker.style.cssText = `
             position: fixed;
             left: ${coordinates.x}px;
             top: ${coordinates.y}px;
-            width: 20px;
-            height: 20px;
-            background: red;
-            border: 3px solid yellow;
+            width: 30px;
+            height: 30px;
+            background: rgba(255, 0, 0, 0.3);
+            border: 3px solid red;
             border-radius: 50%;
             z-index: 999999;
             pointer-events: none;
             transform: translate(-50%, -50%);
           `;
           document.body.appendChild(debugMarker);
-          setTimeout(() => debugMarker.remove(), 3000);
+
+          // Add crosshair lines
+          const crosshairV = document.createElement('div');
+          crosshairV.style.cssText = `
+            position: fixed;
+            left: ${coordinates.x}px;
+            top: 0;
+            width: 2px;
+            height: 100vh;
+            background: rgba(255, 0, 0, 0.5);
+            z-index: 999998;
+            pointer-events: none;
+          `;
+          document.body.appendChild(crosshairV);
+
+          const crosshairH = document.createElement('div');
+          crosshairH.style.cssText = `
+            position: fixed;
+            left: 0;
+            top: ${coordinates.y}px;
+            width: 100vw;
+            height: 2px;
+            background: rgba(255, 0, 0, 0.5);
+            z-index: 999998;
+            pointer-events: none;
+          `;
+          document.body.appendChild(crosshairH);
+
+          // Add coordinate label
+          const label = document.createElement('div');
+          label.style.cssText = `
+            position: fixed;
+            left: ${coordinates.x + 20}px;
+            top: ${coordinates.y - 30}px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-family: monospace;
+            z-index: 999999;
+            pointer-events: none;
+          `;
+          label.textContent = `(${coordinates.x}, ${coordinates.y})`;
+          document.body.appendChild(label);
+
+          setTimeout(() => {
+            debugMarker.remove();
+            crosshairV.remove();
+            crosshairH.remove();
+            label.remove();
+          }, 5000);
 
           let element = document.elementFromPoint(coordinates.x, coordinates.y) as HTMLElement;
           console.log(`🎯 Element at coordinates:`, element?.tagName, element?.className);
 
           if (element) {
             const rect = element.getBoundingClientRect();
-            console.log(`📦 Element bounds: left=${Math.round(rect.left)}, top=${Math.round(rect.top)}, width=${Math.round(rect.width)}, height=${Math.round(rect.height)}`);
+            console.log(`📦 Element bounds:`, {
+              left: rect.left,
+              top: rect.top,
+              right: rect.right,
+              bottom: rect.bottom,
+              width: rect.width,
+              height: rect.height
+            });
+            console.log(`📍 Click offset from element center:`, {
+              dx: coordinates.x - (rect.left + rect.width / 2),
+              dy: coordinates.y - (rect.top + rect.height / 2)
+            });
           }
 
           // If element is an input or near an input, try to find the actual input field
@@ -1388,24 +1580,8 @@ function executePageAction(
             // Get element position for logging
             const rect = element.getBoundingClientRect();
 
-            // Dispatch full mouse event sequence
-            ['mousedown', 'mouseup', 'click'].forEach(eventType => {
-              const event = new MouseEvent(eventType, {
-                bubbles: true,
-                cancelable: true,
-                view: window,
-                clientX: coordinates.x,
-                clientY: coordinates.y
-              });
-              element.dispatchEvent(event);
-            });
-
-            // If it's an input field, explicitly focus it
-            if (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA' ||
-                element.getAttribute('contenteditable') === 'true') {
-              console.log(`💡 Focusing input field: ${element.tagName}`);
-              element.focus();
-            }
+            // Use complete click sequence for better compatibility
+            dispatchClickSequence(element, coordinates.x, coordinates.y);
 
             // Visual feedback
             highlightElement(element, coordinates);
@@ -1434,29 +1610,39 @@ function executePageAction(
           const textToType = value; // Capture value to preserve type narrowing
           let element: HTMLElement | null = null;
 
+          console.log('🔍 fill action - target selector:', target);
+
           // Try to find element by selector if provided
           if (target && !target.includes(':focus')) {
             element = document.querySelector(target) as HTMLElement;
+            if (element) {
+              console.log('✅ Found element by selector:', target);
+            } else {
+              console.log('❌ No element found with selector:', target);
+            }
           }
 
           // If no element found or selector was for focused elements, use the currently focused element
           if (!element) {
             element = document.activeElement as HTMLElement;
+            console.log('🎯 Using currently focused element:', element?.tagName);
           }
 
           // If element is BODY (nothing focused), try to find a visible search/text input
           if (element && element.tagName === 'BODY') {
             console.log('💡 Nothing focused, searching for visible input field...');
 
-            // Try to find common search input selectors
+            // Try to find common search input selectors (prioritize main search over autocomplete)
             const searchSelectors = [
+              'input[type="search"][data-automation-id*="searchBox"]', // Workday main search
+              'input[type="search"]:not([role="combobox"])', // Search inputs that aren't autocomplete
               'input[type="search"]',
-              'input[name*="search" i]',
-              'input[id*="search" i]',
-              'input[placeholder*="search" i]',
-              'input[aria-label*="search" i]',
+              'input[name*="search" i]:not([role="combobox"])',
+              'input[id*="search" i]:not([role="combobox"])',
+              'input[placeholder*="search" i]:not([role="combobox"])',
+              'input[aria-label*="search" i]:not([role="combobox"])',
               'input[type="text"][name="q"]', // Common search param
-              'input[type="text"]:not([type="hidden"])', // Any visible text input
+              'input[type="text"]:not([type="hidden"]):not([role="combobox"])', // Any visible text input that's not autocomplete
             ];
 
             for (const selector of searchSelectors) {
@@ -1473,6 +1659,23 @@ function executePageAction(
                 break;
               }
             }
+          }
+
+          // Log details about the element we found
+          if (element && element.tagName === 'INPUT') {
+            const inputEl = element as HTMLInputElement;
+            console.log('📋 Selected input details:', {
+              tagName: inputEl.tagName,
+              type: inputEl.type,
+              id: inputEl.id,
+              name: inputEl.name,
+              className: inputEl.className,
+              placeholder: inputEl.placeholder,
+              'aria-label': inputEl.getAttribute('aria-label'),
+              'data-automation-id': inputEl.getAttribute('data-automation-id'),
+              role: inputEl.getAttribute('role'),
+              value: inputEl.value
+            });
           }
 
           if (element && (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA' ||
@@ -1536,9 +1739,64 @@ function executePageAction(
                     // Trigger all necessary events for React/Vue/Angular apps
                     inputElement.dispatchEvent(new Event('input', { bubbles: true }));
                     inputElement.dispatchEvent(new Event('change', { bubbles: true }));
-                    inputElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-                    inputElement.dispatchEvent(new KeyboardEvent('keypress', { key: 'Enter', bubbles: true }));
-                    inputElement.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', bubbles: true }));
+
+                    // Check if this is a search input - if so, press Enter immediately
+                    const isSearchInput = target?.includes('search') ||
+                                         inputElement.type === 'search' ||
+                                         inputElement.name?.toLowerCase().includes('search') ||
+                                         inputElement.id?.toLowerCase().includes('search') ||
+                                         inputElement.placeholder?.toLowerCase().includes('search') ||
+                                         inputElement.getAttribute('aria-label')?.toLowerCase().includes('search');
+
+                    // Exclude autocomplete/combobox inputs (those are dropdowns, not search boxes)
+                    const isCombobox = inputElement.getAttribute('role') === 'combobox';
+
+                    if (isSearchInput && !isCombobox) {
+                      console.log('   🔍 Search input detected - pressing Enter immediately');
+                      console.log('   📋 Pressing Enter on:', {
+                        id: inputElement.id,
+                        name: inputElement.name,
+                        type: inputElement.type,
+                        'data-automation-id': inputElement.getAttribute('data-automation-id'),
+                        placeholder: inputElement.placeholder
+                      });
+
+                      // Dispatch Enter key events with all required properties
+                      const enterKeyInit: KeyboardEventInit = {
+                        key: 'Enter',
+                        code: 'Enter',
+                        keyCode: 13,
+                        which: 13,
+                        bubbles: true,
+                        cancelable: true,
+                        composed: true
+                      };
+
+                      inputElement.dispatchEvent(new KeyboardEvent('keydown', enterKeyInit));
+                      inputElement.dispatchEvent(new KeyboardEvent('keypress', enterKeyInit));
+                      inputElement.dispatchEvent(new KeyboardEvent('keyup', enterKeyInit));
+
+                      // Try to submit the form
+                      const form = inputElement.closest('form');
+                      if (form) {
+                        // Try clicking submit button first (more realistic)
+                        const submitBtn = form.querySelector('button[type="submit"], input[type="submit"]') as HTMLElement;
+                        if (submitBtn) {
+                          console.log('   ✓ Clicking submit button');
+                          submitBtn.click();
+                        } else {
+                          console.log('   ✓ Submitting form');
+                          form.submit();
+                        }
+                      } else {
+                        // No form - try to find nearby search/submit button
+                        const nearbyButton = document.querySelector('button[type="submit"], button[aria-label*="search" i], button[aria-label*="submit" i]') as HTMLElement;
+                        if (nearbyButton) {
+                          console.log('   ✓ Clicking nearby search button');
+                          nearbyButton.click();
+                        }
+                      }
+                    }
 
 
                   } else if (element!.getAttribute('contenteditable') === 'true') {
@@ -1751,14 +2009,77 @@ function executePageAction(
         return { success: false, message: 'Value required for keyboard_type action' };
 
       case 'press_key':
-        // Press a specific key on the currently focused element
+      case 'pressKey':
+        // Press a specific key on the currently focused element or specified selector
         const keyToPress = (key || value || target || 'Enter') as string;
-        const focusedElement = document.activeElement;
+
+        // If a selector is provided, find and focus that element first
+        let focusedElement = document.activeElement;
+        if (selector || target) {
+          const targetElement = document.querySelector(selector || target!) as HTMLElement;
+          if (targetElement) {
+            targetElement.focus();
+            focusedElement = targetElement;
+            console.log('   ✓ Re-focused element:', selector || target);
+          }
+        }
 
         if (focusedElement) {
+          // Special handling for Enter key - actually submit the form
+          if (keyToPress === 'Enter') {
+            // First try dispatching keyboard events with all required properties for Chrome
+            const keyEventInit: KeyboardEventInit = {
+              key: 'Enter',
+              code: 'Enter',
+              keyCode: 13,
+              which: 13,
+              bubbles: true,
+              cancelable: true,
+              composed: true
+            };
+
+            const keydownEvent = new KeyboardEvent('keydown', keyEventInit);
+            const keypressEvent = new KeyboardEvent('keypress', keyEventInit);
+            const keyupEvent = new KeyboardEvent('keyup', keyEventInit);
+
+            focusedElement.dispatchEvent(keydownEvent);
+            focusedElement.dispatchEvent(keypressEvent);
+            focusedElement.dispatchEvent(keyupEvent);
+
+            // If it's an input field, try to submit the parent form
+            if (focusedElement instanceof HTMLInputElement || focusedElement instanceof HTMLTextAreaElement) {
+              const form = focusedElement.closest('form');
+              if (form) {
+                // Try clicking submit button first (more realistic)
+                const submitBtn = form.querySelector('button[type="submit"], input[type="submit"]') as HTMLElement;
+                if (submitBtn) {
+                  console.log('   ✓ Clicking submit button');
+                  submitBtn.click();
+                  return { success: true, message: 'Pressed Enter (clicked submit button)' };
+                }
+
+                // Otherwise submit the form directly
+                console.log('   ✓ Submitting form');
+                form.submit();
+                return { success: true, message: 'Pressed Enter (submitted form)' };
+              }
+
+              // If no form, try to find and click a nearby search/submit button
+              const nearbyButton = document.querySelector('button[type="submit"], button[aria-label*="search" i], button[aria-label*="submit" i]') as HTMLElement;
+              if (nearbyButton) {
+                console.log('   ✓ Clicking nearby submit button');
+                nearbyButton.click();
+                return { success: true, message: 'Pressed Enter (clicked search button)' };
+              }
+            }
+
+            return { success: true, message: 'Pressed Enter key' };
+          }
+
+          // For other keys, dispatch normal keyboard events
           const keyEventInit: KeyboardEventInit = {
             key: keyToPress,
-            code: keyToPress === 'Enter' ? 'Enter' : keyToPress === 'Tab' ? 'Tab' : keyToPress === 'Escape' ? 'Escape' : `Key${keyToPress}`,
+            code: keyToPress === 'Tab' ? 'Tab' : keyToPress === 'Escape' ? 'Escape' : `Key${keyToPress}`,
             bubbles: true,
             cancelable: true
           };

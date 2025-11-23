@@ -38,7 +38,7 @@ export default function NavBar({
     >
       {/* Left side - Brand/Logo */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-        <span style={{ fontSize: '14px', fontWeight: 600, color: '#1a1a1a' }}>Atlas</span>
+        <span style={{ fontSize: '14px', fontWeight: 600, color: '#1a1a1a' }}>GoDaddy ANS Desktop</span>
       </div>
 
       {/* Center - Browser Controls (only show in chat mode when browser is visible) */}
