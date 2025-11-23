@@ -11,87 +11,53 @@ export const DEFAULT_SITE_INSTRUCTIONS: SiteInstruction[] = [
     enabled: true,
     instructions: `CORE PRINCIPLES:
 - Always use labeled buttons or accessible roles — avoid coordinates
-- Wait for success indicators like toast messages, updated status chips, or URL changes
+- Wait for success indicators like toast messages, status changes, or URL changes
 - Verify actions succeeded before reporting "done"
-- Use screenshots when uncertain and ask for user confirmation
-- Never modify fields outside the intended scope
 - ALL navigation must happen in the SAME TAB — never open new tabs or windows
 
-JIRA WORKFLOWS:
+TOP 3 ATLASSIAN TASKS:
 
-CREATE NEW ISSUE:
-1. Press 'c' keyboard shortcut or click "Create" button
-2. Wait for Create Issue dialog
-3. Select Project
-4. Select Issue Type
-5. Fill Summary and Description
-6. Click Create
-7. Wait for success toast with issue key
-8. Capture and confirm issue key
+1. CREATE A JIRA ISSUE
+Why: Most frequent workflow for developers, PMs, and support teams
+User says: "Create a Jira ticket" / "Open a new bug" / "Log a task"
 
-SEARCH FOR ISSUE:
-1. Use '/' quick search or click Search bar
-2. Type issue key or keyword
-3. Press Enter and wait for results
-4. Click desired issue link
-5. Capture issue details
+Steps:
+1. Navigate to Jira home or any board
+2. Click Create or press 'c' keyboard shortcut
+3. Fill Project, Issue Type, Summary, Description, optional Assignee and Labels
+4. Click Create
+5. Wait for toast confirming creation
+6. Capture issue key
 
-UPDATE ISSUE FIELDS:
-1. Open issue view
-2. Click Status field → choose new status
-3. For Assignee: click and type new name
-4. For Description: click editor, update, click Save or Update button
-5. Wait for refresh and confirm changes visible
+Output: Created issue with key in specified project
 
-ADD COMMENT:
-1. Scroll to Comments section
-2. Click "Add comment"
-3. Type message
-4. Click Save
-5. Confirm comment appears
+2. SEARCH / FIND JIRA ISSUES
+Why: Users constantly need to look up tickets by key, keyword, or ownership
+User says: "Find issue KEY-123" / "Show my open bugs" / "Search issues mentioning login"
 
-TRANSITION WORKFLOW:
-1. Open issue
-2. Click Status chip or button
-3. Choose next workflow step
-4. Fill required fields if confirmation form appears
-5. Wait for new status chip to appear
+Steps:
+1. Use '/' to open search bar
+2. If issue key provided, search for the key directly
+3. Otherwise, type keyword or JQL query
+4. Press Enter and wait for results
+5. Extract result rows with issue keys, summaries, links, and statuses
+6. Return findings
 
-CONFLUENCE WORKFLOWS:
+Output: List of matching issues with keys, summaries, and current status
 
-CREATE NEW PAGE:
-1. From Space or parent page, click "Create"
-2. Select page type
-3. Fill Title and Body content
-4. Use slash commands for structure if needed
-5. Click "Publish"
-6. Wait for "Published" toast and capture page URL
+3. UPDATE ISSUE OR ADD COMMENT
+Why: Teams need to track progress and communicate on issues
+User says: "Update status to In Progress" / "Add comment to issue" / "Change assignee"
 
-EDIT EXISTING PAGE:
-1. Open page URL
-2. Click "Edit" button
-3. Modify text or layout
-4. Click "Update"
-5. Wait for toast and verify timestamp changed
+Steps:
+1. Open issue by navigating to issue key
+2. For status: Click Status field and choose new status
+3. For assignee: Click Assignee field and type new name
+4. For comment: Scroll to Comments section, click Add comment, type message, click Save
+5. For description: Click Description field, edit, click Save or Update
+6. Wait for confirmation and verify change is visible
 
-SEARCH FOR PAGE:
-1. Click Search icon
-2. Enter title or keyword
-3. Filter by space if needed
-4. Click result to open
-5. Capture URL and metadata
-
-ADD COMMENT:
-1. Scroll to bottom
-2. Click "Add comment"
-3. Type comment
-4. Click Save
-5. Confirm comment appears below content
-
-EXTRACT/SUMMARIZE:
-1. Locate main content block
-2. Extract visible text
-3. Summarize key sections`
+Output: Confirmed change with updated field value`
   },
   {
     id: 'default-workday',
