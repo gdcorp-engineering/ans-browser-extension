@@ -142,6 +142,7 @@ The original repository was a **ChatGPT Atlas alternative** - an open-source bro
 - `.github/workflows/build-publish-promote.yml` - CI/CD pipeline
 - `enterprise-policy.json` - Chrome Enterprise policy configuration
 - `deploy/` directory - Deployment artifacts
+- `deploy/index.html` - **Easy installation portal for employees**
 
 **Deployment Features:**
 - Multi-environment builds (Dev, Test, Prod)
@@ -150,6 +151,12 @@ The original repository was a **ChatGPT Atlas alternative** - an open-source bro
 - Katana deployment integration
 - ALB health check configuration
 - SSL certificate management
+- **Employee Self-Service Portal**: HTML-based installation page deployed via Katana
+  - One-click download of extension ZIP
+  - Visual step-by-step installation guide
+  - Platform-specific instructions (Windows/Mac/Linux)
+  - Built-in troubleshooting
+  - Accessible via Katana URL (e.g., `https://ans-extension-dev.onkatana.net`)
 
 **Documentation:**
 - `ENTERPRISE_DEPLOYMENT.md` - Enterprise deployment guide
@@ -318,6 +325,22 @@ The original repository was a **ChatGPT Atlas alternative** - an open-source bro
 - SSL/TLS setup
 - Container configuration
 
+#### `deploy/index.html`
+**Purpose**: Easy installation portal for employees
+**Key Features:**
+- **One-Click Download**: Direct download button for extension ZIP file
+- **Visual Step-by-Step Guide**: Interactive HTML page with numbered steps
+- **Non-Technical Friendly**: Clear instructions for Windows, Mac, and Linux
+- **Auto-Open Chrome Extensions**: Button to automatically open `chrome://extensions/`
+- **Troubleshooting Section**: Built-in help for common installation issues
+- **Employee-Focused**: Designed specifically for GoDaddy employees to self-install
+
+**Benefits:**
+- Employees can install the extension without IT support
+- Reduces support tickets and installation confusion
+- Accessible via Katana-deployed URL (e.g., `https://ans-extension-dev.onkatana.net`)
+- Mobile-responsive design for viewing on any device
+
 #### `.github/workflows/build-publish-promote.yml`
 **Purpose**: CI/CD pipeline
 **Features:**
@@ -325,6 +348,7 @@ The original repository was a **ChatGPT Atlas alternative** - an open-source bro
 - ZIP packaging
 - Deployment to Katana
 - Health check validation
+- **Automatic ZIP Deployment**: Extension ZIP files automatically deployed to `deploy/downloads/` for easy employee access
 
 ### Documentation Files
 
