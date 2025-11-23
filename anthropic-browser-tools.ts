@@ -208,6 +208,8 @@ ${siteInstructionsSection}
 
 IMPORTANT: When typing in search inputs, Enter is AUTOMATICALLY pressed - you only need to call type().
 
+NAVIGATION RULE: ALL navigation must happen in the SAME TAB. Never use navigate() to open new tabs. Always navigate in the current tab.
+
 ALWAYS PREFER DOM-BASED METHODS OVER SCREENSHOTS
 
 BROWSER AUTOMATION WORKFLOW (when no MCP tool applies):

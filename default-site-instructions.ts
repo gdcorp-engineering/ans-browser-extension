@@ -15,6 +15,7 @@ export const DEFAULT_SITE_INSTRUCTIONS: SiteInstruction[] = [
 - Verify actions succeeded before reporting "done"
 - Use screenshots when uncertain and ask for user confirmation
 - Never modify fields outside the intended scope
+- ALL navigation must happen in the SAME TAB — never open new tabs or windows
 
 JIRA WORKFLOWS:
 
@@ -101,6 +102,7 @@ EXTRACT/SUMMARIZE:
 - Verify field values after typing
 - Use native click events (buttons/links are React components)
 - Wait for page transitions and loading indicators
+- ALL navigation must happen in the SAME TAB — never open new tabs or windows
 
 COMMON WORKFLOWS:
 
