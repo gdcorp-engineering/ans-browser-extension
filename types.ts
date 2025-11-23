@@ -35,6 +35,7 @@ export interface Settings {
   mcpEnabled?: boolean; // Enable custom MCP servers
   mcpServers?: MCPServerConfig[]; // List of MCP servers to connect to
   ansApiToken?: string; // ANS API authentication token (optional)
+  floatingButtonEnabled?: boolean; // Enable/disable floating button on web pages (default: true)
 }
 
 export interface ComposioSession {

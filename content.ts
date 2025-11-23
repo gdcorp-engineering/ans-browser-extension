@@ -2397,6 +2397,27 @@ let sidebarOpen = (window as any).__atlasSidebarOpen;
 function showANSFloatingButton() {
   if (sidebarOpen) return;
   
+  // Check if floating button is enabled in settings
+  chrome.storage.local.get(['atlasSettings'], (result) => {
+    const settings = result.atlasSettings;
+    const floatingButtonEnabled = settings?.floatingButtonEnabled !== false; // Default to true
+    
+    if (!floatingButtonEnabled) {
+      // Hide button if disabled
+      if (ansFloatingButton) {
+        ansFloatingButton.style.display = 'none';
+      }
+      return;
+    }
+    
+    // Show button if enabled
+    showANSFloatingButtonInternal();
+  });
+}
+
+function showANSFloatingButtonInternal() {
+  if (sidebarOpen) return;
+  
   if (ansFloatingButton) {
     ansFloatingButton.style.display = 'block';
     return;
@@ -2485,7 +2506,7 @@ function hideANSFloatingButton() {
   }
 }
 
-// Listen for sidebar state changes
+// Listen for sidebar state changes and settings updates
 chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
   if (request.type === 'SIDEBAR_OPENED') {
     sidebarOpen = true;
@@ -2493,6 +2514,9 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
   } else if (request.type === 'SIDEBAR_CLOSED') {
     sidebarOpen = false;
     showANSFloatingButton();
+  } else if (request.type === 'SETTINGS_UPDATED' && request.action === 'floating_button_changed') {
+    // Settings changed, update button visibility
+    checkSidebarStateAndUpdateButton();
   }
 });
 
@@ -2505,6 +2529,7 @@ function checkSidebarStateAndUpdateButton() {
     if (isOpen) {
       hideANSFloatingButton();
     } else {
+      // Check settings before showing
       showANSFloatingButton();
     }
   });

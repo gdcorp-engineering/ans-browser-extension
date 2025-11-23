@@ -39,6 +39,7 @@ function SettingsPage() {
     composioApiKey: '',
     mcpEnabled: false,
     mcpServers: [],
+    floatingButtonEnabled: true, // Default to enabled
   });
   const [saved, setSaved] = useState(false);
   const [showApiKey, setShowApiKey] = useState(false);
@@ -411,6 +412,31 @@ function SettingsPage() {
             >
               GoCode (Alpha) - How to Get Started
             </a>
+          </p>
+        </div>
+
+        <div className="setting-group">
+          <label style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <input
+              type="checkbox"
+              checked={settings.floatingButtonEnabled !== false}
+              onChange={(e) => {
+                const newSettings = { ...settings, floatingButtonEnabled: e.target.checked };
+                setSettings(newSettings);
+                // Auto-save and notify content scripts
+                chrome.storage.local.set({ atlasSettings: newSettings }, () => {
+                  chrome.runtime.sendMessage({ type: 'SETTINGS_UPDATED', action: 'floating_button_changed' }, () => {
+                    if (chrome.runtime.lastError) {
+                      console.log('Settings saved');
+                    }
+                  });
+                });
+              }}
+            />
+            Show Floating Button
+          </label>
+          <p className="help-text">
+            Show the "Ask GoDaddy ANS" floating button on web pages. When disabled, you can still access the sidebar via the extension icon.
           </p>
         </div>
 
