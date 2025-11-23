@@ -114,7 +114,9 @@ export async function streamAnthropicWithBrowserTools(
   onComplete: () => void,
   executeTool: (toolName: string, params: any) => Promise<any>,
   signal?: AbortSignal,
-  additionalTools?: any[] // Custom MCP tools
+  additionalTools?: any[], // Custom MCP tools
+  currentUrl?: string, // Current page URL for matching site instructions
+  siteInstructions?: string // Matched site-specific instructions
 ): Promise<void> {
   const baseUrl = customBaseUrl || 'https://api.anthropic.com';
 
@@ -180,6 +182,17 @@ Only use browser automation when:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ` : '';
 
+    const siteInstructionsSection = siteInstructions ? `
+📍 SITE-SPECIFIC INSTRUCTIONS:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Current URL: ${currentUrl}
+
+Follow these site-specific instructions when interacting with this site:
+
+${siteInstructions}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+` : '';
+
     const requestBody = {
       model,
       max_tokens: 4096,
@@ -191,6 +204,7 @@ Only use browser automation when:
       system: `You are a helpful AI assistant with browser automation capabilities. You can navigate to websites, click elements, type text, scroll pages, and take screenshots.
 
 ${mcpPrioritySection}
+${siteInstructionsSection}
 
 IMPORTANT: When typing in search inputs, Enter is AUTOMATICALLY pressed - you only need to call type().
 

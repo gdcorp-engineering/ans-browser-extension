@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
-import type { Settings, MCPServerConfig } from './types';
+import type { Settings, MCPServerConfig, SiteInstruction } from './types';
 import {
   fetchTrustedBusinesses,
   searchBusinesses,
@@ -29,12 +29,14 @@ function SettingsPage() {
     composioApiKey: '',
     mcpEnabled: false,
     mcpServers: [],
+    siteInstructions: [],
   });
   const [saved, setSaved] = useState(false);
   const [showApiKey, setShowApiKey] = useState(false);
   const [showComposioKey, setShowComposioKey] = useState(false);
   const [showAnsToken, setShowAnsToken] = useState(false);
   const [newServer, setNewServer] = useState({ name: '', url: '', apiKey: '' });
+  const [newSiteInstruction, setNewSiteInstruction] = useState({ domainPattern: '', instructions: '' });
 
   // Business Marketplace state
   const [trustedBusinesses, setTrustedBusinesses] = useState<ANSBusinessService[]>([]);
@@ -355,6 +357,46 @@ function SettingsPage() {
   // Check if business is connected
   const isBusinessConnected = (businessUrl: string): boolean => {
     return (settings.mcpServers || []).some(s => s.url === businessUrl);
+  };
+
+  // Site Instructions handlers
+  const handleAddSiteInstruction = () => {
+    if (!newSiteInstruction.domainPattern || !newSiteInstruction.instructions) return;
+
+    const siteInstruction: SiteInstruction = {
+      id: Date.now().toString(),
+      domainPattern: newSiteInstruction.domainPattern,
+      instructions: newSiteInstruction.instructions,
+      enabled: true,
+    };
+
+    setSettings({
+      ...settings,
+      siteInstructions: [...(settings.siteInstructions || []), siteInstruction],
+    });
+
+    setNewSiteInstruction({ domainPattern: '', instructions: '' });
+  };
+
+  const handleRemoveSiteInstruction = (id: string) => {
+    setSettings({
+      ...settings,
+      siteInstructions: (settings.siteInstructions || []).filter(s => s.id !== id),
+    });
+  };
+
+  const handleToggleSiteInstruction = (id: string) => {
+    const updatedInstructions = (settings.siteInstructions || []).map(s => {
+      if (s.id === id) {
+        return { ...s, enabled: !s.enabled };
+      }
+      return { ...s };
+    });
+
+    setSettings({
+      ...settings,
+      siteInstructions: updatedInstructions,
+    });
   };
 
   const handleSave = () => {
@@ -1070,6 +1112,116 @@ function SettingsPage() {
             </div>
           </div>
         )}
+
+        {/* Site-Specific Instructions */}
+        <div className="setting-group">
+          <label>🌐 Site-Specific Instructions</label>
+          <p className="help-text">
+            Add custom instructions that will automatically apply when browsing specific domains.
+            Useful for providing navigation guidance for internal tools like Confluence, Jira, etc.
+          </p>
+
+          {(settings.siteInstructions || []).length > 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '15px' }}>
+              {(settings.siteInstructions || []).map((instruction) => (
+                <div
+                  key={instruction.id}
+                  style={{
+                    padding: '12px',
+                    border: '1px solid #ddd',
+                    borderRadius: '6px',
+                    background: instruction.enabled ? 'white' : '#f8f9fa',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '8px' }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 'bold', color: '#007bff', marginBottom: '4px' }}>
+                        {instruction.domainPattern}
+                      </div>
+                      <div style={{ fontSize: '13px', color: '#666', whiteSpace: 'pre-wrap' }}>
+                        {instruction.instructions}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', marginLeft: '12px' }}>
+                      <button
+                        onClick={() => handleToggleSiteInstruction(instruction.id)}
+                        style={{
+                          padding: '6px 12px',
+                          background: instruction.enabled ? '#28a745' : '#6c757d',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          fontSize: '12px'
+                        }}
+                      >
+                        {instruction.enabled ? 'Enabled' : 'Disabled'}
+                      </button>
+                      <button
+                        onClick={() => handleRemoveSiteInstruction(instruction.id)}
+                        style={{
+                          padding: '6px 12px',
+                          background: '#dc3545',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          fontSize: '12px'
+                        }}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p style={{ color: '#666', fontSize: '14px', fontStyle: 'italic', marginBottom: '15px' }}>
+              No site instructions configured yet.
+            </p>
+          )}
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <input
+              type="text"
+              value={newSiteInstruction.domainPattern}
+              onChange={(e) => setNewSiteInstruction({ ...newSiteInstruction, domainPattern: e.target.value })}
+              placeholder="Domain pattern (e.g., *.atlassian.net or confluence.company.com)"
+              className="api-key-input"
+            />
+            <textarea
+              value={newSiteInstruction.instructions}
+              onChange={(e) => setNewSiteInstruction({ ...newSiteInstruction, instructions: e.target.value })}
+              placeholder="Custom instructions for this site&#10;Example:&#10;- To search: Use the Search button in top-right corner&#10;- To create a page: Click Create button&#10;- Navigation is via left sidebar"
+              rows={5}
+              style={{
+                width: '100%',
+                padding: '10px',
+                fontSize: '14px',
+                fontFamily: 'monospace',
+                border: '1px solid #ddd',
+                borderRadius: '6px',
+                resize: 'vertical'
+              }}
+            />
+            <button
+              onClick={handleAddSiteInstruction}
+              disabled={!newSiteInstruction.domainPattern || !newSiteInstruction.instructions}
+              style={{
+                padding: '10px 20px',
+                background: '#007bff',
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                opacity: (!newSiteInstruction.domainPattern || !newSiteInstruction.instructions) ? 0.5 : 1
+              }}
+            >
+              + Add Site Instructions
+            </button>
+          </div>
+        </div>
 
         <button
           className={`save-button ${saved ? 'saved' : ''}`}

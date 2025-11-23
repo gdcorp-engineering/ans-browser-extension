@@ -189,6 +189,7 @@ function ChatSidebar() {
   const [showBrowserToolsWarning, setShowBrowserToolsWarning] = useState(false);
   const [isUserScrolled, setIsUserScrolled] = useState(false);
   const [currentTabId, setCurrentTabId] = useState<number | null>(null);
+  const [currentTabUrl, setCurrentTabUrl] = useState<string | null>(null);
   const [trustedAgentOptIn, setTrustedAgentOptIn] = useState(true); // User opt-in for trusted agents
   const [currentSiteAgent, setCurrentSiteAgent] = useState<{ serverId: string; serverName: string } | null>(null);
   const [showToolsPanel, setShowToolsPanel] = useState(false);
@@ -221,6 +222,41 @@ function ChatSidebar() {
   const currentTabIdRef = useRef<number | null>(null);
   const messagesRef = useRef<Message[]>([]);
   const lastTypedSelectorRef = useRef<string | null>(null); // Store last typed selector for Enter key
+
+  // Helper function to match URL against domain patterns and get site instructions
+  const getMatchingSiteInstructions = (url: string | null): string | null => {
+    if (!url || !settings?.siteInstructions) return null;
+
+    try {
+      const urlObj = new URL(url);
+      const hostname = urlObj.hostname;
+
+      // Find matching site instructions
+      for (const instruction of settings.siteInstructions) {
+        if (!instruction.enabled) continue;
+
+        const pattern = instruction.domainPattern;
+
+        // Convert wildcard pattern to regex
+        // *.atlassian.net -> ^.*\.atlassian\.net$
+        // confluence.company.com -> ^confluence\.company\.com$
+        const regexPattern = pattern
+          .replace(/\./g, '\\.')  // Escape dots
+          .replace(/\*/g, '.*');   // Convert * to .*
+
+        const regex = new RegExp(`^${regexPattern}$`, 'i');
+
+        if (regex.test(hostname)) {
+          console.log(`📍 Matched site instructions for ${hostname}: ${pattern}`);
+          return instruction.instructions;
+        }
+      }
+    } catch (error) {
+      console.error('Error matching site instructions:', error);
+    }
+
+    return null;
+  };
 
   const executeTool = async (toolName: string, parameters: any, retryCount = 0): Promise<any> => {
     const MAX_RETRIES = 3;
@@ -419,7 +455,9 @@ function ChatSidebar() {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       if (tab.id) {
         console.log('📍 Current tab ID:', tab.id);
+        console.log('📍 Current tab URL:', tab.url);
         setCurrentTabId(tab.id);
+        setCurrentTabUrl(tab.url || null);
 
         // Load messages for this tab
         if (tabMessagesRef.current[tab.id]) {
@@ -464,6 +502,7 @@ function ChatSidebar() {
       // Only react to URL changes on the current tab
       if (changeInfo.url && tabId === currentTabIdRef.current) {
         console.log('📍 Tab URL changed to:', changeInfo.url);
+        setCurrentTabUrl(changeInfo.url);
         // Check for trusted agent on the new URL
         checkForTrustedAgent();
       }
@@ -1887,6 +1926,9 @@ GUIDELINES:
             return result;
           };
 
+          // Get matching site instructions for current URL
+          const matchedInstructions = getMatchingSiteInstructions(currentTabUrl);
+
           await streamAnthropicWithBrowserTools(
             newMessages,
             settings.apiKey,
@@ -1912,7 +1954,9 @@ GUIDELINES:
             },
             wrappedExecuteTool,
             undefined, // Don't pass abort signal for now - causes issues
-            mcpTools
+            mcpTools,
+            currentTabUrl || undefined,
+            matchedInstructions || undefined
           );
         } else {
           throw new Error(`Browser Tools not supported for ${settings.provider}`);
@@ -2071,6 +2115,9 @@ GUIDELINES:
               console.log(`  🔧 ${tool.name}: ${tool.description || 'No description'}`);
             });
 
+            // Get matching site instructions for current URL
+            const matchedInstructions = getMatchingSiteInstructions(currentTabUrl);
+
             await streamAnthropicWithBrowserTools(
               newMessages,
               settings.apiKey,
@@ -2139,7 +2186,9 @@ GUIDELINES:
                 }
               },
               undefined, // Don't pass abort signal for now - causes issues
-              mcpTools  // Pass MCP tools
+              mcpTools,  // Pass MCP tools
+              currentTabUrl || undefined,
+              matchedInstructions || undefined
             );
           } else {
             console.log('ℹ️  No custom MCP tools available');

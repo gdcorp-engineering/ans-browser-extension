@@ -24,6 +24,13 @@ export interface MCPServerConfig {
   };
 }
 
+export interface SiteInstruction {
+  id: string;
+  domainPattern: string; // e.g., "*.atlassian.net" or "confluence.company.com"
+  instructions: string; // Custom instructions for this site
+  enabled: boolean;
+}
+
 export interface Settings {
   provider: Provider;
   apiKey: string;
@@ -35,6 +42,7 @@ export interface Settings {
   mcpEnabled?: boolean; // Enable custom MCP servers
   mcpServers?: MCPServerConfig[]; // List of MCP servers to connect to
   ansApiToken?: string; // ANS API authentication token (optional)
+  siteInstructions?: SiteInstruction[]; // Site-specific custom instructions
 }
 
 export interface ComposioSession {
