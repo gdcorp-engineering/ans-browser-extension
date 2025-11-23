@@ -38,10 +38,15 @@ User says: "Find issue KEY-123" / "Show my open bugs" / "Search issues mentionin
 Steps:
 1. Use '/' to open search bar
 2. If issue key provided, search for the key directly
-3. Otherwise, type keyword or JQL query
-4. Press Enter and wait for results
-5. Extract result rows with issue keys, summaries, links, and statuses
-6. Return findings
+3. Otherwise, construct JQL query based on request:
+   - My open bugs: assignee = currentUser() AND type = Bug AND status not in (Done, Closed)
+   - My open issues: assignee = currentUser() AND status not in (Done, Closed)
+   - Issues mentioning keyword: text ~ "keyword"
+   - Or use simple keyword search if JQL not needed
+4. Type the query and press Enter
+5. Wait for results to load
+6. Extract result rows with issue keys, summaries, links, and statuses
+7. Return findings
 
 Output: List of matching issues with keys, summaries, and current status
 
