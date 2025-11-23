@@ -1027,7 +1027,7 @@ function extractPageContext(): PageContext {
   
   // Log modal detection for debugging (especially useful for Jira)
   if (modals.length > 0) {
-    console.log(`🎯 Detected ${modals.length} modal(s):`, modals.map(m => ({
+    console.log('🎯 Detected', modals.length, 'modal(s):', modals.map(m => ({
       selector: m.selector,
       zIndex: m.zIndex,
       interactiveElements: m.interactiveElements,
@@ -2762,28 +2762,44 @@ function showANSFloatingButtonInternal() {
   // Create button container
   ansFloatingButton = document.createElement('div');
   ansFloatingButton.id = 'ans-floating-button';
-  ansFloatingButton.innerHTML = `
-    <button id="ans-floating-btn" style="
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      background: linear-gradient(135deg, #00B140 0%, #008A32 100%);
-      color: white;
-      border: none;
-      padding: 10px 16px;
-      font-size: 14px;
-      font-weight: 600;
-      border-radius: 24px;
-      cursor: pointer;
-      box-shadow: 0 4px 12px rgba(0, 177, 64, 0.3);
-      transition: all 0.2s ease;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      white-space: nowrap;
-    ">
-      <img src="${iconUrl}" alt="GoDaddy ANS" style="width: 20px; height: 20px; object-fit: contain; display: block;" onerror="this.style.display='none';" />
-      Ask GoDaddy ANS
-    </button>
+  // Create button element safely without innerHTML
+  const button = document.createElement('button');
+  button.id = 'ans-floating-btn';
+  button.style.cssText = `
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: linear-gradient(135deg, #00B140 0%, #008A32 100%);
+    color: white;
+    border: none;
+    padding: 10px 16px;
+    font-size: 14px;
+    font-weight: 600;
+    border-radius: 24px;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(0, 177, 64, 0.3);
+    transition: all 0.2s ease;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    white-space: nowrap;
   `;
+  
+  // Create image element safely
+  const img = document.createElement('img');
+  // Sanitize iconUrl to prevent XSS - only allow data URLs or chrome-extension URLs
+  const sanitizedIconUrl = (iconUrl && (iconUrl.startsWith('data:') || iconUrl.startsWith('chrome-extension://') || iconUrl.startsWith('chrome://'))) 
+    ? iconUrl 
+    : 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"></svg>';
+  img.src = sanitizedIconUrl;
+  img.alt = 'GoDaddy ANS';
+  img.style.cssText = 'width: 20px; height: 20px; object-fit: contain; display: block;';
+  img.onerror = () => { img.style.display = 'none'; };
+  
+  // Add text node safely
+  const textNode = document.createTextNode(' Ask GoDaddy ANS');
+  
+  button.appendChild(img);
+  button.appendChild(textNode);
+  ansFloatingButton.appendChild(button);
   ansFloatingButton.style.cssText = `
     position: fixed;
     top: 20px;

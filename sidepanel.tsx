@@ -933,8 +933,18 @@ function ChatSidebar() {
     if (!word || !textContent) return word;
     const lowerWord = word.toLowerCase();
     
+    // Escape special regex characters to prevent ReDoS
+    // This is safe because we're escaping all special characters
+    const escapedWord = lowerWord.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    
+    // Use a pre-compiled regex pattern to avoid ReDoS
+    // Limit word length to prevent excessive backtracking
+    if (escapedWord.length > 100) {
+      return word; // Return original if word is too long
+    }
+    
     // Try to find the word in the original text with its original capitalization
-    const regex = new RegExp(`\\b${lowerWord.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi');
+    const regex = new RegExp(`\\b${escapedWord}\\b`, 'gi');
     const matches = textContent.match(regex);
     
     if (matches && matches.length > 0) {

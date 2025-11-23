@@ -70,7 +70,7 @@ async function setAuthCookie(token: string): Promise<boolean> {
       const result = await chrome.cookies.set(cookieDetails);
 
       if (result) {
-        console.log(`✅ Cookie set API returned success for ${domain}`);
+        console.log('✅ Cookie set API returned success for', domain);
         
         // Verify the cookie was actually set and accessible for the API domain
         const verifyCookie = await chrome.cookies.get({
@@ -95,7 +95,7 @@ async function setAuthCookie(token: string): Promise<boolean> {
         console.warn(`⚠️ Cookie set API returned null for ${domain}`);
       }
     } catch (error: any) {
-      console.error(`❌ Failed to set auth_jomax cookie for ${domain}:`, error.message || error);
+      console.error('❌ Failed to set auth_jomax cookie for', domain, ':', error.message || error);
       // Continue to try next domain
     }
   }
@@ -307,7 +307,7 @@ function parseAPIResponse(data: any): ANSBusinessService[] {
       try {
         ansMetadata = parseAnsName(ansName);
       } catch (error) {
-        console.warn(`⚠️  Invalid ANS name for ${agent.agentName}:`, error);
+        console.warn('⚠️  Invalid ANS name for', agent.agentName, ':', error);
       }
     }
 
