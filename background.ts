@@ -264,6 +264,28 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
           type: 'GET_VIEWPORT_SIZE'
         }).catch(() => ({ width: 1280, height: 800 })); // Fallback dimensions
 
+        // Check if auto-save screenshots is enabled
+        const settings = await chrome.storage.local.get(['atlasSettings']);
+        if (settings.atlasSettings?.autoSaveScreenshots) {
+          try {
+            // Generate filename with timestamp
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const filename = `atlas-screenshot-${timestamp}.png`;
+
+            // Save screenshot to Downloads folder
+            await chrome.downloads.download({
+              url: dataUrl,
+              filename: filename,
+              saveAs: false // Auto-save without prompting
+            });
+
+            console.log(`📸 Screenshot auto-saved: ${filename}`);
+          } catch (downloadError) {
+            console.error('❌ Failed to auto-save screenshot:', downloadError);
+            // Don't fail the screenshot operation if download fails
+          }
+        }
+
         sendResponse({
           success: true,
           screenshot: dataUrl,

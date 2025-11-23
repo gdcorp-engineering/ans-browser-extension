@@ -725,6 +725,20 @@ function SettingsPage() {
           </p>
         </div>
 
+        <div className="setting-group">
+          <label style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <input
+              type="checkbox"
+              checked={settings.autoSaveScreenshots || false}
+              onChange={(e) => setSettings({ ...settings, autoSaveScreenshots: e.target.checked })}
+            />
+            Auto-save Screenshots
+          </label>
+          <p className="help-text">
+            📸 Automatically save all screenshots to your Downloads folder for debugging and review.
+          </p>
+        </div>
+
         {settings.mcpEnabled && (
           <div className="setting-group">
             <label>ANS Authentication</label>

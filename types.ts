@@ -43,6 +43,7 @@ export interface Settings {
   mcpServers?: MCPServerConfig[]; // List of MCP servers to connect to
   ansApiToken?: string; // ANS API authentication token (optional)
   siteInstructions?: SiteInstruction[]; // Site-specific custom instructions
+  autoSaveScreenshots?: boolean; // Automatically save screenshots to Downloads folder
 }
 
 export interface ComposioSession {
