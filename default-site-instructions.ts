@@ -35,18 +35,22 @@ Output: Created issue with key in specified project
 Why: Users constantly need to look up tickets by key, keyword, or ownership
 User says: "Find issue KEY-123" / "Show my open bugs" / "Search issues mentioning login"
 
-Steps:
-1. For issue key search: Use '/' to open search bar, type the key, press Enter
-2. For filtered searches requiring assignee or type filtering:
-   a. Click the "JQL" button to switch to JQL mode
-   b. Clear any existing query
-   c. Enter appropriate JQL query:
-      - My open bugs or issues assigned to me: assignee = currentUser()
-      - Issues mentioning keyword: text ~ "keyword"
-   d. Press Enter or click search button
-3. Wait for results to load
-4. Extract result rows with issue keys, summaries, links, and statuses
-5. Return findings
+Steps for simple issue key lookup:
+1. Press '/' keyboard shortcut to open search
+2. Type the issue key
+3. Press Enter
+
+Steps for assignee-based search:
+1. Look for and click the button labeled "JQL" near the search area
+2. Wait for JQL input field to appear
+3. Click into the JQL input field to focus it
+4. Clear any existing text in the field
+5. Type exactly: assignee = currentUser()
+6. Press Enter to execute search
+7. Wait for results to load
+8. Extract and return issue keys, summaries, and statuses
+
+CRITICAL: You must click the JQL button FIRST before typing the query. Do not type JQL syntax into the regular search box or you will get a parsing error.
 
 Output: List of matching issues with keys, summaries, and current status
 
