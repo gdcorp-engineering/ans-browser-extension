@@ -1554,9 +1554,8 @@ let automationButton: HTMLDivElement | null = null;
 let isUserAborted = false; // Track if user manually aborted
 
 function showBrowserAutomationOverlay() {
-  // DISABLED: Overlay temporarily disabled to prevent any interference with clicks
-  console.log('🔵 Browser automation overlay disabled');
-  return;
+  // Show small floating indicator instead of full overlay to avoid click interference
+  console.log('🔵 Showing browser automation indicator');
 
   // Don't show overlay if user has aborted
   if (isUserAborted) {
@@ -1581,69 +1580,95 @@ function showBrowserAutomationOverlay() {
     return;
   }
 
-  console.log('🔵 Showing browser automation overlay');
+  console.log('🔵 Showing browser automation indicator');
 
-  // Create blue border overlay
+  // Create small floating indicator badge (no interference with clicks)
   automationOverlay = document.createElement('div');
-  automationOverlay.id = 'atlas-automation-overlay';
+  automationOverlay.id = 'atlas-automation-indicator';
+  automationOverlay.innerHTML = `
+    <div style="
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: linear-gradient(135deg, rgba(0, 122, 255, 0.95) 0%, rgba(0, 81, 213, 0.95) 100%);
+      backdrop-filter: blur(10px);
+      color: white;
+      padding: 10px 16px;
+      border-radius: 24px;
+      font-size: 13px;
+      font-weight: 600;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      box-shadow: 0 4px 16px rgba(0, 122, 255, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.1);
+      animation: atlasIndicatorSlideIn 0.3s ease-out;
+    ">
+      <div style="
+        width: 8px;
+        height: 8px;
+        background: #00ff88;
+        border-radius: 50%;
+        box-shadow: 0 0 8px #00ff88;
+        animation: atlasIndicatorPulse 2s ease-in-out infinite;
+      "></div>
+      <span>AI Automation Active</span>
+      <button id="atlas-abort-btn" style="
+        background: rgba(255, 255, 255, 0.2);
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        color: white;
+        padding: 4px 12px;
+        border-radius: 12px;
+        font-size: 11px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        pointer-events: auto;
+      " onmouseover="this.style.background='rgba(255, 255, 255, 0.3)';"
+         onmouseout="this.style.background='rgba(255, 255, 255, 0.2)';">
+        Stop
+      </button>
+    </div>
+  `;
   automationOverlay.style.cssText = `
     position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    border: 4px solid #007AFF;
-    pointer-events: none;
-    z-index: 999998;
-    box-shadow: inset 0 0 20px rgba(0, 122, 255, 0.3);
-  `;
-
-  // Create "Take Over Control" button
-  automationButton = document.createElement('div');
-  automationButton.id = 'atlas-takeover-button';
-  automationButton.innerHTML = `
-    <button style="
-      background: linear-gradient(135deg, #007AFF 0%, #0051D5 100%);
-      color: white;
-      border: none;
-      padding: 12px 24px;
-      font-size: 14px;
-      font-weight: 600;
-      border-radius: 24px;
-      cursor: pointer;
-      box-shadow: 0 4px 12px rgba(0, 122, 255, 0.4);
-      transition: all 0.2s ease;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      pointer-events: auto;
-    " onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 16px rgba(0, 122, 255, 0.5)';"
-       onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 12px rgba(0, 122, 255, 0.4)';">
-      🛑 Take Over Control
-    </button>
-  `;
-  automationButton.style.cssText = `
-    position: fixed;
-    bottom: 20px;
-    left: 50%;
-    transform: translateX(-50%);
+    top: 20px;
+    right: 20px;
     z-index: 999999;
     pointer-events: none;
   `;
 
-  // Handle button click
-  const button = automationButton.querySelector('button');
-  if (button) {
-    button.addEventListener('click', () => {
-      console.log('🛑 Take Over Control button clicked');
-      // Set abort flag to prevent overlay from re-appearing
+  // Add animation styles if not already present
+  if (!document.getElementById('atlas-indicator-animation')) {
+    const style = document.createElement('style');
+    style.id = 'atlas-indicator-animation';
+    style.textContent = `
+      @keyframes atlasIndicatorSlideIn {
+        from {
+          transform: translateX(400px);
+          opacity: 0;
+        }
+        to {
+          transform: translateX(0);
+          opacity: 1;
+        }
+      }
+      @keyframes atlasIndicatorPulse {
+        0%, 100% { opacity: 1; transform: scale(1); }
+        50% { opacity: 0.6; transform: scale(1.2); }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  // Handle stop button click
+  const stopBtn = automationOverlay.querySelector('#atlas-abort-btn');
+  if (stopBtn) {
+    stopBtn.addEventListener('click', () => {
+      console.log('🛑 Stop button clicked');
       isUserAborted = true;
-      // Reset abort flag after 5 seconds to allow future operations
       setTimeout(() => {
         isUserAborted = false;
         console.log('✅ User abort flag cleared - ready for new operations');
       }, 5000);
-      // Immediately hide overlay
       hideBrowserAutomationOverlay();
-      // Send message to sidepanel to abort automation
       chrome.runtime.sendMessage({ type: 'ABORT_BROWSER_AUTOMATION' }, () => {
         if (chrome.runtime.lastError) {
           console.log('Sidepanel not responding (this is OK)');
@@ -1653,11 +1678,10 @@ function showBrowserAutomationOverlay() {
   }
 
   document.body.appendChild(automationOverlay);
-  document.body.appendChild(automationButton);
 }
 
 function hideBrowserAutomationOverlay() {
-  console.log('🔵 Hiding browser automation overlay');
+  console.log('🔵 Hiding browser automation indicator');
 
   if (automationOverlay && automationOverlay.parentNode) {
     automationOverlay.remove();
