@@ -36,3 +36,6 @@ artifacts/
 packages/
 extension-key.pem
 *.crx
+
+# Test scripts
+test-scripts/
