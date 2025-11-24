@@ -166,7 +166,14 @@ ${conversationText}`;
       return messages;
     }
 
-    const data = await response.json();
+    let data;
+    try {
+      data = await response.json();
+    } catch (parseError) {
+      console.warn('Failed to parse summary response as JSON, keeping original messages');
+      return messages;
+    }
+
     const summary = data.content?.[0]?.text || '';
 
     if (!summary) {
@@ -501,19 +508,36 @@ Remember: Take your time, verify each step, and describe what you see before act
     const response = await fetch(`${baseUrl}/v1/messages`, fetchOptions);
 
     if (!response.ok) {
-      const error = await response.json();
-      console.error('❌ API Error:', error);
+      let errorMsg = 'Anthropic API request failed';
 
-      // Check if it's a context length error
-      const errorMsg = error.error?.message || '';
-      if (errorMsg.includes('too long') || errorMsg.includes('Input is too long')) {
-        throw new Error('Context limit exceeded. Please start a new chat to continue.');
+      try {
+        const error = await response.json();
+        console.error('❌ API Error:', error);
+
+        // Check if it's a context length error
+        errorMsg = error.error?.message || errorMsg;
+        if (errorMsg.includes('too long') || errorMsg.includes('Input is too long')) {
+          throw new Error('Context limit exceeded. Please start a new chat to continue.');
+        }
+      } catch (parseError) {
+        // Response is not JSON (likely HTML error page)
+        const text = await response.text();
+        console.error('❌ Non-JSON API Error Response:', text.substring(0, 200));
+        errorMsg = `API Error (${response.status} ${response.statusText})`;
       }
 
-      throw new Error(errorMsg || 'Anthropic API request failed');
+      throw new Error(errorMsg);
     }
 
-    const data = await response.json();
+    let data;
+    try {
+      data = await response.json();
+    } catch (parseError) {
+      const text = await response.text();
+      console.error('❌ Failed to parse successful response as JSON:', text.substring(0, 200));
+      throw new Error('API returned non-JSON response (possible redirect or proxy issue)');
+    }
+
     console.log('📥 Response:', JSON.stringify(data, null, 2));
 
     // Check if response includes text
