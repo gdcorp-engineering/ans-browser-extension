@@ -21,15 +21,34 @@ TOP 3 ATLASSIAN TASKS:
 Why: Most frequent workflow for developers, PMs, and support teams
 User says: "Create a Jira ticket" / "Open a new bug" / "Log a task"
 
-Steps:
-1. Navigate to Jira home or any board
-2. Click Create or press 'c' keyboard shortcut
-3. Fill Project, Issue Type, Summary, Description, optional Assignee and Labels
-4. Click Create
-5. Wait for toast confirming creation
-6. Capture issue key
+IMPORTANT: Before creating, you MUST gather required information from the user:
 
-Output: Created issue with key in specified project
+Step 1: Gather Project Information
+1. Navigate to Jira home or any board
+2. Click Create button or press 'c' keyboard shortcut to open the create dialog
+3. Take a screenshot to see the Project dropdown options
+4. Ask user: "Which project should I create this in?" and list the available projects you see
+5. Wait for user to respond with project selection
+
+Step 2: Gather Bug Details
+1. Ask user: "What is the bug summary/title?"
+2. Optionally ask: "Please describe the bug (optional)"
+3. Wait for user responses
+
+Step 3: Create the Issue
+1. Click on Project dropdown and select the user's chosen project
+2. Select Issue Type as "Bug" (or ask user if multiple types visible)
+3. Type the user-provided Summary in the Summary field
+4. If user provided description, type it in Description field
+5. Optionally fill Assignee and Labels if user specified
+6. Click Create button
+7. Wait for toast confirmation message (e.g., "Issue created successfully")
+8. Capture the issue key from the toast or URL
+9. Report back to user with the created issue key
+
+Output: "Created bug [ISSUE-KEY] in [PROJECT]: [Summary]"
+
+CRITICAL: Do NOT create any issue without first asking the user for Project and Summary. Always be interactive.
 
 2. SEARCH / FIND JIRA ISSUES
 Why: Users constantly need to look up tickets by key, keyword, or ownership
