@@ -38,7 +38,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     // because background script is listening via onMessage, not sendMessage callback
     startRecording()
       .then(() => {
-        console.log('[Offscreen] ✅ Recording started successfully');
         const response = { 
           type: 'RECORDING_RESPONSE',
           success: true, 
@@ -265,17 +264,12 @@ async function startRecording(): Promise<void> {
           console.log('[Offscreen] Could not query permission state');
         }
         
-        let errorMessage = 'Microphone permission was denied.';
-        
+        // Provide concise error message
         if (permissionState === 'denied') {
-          // Permission was previously denied - user needs to reset extension
-          errorMessage = 'Microphone permission was previously denied for this extension. The permission prompt will not appear again. You must remove and reinstall the extension from chrome://extensions to reset permissions, then click "Allow" when prompted.';
+          throw new Error('Microphone permission denied. Remove and reinstall the extension to reset permissions.');
         } else {
-          // Permission prompt was likely dismissed or not shown
-          errorMessage = 'Microphone permission was denied. If no prompt appeared, the permission was previously denied. Remove and reinstall the extension from chrome://extensions to reset permissions.';
+          throw new Error('Microphone permission denied. Click the button again and allow access when prompted.');
         }
-        
-        throw new Error(errorMessage);
       }
       
       // Re-throw other errors
@@ -315,17 +309,10 @@ async function startRecording(): Promise<void> {
     audioChunks = [];
 
     mediaRecorder.ondataavailable = (event) => {
-      console.log('Data available, size:', event.data.size);
+      console.log('[Offscreen] Data available, size:', event.data.size);
       if (event.data.size > 0) {
         audioChunks.push(event.data);
       }
-    };
-
-    mediaRecorder.onerror = (event: any) => {
-      console.error('[Offscreen] MediaRecorder error during recording:', event);
-      console.error('[Offscreen] Error details:', event.error);
-      // Note: We can't stop recording from here, but we log the error
-      // The user will need to stop manually or it will fail when they try to stop
     };
     
     // Handle stream disconnection
@@ -341,13 +328,82 @@ async function startRecording(): Promise<void> {
       });
     }
 
+    // Create promise FIRST, then set up handlers, then call start()
+    // This prevents race condition where onstart fires before handlers are ready
+    let startResolve: (() => void) | null = null;
+    let startReject: ((error: Error) => void) | null = null;
+    let startTimeout: ReturnType<typeof setTimeout> | null = null;
+    
+    // Create the promise and assign resolve/reject
+    const startPromise = new Promise<void>((resolve, reject) => {
+      startResolve = resolve;
+      startReject = reject;
+    });
+    
+    // NOW set up event handlers (after promise is created)
     mediaRecorder.onstart = () => {
-      console.log('Recording started, state:', mediaRecorder?.state);
+      console.log('[Offscreen] MediaRecorder onstart fired, state:', mediaRecorder?.state);
+      if (startTimeout) {
+        clearTimeout(startTimeout);
+        startTimeout = null;
+      }
+      if (startResolve) {
+        startResolve();
+        startResolve = null;
+        startReject = null;
+      }
+    };
+    
+    // Combined error handler for both start and recording errors
+    mediaRecorder.onerror = (event: any) => {
+      console.error('[Offscreen] MediaRecorder error:', event.error);
+      if (startTimeout) {
+        clearTimeout(startTimeout);
+        startTimeout = null;
+      }
+      // If we're waiting for start, reject the promise
+      if (startReject) {
+        startReject(new Error(event.error?.message || 'MediaRecorder error'));
+        startResolve = null;
+        startReject = null;
+      } else {
+        // Error during recording (not during start)
+        console.error('[Offscreen] Error during recording - user may need to stop manually');
+      }
     };
 
     // Start recording with timeslice to get data chunks
+    console.log('[Offscreen] Calling mediaRecorder.start()...');
     mediaRecorder.start(100); // Get data every 100ms
-    console.log('Recording initialized, state:', mediaRecorder.state);
+    console.log('[Offscreen] mediaRecorder.start() called, state:', mediaRecorder.state);
+    
+    // Check if already recording (some browsers start synchronously)
+    // Do this BEFORE setting timeout to avoid race condition
+    if (mediaRecorder.state === 'recording') {
+      console.log('[Offscreen] MediaRecorder started synchronously');
+      if (startResolve) {
+        startResolve();
+        startResolve = null;
+        startReject = null;
+      }
+      // No need to wait or set timeout
+    } else {
+      // Set up timeout AFTER start() is called (only if not already recording)
+      startTimeout = setTimeout(() => {
+        startTimeout = null;
+        if (mediaRecorder.state !== 'recording' && startReject) {
+          const error = new Error('MediaRecorder failed to start - still in state: ' + mediaRecorder.state);
+          startReject(error);
+          startResolve = null;
+          startReject = null;
+        }
+      }, 2000);
+      
+      // Wait for onstart event to confirm recording actually started
+      await startPromise;
+    }
+    
+    console.log('[Offscreen] ✅ Recording confirmed started, state:', mediaRecorder.state);
   } catch (error: any) {
     console.error('Error in startRecording:', error);
     console.error('Error name:', error.name);
@@ -358,31 +414,29 @@ async function startRecording(): Promise<void> {
       audioStream.getTracks().forEach(track => track.stop());
       audioStream = null;
     }
+    // Clean up MediaRecorder if it was created
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      try {
+        mediaRecorder.stop();
+      } catch (stopError) {
+        // Ignore errors when stopping
+      }
+    }
+    mediaRecorder = null;
     
     // Provide user-friendly error messages
     let errorMessage = error.message || 'Failed to start recording';
     let errorName = error.name || 'UnknownError';
     
     if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
-      // Check if it was dismissed vs denied
-      // Note: Extension offscreen document needs its own permission, separate from site permission
-      // Extensions don't appear in chrome://settings/content/microphone - that's only for websites
-      if (error.message && error.message.toLowerCase().includes('dismissed')) {
-        errorMessage = 'Microphone permission prompt was dismissed. The extension needs its own microphone permission (separate from the website). Please click the microphone button again and click "Allow" when the permission prompt appears.';
-        errorName = 'PermissionDismissedError';
-      } else {
-        errorMessage = 'Microphone permission was denied. The extension needs microphone permission. Please reload the extension and click "Allow" when prompted, or remove and reinstall the extension from chrome://extensions.';
-        errorName = 'PermissionDeniedError';
-      }
+      errorMessage = 'Microphone permission denied. Click again and allow access, or reinstall the extension to reset permissions.';
+      errorName = 'PermissionDeniedError';
     } else if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
-      errorMessage = 'No microphone found. Please connect a microphone and try again.';
+      errorMessage = 'No microphone found. Connect a microphone and try again.';
     } else if (error.name === 'NotReadableError' || error.name === 'TrackStartError') {
-      errorMessage = 'Microphone is already in use by another application.';
+      errorMessage = 'Microphone is in use by another app. Close other apps and try again.';
     } else if (error.name === 'OverconstrainedError') {
-      errorMessage = 'Microphone does not meet the required specifications.';
-    } else if (error.message && error.message.toLowerCase().includes('dismissed')) {
-      errorMessage = 'Permission prompt was dismissed. Please click "Allow" when prompted.';
-      errorName = 'PermissionDismissedError';
+      errorMessage = 'Microphone does not meet requirements.';
     }
     
     const enhancedError = new Error(errorMessage);

@@ -42,6 +42,56 @@ async function updateTabBadge(tabId: number, isActive: boolean) {
   }
 }
 
+// Helper function to ensure content script is injected
+async function ensureContentScript(tabId: number): Promise<void> {
+  try {
+    // Check if tab URL is accessible first
+    const tab = await chrome.tabs.get(tabId);
+    if (tab.url && (tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://') || tab.url.startsWith('edge://') || tab.url.startsWith('about:'))) {
+      throw new Error(`Cannot access a ${tab.url.split(':')[0]}:// URL`);
+    }
+    
+    // Try to ping the content script (with timeout)
+    try {
+      await Promise.race([
+        chrome.tabs.sendMessage(tabId, { type: 'PING' }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Ping timeout')), 1000))
+      ]);
+      // Content script is already loaded
+      return;
+    } catch (pingError) {
+      // Content script not loaded, inject it
+      console.log(`📦 Injecting content script into tab ${tabId}`);
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        files: ['content.js']
+      });
+      // Wait for script to initialize and be ready
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Verify it's ready by pinging again
+      let retries = 3;
+      while (retries > 0) {
+        try {
+          await chrome.tabs.sendMessage(tabId, { type: 'PING' });
+          console.log(`✅ Content script ready in tab ${tabId}`);
+          return;
+        } catch (e) {
+          retries--;
+          if (retries > 0) {
+            await new Promise(resolve => setTimeout(resolve, 200));
+          } else {
+            throw new Error('Content script failed to initialize');
+          }
+        }
+      }
+    }
+  } catch (error: any) {
+    console.error('❌ Error ensuring content script for tab', tabId, ':', error.message);
+    throw error;
+  }
+}
+
 // Update page title in content script to show agent mode status
 async function updatePageTitle(tabId: number, isActive: boolean) {
   try {
@@ -236,13 +286,12 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
               resolved = true;
               chrome.runtime.onMessage.removeListener(messageListener);
               console.log('[Background] ❌ Timeout waiting for offscreen response');
-              console.log('[Background] Debug: Check if offscreen document is receiving messages');
               resolve({ 
                 success: false, 
-                error: 'Timeout waiting for offscreen document response. The offscreen document may not be receiving messages.' 
+                error: 'Recording request timed out. Please try again.' 
               });
             }
-          }, 20000); // Increased timeout to 20 seconds
+          }, 5000); // Reduced timeout to 5 seconds (should be instant with pre-created document)
         });
         
         // Send message to offscreen document
@@ -385,9 +434,13 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
         });
         sendResponse({ success: true });
       } else {
-        // Fallback: open without tabId
-        chrome.sidePanel.open({}).catch((error: Error) => {
-          console.error('Error opening sidebar:', error);
+        // Fallback: get current window and open sidepanel
+        chrome.windows.getCurrent((window) => {
+          if (window?.id) {
+            chrome.sidePanel.open({ windowId: window.id }).catch((error: Error) => {
+              console.error('Error opening sidebar:', error);
+            });
+          }
         });
         sendResponse({ success: true });
       }
@@ -499,56 +552,7 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
     return true;
   }
 
-  // Get page context from content script
-  // Helper function to ensure content script is injected
-  async function ensureContentScript(tabId: number): Promise<void> {
-    try {
-      // Check if tab URL is accessible first
-      const tab = await chrome.tabs.get(tabId);
-      if (tab.url && (tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://') || tab.url.startsWith('edge://') || tab.url.startsWith('about:'))) {
-        throw new Error(`Cannot access a ${tab.url.split(':')[0]}:// URL`);
-      }
-      
-      // Try to ping the content script (with timeout)
-      try {
-        await Promise.race([
-          chrome.tabs.sendMessage(tabId, { type: 'PING' }),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Ping timeout')), 1000))
-        ]);
-        // Content script is already loaded
-        return;
-      } catch (pingError) {
-        // Content script not loaded, inject it
-        console.log(`📦 Injecting content script into tab ${tabId}`);
-        await chrome.scripting.executeScript({
-          target: { tabId },
-          files: ['content.js']
-        });
-        // Wait for script to initialize and be ready
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        // Verify it's ready by pinging again
-        let retries = 3;
-        while (retries > 0) {
-          try {
-            await chrome.tabs.sendMessage(tabId, { type: 'PING' });
-            console.log(`✅ Content script ready in tab ${tabId}`);
-            return;
-          } catch (e) {
-            retries--;
-            if (retries > 0) {
-              await new Promise(resolve => setTimeout(resolve, 200));
-            } else {
-              throw new Error('Content script failed to initialize');
-            }
-          }
-        }
-      }
-    } catch (error: any) {
-      console.error('❌ Error ensuring content script for tab', tabId, ':', error.message);
-      throw error;
-    }
-  }
+  // Helper function to ensure content script is injected (moved outside message listener for reuse)
 
   if (request.type === 'GET_PAGE_CONTEXT') {
     // Use async handler pattern that properly handles sendResponse
@@ -938,35 +942,46 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
 });
 
 // Ensure offscreen document exists for microphone access
+// Simplified to only verify existence (creation happens on startup)
 async function ensureOffscreenDocument(): Promise<void> {
-  const existingContexts = await chrome.offscreen.hasDocument();
-  if (existingContexts) {
-    console.log('[Background] Offscreen document already exists');
-    // Verify it's ready by sending a ping
-    const isReady = await pingOffscreenDocument();
-    if (isReady) {
-      console.log('[Background] Offscreen document is ready');
-      return;
-    } else {
-      console.log('[Background] Offscreen document exists but not responding, waiting...');
-      await new Promise(resolve => setTimeout(resolve, 1000));
+  const hasDocument = await chrome.offscreen.hasDocument();
+  if (hasDocument) {
+    // Verify it's ready by sending a ping - but be more patient
+    // Try pinging multiple times with delays, as the document might be slow to respond
+    for (let i = 0; i < 3; i++) {
+      const isReady = await pingOffscreenDocument();
+      if (isReady) {
+        return; // Document exists and is ready
+      }
+      // Wait a bit before retrying
+      if (i < 2) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
     }
+    // Document exists but not responding after multiple attempts
+    // Only recreate if it's truly unresponsive - don't be too aggressive
+    console.warn('[Background] Offscreen document exists but not responding after multiple pings');
+    // Don't recreate immediately - the document might still work for messages
+    // Just log a warning and continue - if it fails, we'll handle it in the message handler
+    return;
   }
 
+  // Create document if it doesn't exist
   console.log('[Background] Creating offscreen document for microphone access...');
   try {
     await chrome.offscreen.createDocument({
       url: 'offscreen.html',
-      reasons: ['USER_MEDIA'],
+      reasons: ['USER_MEDIA' as chrome.offscreen.Reason],
       justification: 'Microphone access for voice dictation in sidepanel'
     });
     console.log('[Background] Offscreen document created');
     
     // Wait for the offscreen document to initialize and be ready
+    // Give it more time to fully load
     let attempts = 0;
-    const maxAttempts = 10;
+    const maxAttempts = 15; // Increased to 15 attempts
     while (attempts < maxAttempts) {
-      await new Promise(resolve => setTimeout(resolve, 300));
+      await new Promise(resolve => setTimeout(resolve, 400)); // Increased to 400ms
       const isReady = await pingOffscreenDocument();
       if (isReady) {
         console.log('[Background] Offscreen document is ready after', attempts + 1, 'attempts');
@@ -974,8 +989,16 @@ async function ensureOffscreenDocument(): Promise<void> {
       }
       attempts++;
     }
-    console.warn('[Background] Offscreen document created but not responding to ping');
+    console.warn('[Background] Offscreen document created but not responding to ping - it may still be initializing');
+    // Don't throw error - document might still work even if ping fails
   } catch (error: any) {
+    // If error is "document closed before fully loading", it might be a race condition
+    // Try to check if document actually exists
+    const stillExists = await chrome.offscreen.hasDocument();
+    if (stillExists) {
+      console.log('[Background] Offscreen document exists despite creation error - may have been created by another process');
+      return; // Document exists, continue
+    }
     console.error('[Background] Error creating offscreen document:', error);
     throw error;
   }
@@ -985,8 +1008,9 @@ async function ensureOffscreenDocument(): Promise<void> {
 async function pingOffscreenDocument(): Promise<boolean> {
   return new Promise((resolve) => {
     const timeout = setTimeout(() => {
+      chrome.runtime.onMessage.removeListener(listener);
       resolve(false);
-    }, 1000);
+    }, 2000); // Increased timeout to 2 seconds
     
     const listener = (message: any, sender: chrome.runtime.MessageSender) => {
       if (message && message.type === 'PONG' && sender.url && sender.url.includes('offscreen.html')) {
@@ -1013,5 +1037,52 @@ async function pingOffscreenDocument(): Promise<boolean> {
 chrome.tabs.onRemoved.addListener((tabId) => {
   agentModeState.delete(tabId);
 });
+
+// Pre-create offscreen document on extension startup/install
+chrome.runtime.onStartup.addListener(() => {
+  console.log('[Background] Extension startup - ensuring offscreen document exists');
+  ensureOffscreenDocument().catch((error) => {
+    console.error('[Background] Failed to create offscreen document on startup:', error);
+  });
+});
+
+chrome.runtime.onInstalled.addListener(() => {
+  console.log('[Background] Extension installed - ensuring offscreen document exists');
+  ensureOffscreenDocument().catch((error) => {
+    console.error('[Background] Failed to create offscreen document on install:', error);
+  });
+});
+
+// Create offscreen document immediately when service worker starts
+ensureOffscreenDocument().catch((error) => {
+  console.error('[Background] Failed to create offscreen document on service worker start:', error);
+});
+
+// Keep offscreen document alive with periodic pings
+let keepaliveInterval: ReturnType<typeof setInterval> | null = null;
+function startKeepalive() {
+  if (keepaliveInterval) return; // Already running
+  
+  keepaliveInterval = setInterval(async () => {
+    const hasDocument = await chrome.offscreen.hasDocument();
+    if (hasDocument) {
+      const isReady = await pingOffscreenDocument();
+      if (!isReady) {
+        // Wait a bit longer before recreating - document might still be initializing
+        console.warn('[Background] Offscreen document not responding to ping, will retry...');
+        // Don't recreate immediately - wait for next cycle
+        // This prevents aggressive recreation if document is just slow to respond
+      }
+    } else {
+      // Document was closed, recreate it
+      console.log('[Background] Offscreen document missing, recreating...');
+      await ensureOffscreenDocument().catch((error) => {
+        console.error('[Background] Failed to recreate offscreen document in keepalive:', error);
+      });
+    }
+  }, 30000); // Ping every 30 seconds
+}
+
+startKeepalive();
 
 console.log('Atlas background service worker loaded');

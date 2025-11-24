@@ -668,6 +668,7 @@ function ChatSidebar() {
   const [isCapturingScreenshot, setIsCapturingScreenshot] = useState(false);
   const [currentTabInfo, setCurrentTabInfo] = useState<{ url: string; title: string; id: number; favIconUrl?: string } | null>(null);
   const [isRecording, setIsRecording] = useState(false);
+  const isRecordingOperationInProgress = useRef(false);
   const [chatMode, setChatMode] = useState<'create_image' | 'thinking' | 'deep_research' | 'study_and_learn' | 'web_search' | 'canvas' | 'browser_memory' | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   // const mediaRecorderRef = useRef<HTMLDivElement>(null);
@@ -3728,8 +3729,9 @@ TASK COMPLETION REQUIREMENTS:
       const lastMessage = finalMessages[finalMessages.length - 1];
       if (lastMessage && lastMessage.role === 'assistant' && !lastMessage.content.trim()) {
         console.warn('⚠️ Stream completed with no content');
+        console.warn('⚠️ Provider:', settings?.provider, 'Model:', settings?.model, 'Custom URL:', settings?.customBaseUrl || 'none');
         const updated = [...finalMessages];
-        updated[updated.length - 1].content = '⚠️ No response received from the AI. Please check your API key and try again.';
+        updated[updated.length - 1].content = '⚠️ No response received from the AI. The API returned an empty response.\n\nPossible causes:\n- Check your API key is correct\n- Check the console for detailed error messages\n- Verify your internet connection\n- If using GoCaaS, check the service status';
         streamMessagesRef.current = updated;
         if (streamTabId !== null) {
           tabMessagesRef.current[streamTabId] = updated;
@@ -3902,7 +3904,18 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
         // Fallback: If no chunks were parsed (formatted JSON response), try parsing the entire buffer
         if (!parsedAnyChunk && jsonBuffer.trim()) {
           try {
-            let data = JSON.parse(jsonBuffer.trim());
+            // Handle SSE format - extract JSON from "data: {...}" lines
+            let bufferToParse = jsonBuffer.trim();
+            // If it contains SSE format, extract JSON parts
+            if (bufferToParse.includes('data: ')) {
+              const dataLines = bufferToParse.split('\n').filter(l => l.trim().startsWith('data: '));
+              if (dataLines.length > 0) {
+                // Try to parse the last data line
+                const lastDataLine = dataLines[dataLines.length - 1];
+                bufferToParse = lastDataLine.slice(6); // Remove 'data: ' prefix
+              }
+            }
+            let data = JSON.parse(bufferToParse);
             // Handle array response format
             if (Array.isArray(data) && data.length > 0) {
               data = data[0];
@@ -3943,8 +3956,31 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
         if (!line.trim()) continue;
 
         try {
-          const json = JSON.parse(line);
-          const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
+          // Handle SSE format (data: prefix) or direct JSON
+          let jsonLine = line.trim();
+          if (jsonLine.startsWith('data: ')) {
+            jsonLine = jsonLine.slice(6).trim(); // Remove 'data: ' prefix
+          }
+          if (jsonLine === '[DONE]' || jsonLine === '') continue;
+          
+          const json = JSON.parse(jsonLine);
+          
+          // Handle different response formats
+          let text = null;
+          
+          // Google format: candidates[0].content.parts[0].text
+          if (json.candidates?.[0]?.content?.parts?.[0]?.text) {
+            text = json.candidates[0].content.parts[0].text;
+          }
+          // Alternative format: direct text field
+          else if (json.text) {
+            text = json.text;
+          }
+          // Alternative format: content field
+          else if (json.content) {
+            text = typeof json.content === 'string' ? json.content : json.content.text;
+          }
+          
           if (text) {
             parsedAnyChunk = true;
             const updated = [...streamMessagesRef.current];
@@ -3982,7 +4018,10 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
             }
           }
         } catch (e) {
-          // Skip invalid JSON (expected for formatted responses)
+          // Log parsing errors for debugging (but don't fail)
+          if (line.trim().length > 0 && !line.trim().startsWith(':')) {
+            console.debug('[Google Stream] Failed to parse line:', line.substring(0, 100), e);
+          }
         }
       }
     }
@@ -3992,8 +4031,9 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
     const lastMessage = finalMessages[finalMessages.length - 1];
     if (lastMessage && lastMessage.role === 'assistant' && !lastMessage.content.trim()) {
       console.warn('⚠️ Stream completed with no content');
+      console.warn('⚠️ Provider:', settings?.provider, 'Model:', settings?.model, 'Custom URL:', settings?.customBaseUrl || 'none');
       const updated = [...finalMessages];
-      updated[updated.length - 1].content = '⚠️ No response received from the AI. Please check your API key and try again.';
+      updated[updated.length - 1].content = '⚠️ No response received from the AI. The API returned an empty response.\n\nPossible causes:\n- Check your API key is correct\n- Check the console for detailed error messages\n- Verify your internet connection\n- If using GoCaaS, check the service status';
       streamMessagesRef.current = updated;
       if (streamTabId !== null) {
         tabMessagesRef.current[streamTabId] = updated;
@@ -4440,8 +4480,9 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
               const lastMessage = finalMessages[finalMessages.length - 1];
               if (lastMessage && lastMessage.role === 'assistant' && !lastMessage.content.trim()) {
                 console.warn('⚠️ Anthropic browser tools stream completed with no content');
+                console.warn('⚠️ Provider:', settings?.provider, 'Model:', settings?.model, 'Custom URL:', settings?.customBaseUrl || 'none');
                 const updated = [...finalMessages];
-                updated[updated.length - 1].content = '⚠️ No response received from the AI. Please check your API key and try again.';
+                updated[updated.length - 1].content = '⚠️ No response received from the AI. The API returned an empty response.\n\nPossible causes:\n- Check your API key is correct\n- Check the console for detailed error messages\n- Verify your internet connection\n- If using GoCaaS, check the service status';
                 streamMessagesRef.current = updated;
                 if (streamTabId !== null) {
                   tabMessagesRef.current[streamTabId] = updated;
@@ -4763,8 +4804,9 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
             const checkLastMessage = checkFinalMessages[checkFinalMessages.length - 1];
             if (checkLastMessage && checkLastMessage.role === 'assistant' && !checkLastMessage.content.trim()) {
               console.warn('⚠️ Anthropic stream completed with no content');
+              console.warn('⚠️ Provider:', settings?.provider, 'Model:', settings?.model, 'Custom URL:', settings?.customBaseUrl || 'none');
               const updated = [...checkFinalMessages];
-              updated[updated.length - 1].content = '⚠️ No response received from the AI. Please check your API key and try again.';
+              updated[updated.length - 1].content = '⚠️ No response received from the AI. The API returned an empty response.\n\nPossible causes:\n- Check your API key is correct\n- Check the console for detailed error messages\n- Verify your internet connection\n- If using GoCaaS, check the service status';
               streamMessagesRef.current = updated;
               if (checkStreamTabId !== null) {
                 tabMessagesRef.current[checkStreamTabId] = updated;
@@ -4846,8 +4888,9 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
           const openAILastMessage = openAIFinalMessages[openAIFinalMessages.length - 1];
           if (openAILastMessage && openAILastMessage.role === 'assistant' && !openAILastMessage.content.trim()) {
             console.warn('⚠️ OpenAI stream completed with no content');
+            console.warn('⚠️ Provider:', settings?.provider, 'Model:', settings?.model, 'Custom URL:', settings?.customBaseUrl || 'none');
             const updated = [...openAIFinalMessages];
-            updated[updated.length - 1].content = '⚠️ No response received from the AI. Please check your API key and try again.';
+            updated[updated.length - 1].content = '⚠️ No response received from the AI. The API returned an empty response.\n\nPossible causes:\n- Check your API key is correct\n- Check the console for detailed error messages\n- Verify your internet connection\n- If using GoCaaS, check the service status';
             streamMessagesRef.current = updated;
             if (openAIStreamTabId !== null) {
               tabMessagesRef.current[openAIStreamTabId] = updated;
@@ -5122,10 +5165,17 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
 
   // Handle voice recording - use offscreen document for microphone access
   const handleVoiceRecording = async () => {
+    // Prevent double-clicks and rapid clicking
+    if (isRecordingOperationInProgress.current) {
+      console.log('[Sidepanel] Recording operation already in progress, ignoring click');
+      return;
+    }
+    
     if (isRecording) {
       // Stop recording via offscreen document
       // Immediately set state to false to provide immediate feedback
       setIsRecording(false);
+      isRecordingOperationInProgress.current = true;
       
       try {
         console.log('[Sidepanel] Stopping recording...');
@@ -5162,13 +5212,25 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
         console.error('[Sidepanel] Error stopping recording:', error);
         // State already set to false, just show error
         alert(`Failed to stop recording: ${error.message || 'Unknown error'}`);
+      } finally {
+        isRecordingOperationInProgress.current = false;
       }
     } else {
       // Start recording via offscreen document
+      // Don't set state optimistically - wait for confirmation that recording actually started
+      // This prevents the mic indicator from appearing and then disappearing
+      
+      isRecordingOperationInProgress.current = true;
       try {
         console.log('[Sidepanel] Starting recording via offscreen document...');
         const response = await new Promise<any>((resolve, reject) => {
+          // Set a timeout to prevent hanging forever
+          const timeout = setTimeout(() => {
+            reject(new Error('Recording request timed out after 10 seconds'));
+          }, 10000);
+          
           chrome.runtime.sendMessage({ type: 'START_RECORDING' }, (response) => {
+            clearTimeout(timeout);
             if (chrome.runtime.lastError) {
               console.error('[Sidepanel] chrome.runtime.lastError:', chrome.runtime.lastError.message);
               reject(new Error(chrome.runtime.lastError.message));
@@ -5181,74 +5243,41 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
         
         if (!response) {
           console.error('[Sidepanel] No response received');
-          alert('No response from extension. Please check console and reload extension.');
-          return;
-        }
-        
-        if (response.success) {
+          alert('No response from extension. Please reload the extension.');
+          // Don't return - let finally block reset the flag
+        } else if (response.success) {
+          // Only set state to true AFTER we confirm recording actually started
           setIsRecording(true);
           console.log('[Sidepanel] Recording started successfully');
         } else {
-          // Handle permission errors
+          // Don't set state - recording didn't start
+          // Handle errors with concise messages
           let errorMessage = response.error || 'Failed to start recording';
-          let showSettingsLink = false;
           
-          if (errorMessage.includes('NotAllowedError') || 
-              errorMessage.includes('PermissionDeniedError') ||
-              errorMessage.includes('PermissionDismissedError') ||
-              errorMessage.includes('permission was denied') ||
-              errorMessage.includes('dismissed') ||
-              errorMessage.toLowerCase().includes('permission')) {
-            
-            // Both dismissed and denied need the same fix - reset extension
-            errorMessage = 'Microphone permission was denied for the extension.\n\n' +
-              '⚠️ IMPORTANT: The extension needs its own microphone permission (separate from the website).\n\n' +
-              'The permission prompt is not appearing because permission was previously denied.\n\n' +
-              'To fix this, you MUST reset the extension:\n' +
-              '1. Go to chrome://extensions\n' +
-              '2. Find "Agent Chat Powered by GoDaddy ANS"\n' +
-              '3. Click "Remove" to uninstall the extension\n' +
-              '4. Reload the extension from artifacts/Dev folder\n' +
-              '5. Click the microphone button again\n' +
-              '6. When the permission prompt appears, click "Allow"\n\n' +
-              'Would you like to open the extensions page?';
-            showSettingsLink = true;
-          } else if (errorMessage.includes('NotFoundError') || errorMessage.includes('No microphone found')) {
-            errorMessage = 'No microphone found. Please connect a microphone and try again.';
-          } else if (errorMessage.includes('NotReadableError') || errorMessage.includes('already in use')) {
-            errorMessage = 'Microphone is already in use by another application. Please close other apps and try again.';
-          } else if (errorMessage.includes('Timeout')) {
-            errorMessage = 'Request timed out. The extension may not be responding. Please try again or reload the extension.';
-          }
-          
-          if (showSettingsLink) {
-            const userConfirmed = window.confirm(errorMessage);
-            if (userConfirmed) {
-              chrome.runtime.sendMessage({ 
-                type: 'OPEN_URL', 
-                url: 'chrome://extensions' 
-              });
-            }
+          // Simplify error messages - remove verbose multi-line alerts
+          if (errorMessage.includes('permission') || errorMessage.includes('Permission')) {
+            // Permission errors are already concise from offscreen.ts
+            alert(errorMessage);
+          } else if (errorMessage.includes('Timeout') || errorMessage.includes('timed out')) {
+            alert('Recording request timed out. Please try again.');
           } else {
             alert(errorMessage);
           }
         }
       } catch (error: any) {
         console.error('[Sidepanel] Error starting recording:', error);
-        console.error('[Sidepanel] Error details:', {
-          name: error?.name,
-          message: error?.message,
-          stack: error?.stack
-        });
+        // Don't set state - recording didn't start
         
-        let errorMsg = error.message || 'Unknown error';
+        let errorMsg = error.message || 'Failed to start recording';
         if (error.message?.includes('Could not establish connection')) {
-          errorMsg = 'Extension background script is not responding. Please reload the extension.';
+          errorMsg = 'Extension not responding. Please reload the extension.';
         } else if (error.message?.includes('Extension context invalidated')) {
           errorMsg = 'Extension was reloaded. Please refresh this page.';
         }
         
-        alert(`Failed to start recording: ${errorMsg}`);
+        alert(errorMsg);
+      } finally {
+        isRecordingOperationInProgress.current = false;
       }
     }
   };
