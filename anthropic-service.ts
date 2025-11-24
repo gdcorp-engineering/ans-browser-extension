@@ -100,6 +100,8 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
   const reader = response.body!.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
+  let chunkCount = 0;
+  let textChunkCount = 0;
 
   while (true) {
     const { done, value } = await reader.read();
@@ -119,13 +121,40 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
 
       try {
         const json = JSON.parse(data);
+        chunkCount++;
 
+        // Handle content_block_delta with text_delta
         if (json.type === 'content_block_delta' && json.delta?.type === 'text_delta') {
+          if (json.delta.text) {
+            textChunkCount++;
+            onChunk(json.delta.text);
+          }
+        }
+        // Handle other response types that might contain text
+        else if (json.type === 'content_block' && json.content?.type === 'text') {
+          if (json.content.text) {
+            textChunkCount++;
+            onChunk(json.content.text);
+          }
+        }
+        // Handle message_delta (alternative format)
+        else if (json.type === 'message_delta' && json.delta?.text) {
+          textChunkCount++;
           onChunk(json.delta.text);
         }
+        // Log unexpected types for debugging
+        else if (json.type) {
+          console.debug(`[Anthropic Service] Received unexpected chunk type: ${json.type}`, json);
+        }
       } catch (e) {
-        // Skip invalid JSON
+        // Log parsing errors for debugging
+        console.warn('[Anthropic Service] Failed to parse chunk:', data.substring(0, 100), e);
       }
     }
+  }
+
+  // Log summary for debugging
+  if (chunkCount > 0 && textChunkCount === 0) {
+    console.warn(`[Anthropic Service] Received ${chunkCount} chunks but no text content. This may indicate a response format issue.`);
   }
 }
