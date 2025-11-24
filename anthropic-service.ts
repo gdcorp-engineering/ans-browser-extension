@@ -10,6 +10,24 @@ export async function streamAnthropic(
 ): Promise<void> {
   const baseUrl = customBaseUrl || 'https://api.anthropic.com';
 
+  // Filter out messages with empty content (API requirement)
+  const validMessages = messages.filter(m => {
+    if (!m.content) {
+      console.warn('⚠️ Filtering out message with empty content:', m);
+      return false;
+    }
+    // Handle both string and array content
+    if (typeof m.content === 'string') {
+      return m.content.trim().length > 0;
+    }
+    if (Array.isArray(m.content)) {
+      return m.content.length > 0;
+    }
+    return true;
+  });
+
+  console.log(`📨 Sending ${validMessages.length} messages to API (filtered ${messages.length - validMessages.length} empty)`);
+
   const fetchOptions: RequestInit = {
     method: 'POST',
     headers: {
@@ -20,7 +38,7 @@ export async function streamAnthropic(
     body: JSON.stringify({
       model,
       max_tokens: 4096,
-      messages: messages.map(m => ({
+      messages: validMessages.map(m => ({
         role: m.role,
         content: m.content,
       })),
