@@ -482,7 +482,21 @@ function ChatSidebar() {
         if (tabMessagesRef.current[tab.id]) {
           setMessages(tabMessagesRef.current[tab.id]);
         } else {
-          setMessages([]);
+          // Try to load persisted messages from chrome.storage
+          try {
+            const result = await chrome.storage.local.get([`conversations_tab_${tab.id}`]);
+            const persistedMessages = result[`conversations_tab_${tab.id}`];
+            if (persistedMessages && Array.isArray(persistedMessages) && persistedMessages.length > 0) {
+              console.log(`📦 Loaded ${persistedMessages.length} persisted messages for tab ${tab.id}`);
+              setMessages(persistedMessages);
+              tabMessagesRef.current[tab.id] = persistedMessages;
+            } else {
+              setMessages([]);
+            }
+          } catch (err) {
+            console.error('Failed to load persisted messages:', err);
+            setMessages([]);
+          }
         }
 
         // Check for trusted agent on this site
@@ -493,7 +507,7 @@ function ChatSidebar() {
     getCurrentTab();
 
     // Listen for tab switches
-    const handleTabChange = (activeInfo: chrome.tabs.TabActiveInfo) => {
+    const handleTabChange = async (activeInfo: chrome.tabs.TabActiveInfo) => {
       console.log('📍 Tab switched to:', activeInfo.tabId);
 
       // Save current tab's messages before switching (use refs to get current values)
@@ -507,7 +521,21 @@ function ChatSidebar() {
       if (tabMessagesRef.current[activeInfo.tabId]) {
         setMessages(tabMessagesRef.current[activeInfo.tabId]);
       } else {
-        setMessages([]);
+        // Try to load persisted messages from chrome.storage
+        try {
+          const result = await chrome.storage.local.get([`conversations_tab_${activeInfo.tabId}`]);
+          const persistedMessages = result[`conversations_tab_${activeInfo.tabId}`];
+          if (persistedMessages && Array.isArray(persistedMessages) && persistedMessages.length > 0) {
+            console.log(`📦 Loaded ${persistedMessages.length} persisted messages for tab ${activeInfo.tabId}`);
+            setMessages(persistedMessages);
+            tabMessagesRef.current[activeInfo.tabId] = persistedMessages;
+          } else {
+            setMessages([]);
+          }
+        } catch (err) {
+          console.error('Failed to load persisted messages:', err);
+          setMessages([]);
+        }
       }
 
       // Check for trusted agent on new tab
@@ -549,8 +577,19 @@ function ChatSidebar() {
     if (currentTabId !== null && messages.length > 0) {
       console.log(`💾 Saving ${messages.length} messages for tab ${currentTabId}`);
       tabMessagesRef.current[currentTabId] = messages;
+
+      // Persist to chrome.storage if enabled
+      if (settings?.enableConversationPersistence !== false) { // Default: true
+        chrome.storage.local.set({
+          [`conversations_tab_${currentTabId}`]: messages
+        }).then(() => {
+          console.log(`💾 Persisted ${messages.length} messages to storage for tab ${currentTabId}`);
+        }).catch(err => {
+          console.error('Failed to persist messages:', err);
+        });
+      }
     }
-  }, [messages, currentTabId]);
+  }, [messages, currentTabId, settings?.enableConversationPersistence]);
 
   useEffect(() => {
     // Load settings on mount
@@ -729,6 +768,11 @@ function ChatSidebar() {
     // Clear messages storage for current tab
     if (currentTabId !== null) {
       tabMessagesRef.current[currentTabId] = [];
+
+      // Also clear persisted messages
+      chrome.storage.local.remove([`conversations_tab_${currentTabId}`]).catch(err => {
+        console.error('Failed to clear persisted messages:', err);
+      });
     }
     
     // Force close and clear ALL cached state
@@ -1975,7 +2019,8 @@ GUIDELINES:
             undefined, // Don't pass abort signal for now - causes issues
             mcpTools,
             currentTabUrl || undefined,
-            matchedInstructions || undefined
+            matchedInstructions || undefined,
+            settings // Pass settings for conversation history and summarization
           );
         } else {
           throw new Error(`Browser Tools not supported for ${settings.provider}`);
@@ -2207,7 +2252,8 @@ GUIDELINES:
               undefined, // Don't pass abort signal for now - causes issues
               mcpTools,  // Pass MCP tools
               currentTabUrl || undefined,
-              matchedInstructions || undefined
+              matchedInstructions || undefined,
+              settings // Pass settings for conversation history and summarization
             );
           } else {
             console.log('ℹ️  No custom MCP tools available');

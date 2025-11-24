@@ -44,6 +44,12 @@ export interface Settings {
   ansApiToken?: string; // ANS API authentication token (optional)
   siteInstructions?: SiteInstruction[]; // Site-specific custom instructions
   autoSaveScreenshots?: boolean; // Automatically save screenshots to Downloads folder
+
+  // Conversation History Settings
+  conversationHistoryLength?: number; // Number of messages to keep in initial history (default: 10)
+  conversationLoopHistoryLength?: number; // Max messages during tool execution loops (default: 15)
+  enableConversationPersistence?: boolean; // Save conversations to chrome.storage (default: true)
+  enableSmartSummarization?: boolean; // Automatically summarize old messages (default: true)
 }
 
 export interface ComposioSession {

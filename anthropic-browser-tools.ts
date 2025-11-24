@@ -105,6 +105,93 @@ const BROWSER_TOOLS = [
   },
 ];
 
+/**
+ * Summarize old messages to reduce token usage while preserving context
+ * @param messages - Full message history
+ * @param keepRecentCount - Number of recent messages to keep unsummarized
+ * @param apiKey - Anthropic API key
+ * @param baseUrl - API base URL
+ * @returns Messages with old ones summarized
+ */
+async function summarizeOldMessages(
+  messages: Message[],
+  keepRecentCount: number,
+  apiKey: string,
+  baseUrl: string
+): Promise<Message[]> {
+  // If we don't have enough messages to summarize, return as-is
+  if (messages.length <= keepRecentCount) {
+    return messages;
+  }
+
+  // Split messages into "to summarize" and "keep recent"
+  const messagesToSummarize = messages.slice(0, -keepRecentCount);
+  const recentMessages = messages.slice(-keepRecentCount);
+
+  console.log(`🤖 Summarizing ${messagesToSummarize.length} old messages, keeping ${recentMessages.length} recent`);
+
+  try {
+    // Create a prompt to summarize the old messages
+    const conversationText = messagesToSummarize.map(m =>
+      `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`
+    ).join('\n\n');
+
+    const summaryPrompt = `Please provide a concise summary of this conversation history. Focus on key actions taken, decisions made, and important context that would be useful for continuing the conversation. Keep it under 300 words.
+
+Conversation to summarize:
+${conversationText}`;
+
+    // Call Claude API to get summary
+    const response = await fetch(`${baseUrl}/v1/messages`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: 'claude-3-5-haiku-20241022', // Use fast, cheap model for summarization
+        max_tokens: 500,
+        messages: [
+          {
+            role: 'user',
+            content: summaryPrompt,
+          },
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      console.warn('Failed to generate summary, keeping original messages');
+      return messages;
+    }
+
+    const data = await response.json();
+    const summary = data.content?.[0]?.text || '';
+
+    if (!summary) {
+      console.warn('Empty summary received, keeping original messages');
+      return messages;
+    }
+
+    console.log(`✅ Generated summary (${summary.length} chars)`);
+
+    // Create a summary message
+    const summaryMessage: Message = {
+      id: `summary_${Date.now()}`,
+      role: 'assistant',
+      content: `[Previous conversation summary]\n\n${summary}\n\n[End of summary - conversation continues below]`,
+    };
+
+    // Return summary + recent messages
+    return [summaryMessage, ...recentMessages];
+
+  } catch (error) {
+    console.error('Error summarizing messages:', error);
+    return messages; // Return original on error
+  }
+}
+
 export async function streamAnthropicWithBrowserTools(
   messages: Message[],
   apiKey: string,
@@ -116,17 +203,30 @@ export async function streamAnthropicWithBrowserTools(
   signal?: AbortSignal,
   additionalTools?: any[], // Custom MCP tools
   currentUrl?: string, // Current page URL for matching site instructions
-  siteInstructions?: string // Matched site-specific instructions
+  siteInstructions?: string, // Matched site-specific instructions
+  settings?: any // User settings for conversation history and summarization
 ): Promise<void> {
   const baseUrl = customBaseUrl || 'https://api.anthropic.com';
 
   // Keep only the most recent messages to avoid context length issues
   // Page context can be large, and tool use adds more messages during the loop
-  // So we need to be very aggressive with history trimming
-  const MAX_HISTORY_MESSAGES = 1; // Keep only the immediate last message
+  // User can configure how much history to keep in settings
+  const MAX_HISTORY_MESSAGES = settings?.conversationHistoryLength || 10; // Default: 10 messages (increased from 1)
   let conversationMessages = messages.length > MAX_HISTORY_MESSAGES
     ? messages.slice(-MAX_HISTORY_MESSAGES)
     : [...messages];
+
+  // Smart summarization: If enabled and we have many messages, summarize old ones
+  if (settings?.enableSmartSummarization !== false && conversationMessages.length > 8) {
+    console.log('🤖 Smart summarization enabled, checking if summarization needed...');
+    const keepRecentCount = Math.ceil(conversationMessages.length * 0.5); // Keep 50% most recent
+    conversationMessages = await summarizeOldMessages(
+      conversationMessages,
+      keepRecentCount,
+      apiKey,
+      baseUrl
+    );
+  }
 
   let fullResponseText = '';
 
@@ -509,7 +609,8 @@ Remember: Take your time, verify each step, and describe what you see before act
 
     // Trim conversation to prevent context overflow during the loop
     // Keep only the most recent messages to avoid hitting limits
-    const MAX_LOOP_MESSAGES = 4; // Aggressive trimming - page context is large
+    // User can configure max loop history in settings
+    const MAX_LOOP_MESSAGES = settings?.conversationLoopHistoryLength || 15; // Default: 15 messages (increased from 4)
     if (conversationMessages.length > MAX_LOOP_MESSAGES) {
       console.log(`⚠️  Trimming conversation from ${conversationMessages.length} to ${MAX_LOOP_MESSAGES} messages`);
       conversationMessages = conversationMessages.slice(-MAX_LOOP_MESSAGES);
