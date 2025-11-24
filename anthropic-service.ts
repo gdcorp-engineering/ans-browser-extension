@@ -8,6 +8,11 @@ export async function streamAnthropic(
   onChunk: (text: string) => void,
   signal?: AbortSignal
 ): Promise<void> {
+  // Validate API key before making request
+  if (!apiKey || apiKey.trim().length === 0) {
+    throw new Error('Anthropic API key is not configured. Please add it in Settings (⚙️ icon).');
+  }
+
   const baseUrl = customBaseUrl || 'https://api.anthropic.com';
 
   // Filter out messages with empty content (API requirement)
@@ -72,8 +77,20 @@ Be clear and direct when explaining that browser automation requires enabling Br
   const response = await fetch(`${baseUrl}/v1/messages`, fetchOptions);
 
   if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error?.message || 'Anthropic API request failed');
+    let errorMsg = 'Anthropic API request failed';
+
+    try {
+      const error = await response.json();
+      console.error('❌ API Error:', error);
+      errorMsg = error.error?.message || errorMsg;
+    } catch (parseError) {
+      // Response is not JSON (likely HTML error page)
+      const text = await response.text();
+      console.error('❌ Non-JSON API Error Response:', text.substring(0, 200));
+      errorMsg = `API Error (${response.status} ${response.statusText}). Please check your API key and settings.`;
+    }
+
+    throw new Error(errorMsg);
   }
 
   const reader = response.body!.getReader();

@@ -213,6 +213,11 @@ export async function streamAnthropicWithBrowserTools(
   siteInstructions?: string, // Matched site-specific instructions
   settings?: any // User settings for conversation history and summarization
 ): Promise<void> {
+  // Validate API key before making request
+  if (!apiKey || apiKey.trim().length === 0) {
+    throw new Error('Anthropic API key is not configured. Please add it in Settings (⚙️ icon).');
+  }
+
   const baseUrl = customBaseUrl || 'https://api.anthropic.com';
 
   // Keep only the most recent messages to avoid context length issues
