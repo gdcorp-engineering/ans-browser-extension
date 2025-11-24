@@ -59,27 +59,30 @@ Steps for simple issue key lookup:
 2. Type the issue key
 3. Press Enter
 
-Steps for finding bugs assigned to me:
-OPTION 1 - Use page tabs (if available):
+Steps for finding bugs/issues assigned to me:
+OPTION 1 - Use page tabs (PREFERRED - fastest):
 1. Take a screenshot to see the page
 2. If you see "Assigned to me" tab at the top of the page, try clickElement({text: "Assigned to me"})
 3. If clickElement fails, look for the tab position and use coordinates as last resort
-4. Wait for results to load
+4. Wait 2 seconds for results to load
+5. Take ONE final screenshot
+6. STOP HERE - Extract and return ALL visible issues (don't scroll, don't filter further)
 
-OPTION 2 - Use Filters sidebar (most reliable):
+OPTION 2 - Use Filters sidebar (if no tab available):
 1. Take a screenshot first to see the page layout
 2. Click on "Filters" in the left sidebar
 3. Look for existing filters like "My open issues" or "Assigned to me"
 4. Click on the appropriate filter
-5. Wait for results to load
+5. Wait 2 seconds for results to load
+6. Take ONE final screenshot
+7. STOP HERE - Extract and return ALL visible issues (don't scroll, don't filter further)
 
-After getting results:
-- Extract and return issue keys, summaries, and statuses from the page
-
-If no suitable filter exists:
-1. Click "Create filter" or similar option
-2. Set up filter with assignee criteria
-3. Save and apply the filter
+CRITICAL: After clicking on "Assigned to me" or a filter:
+- DO NOT scroll
+- DO NOT try to filter further for bugs vs tasks
+- DO NOT use getPageContext or other tools
+- IMMEDIATELY extract what you see and return it to the user
+- The user asked for their assigned issues - give them the full list from what's visible
 
 Output: List of matching issues with keys, summaries, and current status
 
