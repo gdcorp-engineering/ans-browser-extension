@@ -483,6 +483,10 @@ async function executePageAction(
             'input[type="button"]',
             'input[type="submit"]',
             '[role="button"]',
+            '[role="tab"]',
+            '[role="link"]',
+            'span[onclick]',
+            'div[onclick]',
             '[onclick]'
           ];
 
@@ -513,6 +517,38 @@ async function executePageAction(
 
             if (element) {
               console.log(`✅ Found element by aria-label: "${target}"`);
+            }
+          }
+
+          // Last resort: search ALL elements for matching text (slow but comprehensive)
+          if (!element) {
+            console.log(`🔍 Last resort: searching all elements for text "${target}"`);
+            const allElements = Array.from(document.querySelectorAll('*'));
+            element = allElements.find(el => {
+              // Only consider visible elements
+              const rect = el.getBoundingClientRect();
+              if (rect.width === 0 || rect.height === 0) return false;
+
+              const text = el.textContent?.trim().toLowerCase() || '';
+              const targetLower = target.toLowerCase();
+
+              // Match if this element's direct text includes target
+              // (not just descendant text which would match parent containers)
+              if (text.includes(targetLower)) {
+                // Prefer elements with click handlers or cursor pointer
+                const style = window.getComputedStyle(el);
+                const clickable = style.cursor === 'pointer' ||
+                                el.hasAttribute('onclick') ||
+                                el.getAttribute('role') === 'button' ||
+                                el.getAttribute('role') === 'tab';
+                if (clickable) return true;
+              }
+              return false;
+            }) as Element | undefined || null;
+
+            if (element) {
+              console.log(`✅ Found element by text in all elements: "${target}"`);
+              console.log(`   Element: ${element.tagName}.${element.className}`);
             }
           }
         }
