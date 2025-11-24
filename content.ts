@@ -1307,9 +1307,83 @@ async function executePageAction(
           }
 
           // For other keys, dispatch normal keyboard events
+          // Map key names to proper key codes
+          const getKeyCode = (key: string): string => {
+            // Navigation keys
+            if (key === 'ArrowUp') return 'ArrowUp';
+            if (key === 'ArrowDown') return 'ArrowDown';
+            if (key === 'ArrowLeft') return 'ArrowLeft';
+            if (key === 'ArrowRight') return 'ArrowRight';
+            if (key === 'PageUp') return 'PageUp';
+            if (key === 'PageDown') return 'PageDown';
+            if (key === 'Home') return 'Home';
+            if (key === 'End') return 'End';
+
+            // Special keys
+            if (key === 'Tab') return 'Tab';
+            if (key === 'Escape') return 'Escape';
+            if (key === 'Enter') return 'Enter';
+            if (key === 'Backspace') return 'Backspace';
+            if (key === 'Delete') return 'Delete';
+            if (key === 'Space' || key === ' ') return 'Space';
+
+            // Function keys
+            if (key.startsWith('F') && key.length <= 3) return key; // F1-F12
+
+            // Letter keys get Key prefix
+            if (key.length === 1 && key.match(/[A-Za-z]/)) {
+              return `Key${key.toUpperCase()}`;
+            }
+
+            // Digit keys
+            if (key.length === 1 && key.match(/[0-9]/)) {
+              return `Digit${key}`;
+            }
+
+            // Default: return as-is
+            return key;
+          };
+
+          // Get proper keyCode for compatibility with older apps
+          const getKeyCodeValue = (key: string): number => {
+            if (key === 'Enter') return 13;
+            if (key === 'Escape') return 27;
+            if (key === 'Backspace') return 8;
+            if (key === 'Tab') return 9;
+            if (key === 'Space' || key === ' ') return 32;
+            if (key === 'PageUp') return 33;
+            if (key === 'PageDown') return 34;
+            if (key === 'End') return 35;
+            if (key === 'Home') return 36;
+            if (key === 'ArrowLeft') return 37;
+            if (key === 'ArrowUp') return 38;
+            if (key === 'ArrowRight') return 39;
+            if (key === 'ArrowDown') return 40;
+            if (key === 'Delete') return 46;
+
+            // Letter keys
+            if (key.length === 1 && key.match(/[A-Za-z]/)) {
+              return key.toUpperCase().charCodeAt(0);
+            }
+
+            // Digit keys
+            if (key.length === 1 && key.match(/[0-9]/)) {
+              return key.charCodeAt(0);
+            }
+
+            return 0;
+          };
+
+          const keyCode = getKeyCodeValue(keyToPress);
+          const code = getKeyCode(keyToPress);
+
+          console.log(`⌨️  Pressing key: "${keyToPress}" (code: ${code}, keyCode: ${keyCode})`);
+
           const keyEventInit: KeyboardEventInit = {
             key: keyToPress,
-            code: keyToPress === 'Tab' ? 'Tab' : keyToPress === 'Escape' ? 'Escape' : `Key${keyToPress}`,
+            code: code,
+            keyCode: keyCode,
+            which: keyCode,
             bubbles: true,
             cancelable: true,
             composed: true,
