@@ -1572,10 +1572,6 @@ let automationButton: HTMLDivElement | null = null;
 let isUserAborted = false; // Track if user manually aborted
 
 function showBrowserAutomationOverlay() {
-  // DISABLED: Overlay interferes with button clicks
-  console.log('🔵 Browser automation overlay disabled (interferes with clicks)');
-  return;
-
   // Don't show overlay if user has aborted
   if (isUserAborted) {
     console.log('🚫 Overlay blocked - user has taken over control');
@@ -1700,10 +1696,6 @@ function showBrowserAutomationOverlay() {
 }
 
 function hideBrowserAutomationOverlay() {
-  // DISABLED: Overlay disabled to prevent click interference
-  console.log('🔵 Browser automation overlay disabled (interferes with clicks)');
-  return;
-
   if (automationOverlay && automationOverlay.parentNode) {
     automationOverlay.remove();
     automationOverlay = null;
