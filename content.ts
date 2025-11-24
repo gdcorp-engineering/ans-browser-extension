@@ -497,6 +497,8 @@ async function executePageAction(
 
             if (element) {
               console.log(`✅ Found element by text in ${sel}: "${target}"`);
+              console.log(`   Element text: "${element.textContent?.trim()}"`);
+              console.log(`   Element bounds:`, element.getBoundingClientRect());
               break;
             }
           }
@@ -521,13 +523,24 @@ async function executePageAction(
           const clickX = rect.left + rect.width / 2;
           const clickY = rect.top + rect.height / 2;
 
+          console.log(`🎯 Click position calculated:`);
+          console.log(`   Element: ${element.tagName}.${element.className}`);
+          console.log(`   Element bounds: left=${rect.left}, top=${rect.top}, width=${rect.width}, height=${rect.height}`);
+          console.log(`   Click coordinates: (${Math.round(clickX)}, ${Math.round(clickY)}) - center of element`);
+          console.log(`   Element text: "${element.textContent?.trim().substring(0, 50)}"`);
+
           // Use complete click sequence for better compatibility
           await dispatchClickSequence(element, clickX, clickY);
 
           // Visual feedback
           highlightElement(element, coordinates || { x: clickX, y: clickY });
 
-          return { success: true, message: `Clicked element: ${selector || target}`, element: element.tagName };
+          return {
+            success: true,
+            message: `Clicked element at (${Math.round(clickX)}, ${Math.round(clickY)}): ${selector || target}`,
+            element: element.tagName,
+            clickCoordinates: { x: Math.round(clickX), y: Math.round(clickY) }
+          };
         }
 
         // 4. If element was searched but not found, return error

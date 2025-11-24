@@ -286,8 +286,10 @@ Preference order:
 For coordinates (use ONLY when DOM methods fail):
 - Take screenshot first to see exact location
 - Screenshot shows viewport - measure from top-left corner (0,0)
-- Measure to the CENTER of the target element, not edges
+- Measure to the EXACT CENTER of the visible text/icon, not the button border
+- For text like "Assigned to me": measure horizontal center of entire phrase and vertical center of the text height
 - Be precise - off by even 20-30 pixels can miss the target
+- Account for padding - don't measure to button edges, measure to actual text center
 - Double-check your measurement before clicking
 - If click misses, take new screenshot and measure again more carefully
 
