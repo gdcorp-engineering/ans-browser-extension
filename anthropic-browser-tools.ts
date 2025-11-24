@@ -109,8 +109,8 @@ const BROWSER_TOOLS = [
  * Summarize old messages to reduce token usage while preserving context
  * @param messages - Full message history
  * @param keepRecentCount - Number of recent messages to keep unsummarized
- * @param apiKey - Anthropic API key
- * @param baseUrl - API base URL
+ * @param apiKey - GoCode API key
+ * @param baseUrl - API base URL (GoCode endpoint)
  * @returns Messages with old ones summarized
  */
 async function summarizeOldMessages(
@@ -215,10 +215,11 @@ export async function streamAnthropicWithBrowserTools(
 ): Promise<void> {
   // Validate API key before making request
   if (!apiKey || apiKey.trim().length === 0) {
-    throw new Error('API key is not configured. Please add your GoCode Key or Anthropic API key in Settings (⚙️ icon).');
+    throw new Error('GoCode Key is not configured. Please add your GoCode Key in Settings (⚙️ icon).');
   }
 
-  const baseUrl = customBaseUrl || 'https://api.anthropic.com';
+  // Always use GoCode endpoint - no direct Anthropic API access
+  const baseUrl = customBaseUrl || 'https://caas-gocode-prod.caas-prod.prod.onkatana.net';
 
   // Keep only the most recent messages to avoid context length issues
   // Page context can be large, and tool use adds more messages during the loop

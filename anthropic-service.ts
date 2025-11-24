@@ -10,10 +10,11 @@ export async function streamAnthropic(
 ): Promise<void> {
   // Validate API key before making request
   if (!apiKey || apiKey.trim().length === 0) {
-    throw new Error('API key is not configured. Please add your GoCode Key or Anthropic API key in Settings (⚙️ icon).');
+    throw new Error('GoCode Key is not configured. Please add your GoCode Key in Settings (⚙️ icon).');
   }
 
-  const baseUrl = customBaseUrl || 'https://api.anthropic.com';
+  // Always use GoCode endpoint - no direct Anthropic API access
+  const baseUrl = customBaseUrl || 'https://caas-gocode-prod.caas-prod.prod.onkatana.net';
 
   // Filter out messages with empty content (API requirement)
   const validMessages = messages.filter(m => {

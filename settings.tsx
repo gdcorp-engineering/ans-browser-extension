@@ -698,7 +698,7 @@ function SettingsPage() {
               type={showApiKey ? 'text' : 'password'}
               value={settings.apiKey}
               onChange={(e) => setSettings({ ...settings, apiKey: e.target.value })}
-              placeholder="Enter your API key"
+              placeholder="Enter your GoCode key"
               className="api-key-input"
             />
             <button
@@ -709,6 +709,9 @@ function SettingsPage() {
               {showApiKey ? '👁️' : '👁️‍🗨️'}
             </button>
           </div>
+          <p className="help-text">
+            Get your GoCode API key from: <a href="https://caas.godaddy.com/gocode/my-api-keys" target="_blank" rel="noopener noreferrer">https://caas.godaddy.com/gocode/my-api-keys</a>
+          </p>
         </div>
 
         <div className="setting-group">
