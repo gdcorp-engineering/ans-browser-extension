@@ -212,9 +212,29 @@ export async function streamAnthropicWithBrowserTools(
   // Page context can be large, and tool use adds more messages during the loop
   // User can configure how much history to keep in settings
   const MAX_HISTORY_MESSAGES = settings?.conversationHistoryLength || 10; // Default: 10 messages (increased from 1)
-  let conversationMessages = messages.length > MAX_HISTORY_MESSAGES
-    ? messages.slice(-MAX_HISTORY_MESSAGES)
-    : [...messages];
+
+  // Smart trimming to preserve tool_use/tool_result pairs
+  let conversationMessages: Message[] = [];
+  if (messages.length > MAX_HISTORY_MESSAGES) {
+    let trimmed = messages.slice(-MAX_HISTORY_MESSAGES);
+
+    // Check if first message is a user message with tool_result
+    const firstMsg = trimmed[0];
+    if (firstMsg?.role === 'user' && Array.isArray(firstMsg.content)) {
+      const hasToolResult = (firstMsg.content as any[]).some((item: any) => item.type === 'tool_result');
+      if (hasToolResult) {
+        // Include one more message to get the assistant's tool_use
+        const firstMsgIndex = messages.length - MAX_HISTORY_MESSAGES;
+        if (firstMsgIndex > 0) {
+          trimmed = messages.slice(-(MAX_HISTORY_MESSAGES + 1));
+          console.log(`📎 Preserved tool_use/tool_result pair during initial trim`);
+        }
+      }
+    }
+    conversationMessages = trimmed;
+  } else {
+    conversationMessages = [...messages];
+  }
 
   // Smart summarization: If enabled and we have many messages, summarize old ones
   if (settings?.enableSmartSummarization !== false && conversationMessages.length > 8) {
@@ -613,7 +633,28 @@ Remember: Take your time, verify each step, and describe what you see before act
     const MAX_LOOP_MESSAGES = settings?.conversationLoopHistoryLength || 15; // Default: 15 messages (increased from 4)
     if (conversationMessages.length > MAX_LOOP_MESSAGES) {
       console.log(`⚠️  Trimming conversation from ${conversationMessages.length} to ${MAX_LOOP_MESSAGES} messages`);
-      conversationMessages = conversationMessages.slice(-MAX_LOOP_MESSAGES);
+
+      // Smart trimming: Don't break tool_use/tool_result pairs
+      // If the first message after trimming is a user message with tool_result,
+      // we need to also include the previous assistant message with tool_use
+      let trimmedMessages = conversationMessages.slice(-MAX_LOOP_MESSAGES);
+
+      // Check if first message is a user message with tool_result content
+      const firstMsg = trimmedMessages[0];
+      if (firstMsg?.role === 'user' && Array.isArray(firstMsg.content)) {
+        const hasToolResult = (firstMsg.content as any[]).some((item: any) => item.type === 'tool_result');
+        if (hasToolResult) {
+          // Find the index in original array and include one more message before it
+          const firstMsgIndex = conversationMessages.length - MAX_LOOP_MESSAGES;
+          if (firstMsgIndex > 0) {
+            // Include the previous assistant message too
+            trimmedMessages = conversationMessages.slice(-(MAX_LOOP_MESSAGES + 1));
+            console.log(`   ↳ Included previous assistant message to preserve tool_use/tool_result pair`);
+          }
+        }
+      }
+
+      conversationMessages = trimmedMessages;
     }
 
     // If the response has a stop_reason of 'end_turn', we're done
