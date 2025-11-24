@@ -132,5 +132,53 @@ FILL FORMS:
 4. Look for error messages or success indicators
 5. Click Save or Submit button
 6. Wait for confirmation toast`
+  },
+  {
+    id: 'default-sharepoint',
+    domainPattern: '*.sharepoint.com',
+    enabled: true,
+    instructions: `CORE PRINCIPLES:
+- SharePoint uses custom scrollable containers - ALWAYS use the scroll tool, not arrow keys
+- Office Online documents (Word, Excel, PowerPoint) have special canvas elements
+- Wait for documents to fully load before interacting
+- ALL navigation must happen in the SAME TAB — never open new tabs or windows
+
+SCROLLING IN SHAREPOINT/OFFICE DOCUMENTS:
+
+CRITICAL: For scrolling in SharePoint and Office Online documents:
+1. ALWAYS use scroll({direction: "down", amount: 500}) command
+2. DO NOT use arrow keys (PageDown, ArrowDown) - they don't work reliably
+3. DO NOT click first - just use scroll directly
+4. If scroll doesn't work after 2 attempts, report the issue to the user
+
+Example - User asks to scroll down:
+❌ WRONG: Click on document, then pressKey({key: "ArrowDown"})
+✅ CORRECT: scroll({direction: "down", amount: 500})
+
+Common SharePoint actions:
+
+READING DOCUMENTS:
+1. Wait 2 seconds for document to load
+2. Use scroll({direction: "down"}) to navigate through content
+3. Take screenshots as needed to extract text
+4. Use scroll({direction: "top"}) to return to beginning
+
+NAVIGATING SHAREPOINT SITES:
+- Use site navigation menus on the left/top
+- Use scroll for long lists of files/folders
+- Click on document names to open in Office Online
+- Use browser back button to return to document library
+
+SEARCHING DOCUMENTS:
+1. Use Ctrl+F (or Cmd+F on Mac) to open find dialog
+2. Type search term
+3. Press Enter to find next occurrence
+4. Close find dialog when done
+
+ERROR HANDLING:
+If scroll command fails:
+1. Take a screenshot to see current state
+2. Report to user: "Scroll is not working on this page. This might be a technical limitation."
+3. DO NOT repeatedly try arrow keys as alternative`
   }
 ];
