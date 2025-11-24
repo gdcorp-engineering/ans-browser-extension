@@ -215,7 +215,7 @@ export async function streamAnthropicWithBrowserTools(
 ): Promise<void> {
   // Validate API key before making request
   if (!apiKey || apiKey.trim().length === 0) {
-    throw new Error('Anthropic API key is not configured. Please add it in Settings (⚙️ icon).');
+    throw new Error('API key is not configured. Please add your GoCode Key or Anthropic API key in Settings (⚙️ icon).');
   }
 
   const baseUrl = customBaseUrl || 'https://api.anthropic.com';
