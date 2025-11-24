@@ -965,6 +965,29 @@ async function executePageAction(
         // Find the main scrollable element
         // Many SPAs (like Slack) use a custom scrollable container instead of window scroll
         const findScrollableElement = (): Element => {
+          // Special handling for SharePoint/Office Online documents
+          // Look for Office Online's canvas or document container
+          const officeCanvases = [
+            document.querySelector('#WACViewPanel_EditingElement'),  // Word Online
+            document.querySelector('.CanvasElement'),                // Office canvas
+            document.querySelector('[role="document"]'),             // Generic document role
+            document.querySelector('#m_excelWebRenderer_ewaCtl_scrollableContainer'), // Excel Online
+            document.querySelector('.ewaCtl_table')                  // Excel table
+          ].filter(el => el !== null);
+
+          if (officeCanvases.length > 0) {
+            for (const canvas of officeCanvases) {
+              if (canvas && canvas.scrollHeight > canvas.clientHeight) {
+                console.log('   Using Office Online canvas:', {
+                  tag: canvas.tagName,
+                  class: canvas.className,
+                  id: (canvas as HTMLElement).id
+                });
+                return canvas;
+              }
+            }
+          }
+
           // First check if window is scrollable
           if (document.body.scrollHeight > window.innerHeight && window.scrollY >= 0) {
             console.log('   Using window scroll');
@@ -1024,12 +1047,31 @@ async function executePageAction(
             return largest;
           }
 
-          console.log('   Fallback to document.documentElement');
+          // Last resort: if nothing scrollable found, check if page is actually scrollable
+          console.log('   ⚠️ No scrollable elements found, checking if page is scrollable...');
+          console.log('   Page dimensions:', {
+            bodyHeight: document.body.scrollHeight,
+            windowHeight: window.innerHeight,
+            scrollY: window.scrollY,
+            isScrollable: document.body.scrollHeight > window.innerHeight
+          });
+
+          // Force window scroll even if it doesn't look scrollable - might be a detection issue
           return document.documentElement;
         };
 
         const scrollableElement = findScrollableElement();
         const isWindow = scrollableElement === document.documentElement;
+
+        console.log('📍 Final scroll target:', {
+          isWindow,
+          element: isWindow ? 'document.documentElement (window)' : scrollableElement.tagName,
+          className: isWindow ? 'n/a' : scrollableElement.className,
+          currentScrollTop: scrollableElement.scrollTop,
+          scrollHeight: scrollableElement.scrollHeight,
+          clientHeight: scrollableElement.clientHeight,
+          remainingScroll: scrollableElement.scrollHeight - scrollableElement.clientHeight - scrollableElement.scrollTop
+        });
 
         if (direction === 'top' || target === 'top') {
           if (isWindow) {
@@ -1052,6 +1094,8 @@ async function executePageAction(
           const scrollAmount = amount || 500;
           const beforeScroll = scrollableElement.scrollTop;
 
+          console.log(`🔼 Attempting to scroll UP by ${scrollAmount}px from position ${beforeScroll}`);
+
           // Use scrollBy for window, scrollTop for elements (better compatibility)
           if (isWindow) {
             window.scrollBy({ top: -scrollAmount, behavior: 'smooth' });
@@ -1062,27 +1106,37 @@ async function executePageAction(
           }
 
           setTimeout(() => {
-            console.log(`   ✓ Scrolled up by ${scrollAmount}px (from ${beforeScroll} to ${scrollableElement.scrollTop})`);
+            const afterScroll = scrollableElement.scrollTop;
+            const actualDelta = beforeScroll - afterScroll;
+            console.log(`   ✓ Scrolled up by ${actualDelta}px (from ${beforeScroll} to ${afterScroll})`);
           }, 100);
-          return { success: true, message: `Scrolled up by ${scrollAmount}px` };
+          return { success: true, message: `Scrolled up by ${scrollAmount}px from position ${beforeScroll}` };
         } else if (direction === 'down') {
           const scrollAmount = amount || 500;
           const beforeScroll = scrollableElement.scrollTop;
+          const maxScroll = scrollableElement.scrollHeight - scrollableElement.clientHeight;
+
+          console.log(`🔽 Attempting to scroll DOWN by ${scrollAmount}px from position ${beforeScroll} (max: ${maxScroll})`);
 
           // Use scrollBy for window, scrollTop for elements (better compatibility)
           if (isWindow) {
             window.scrollBy({ top: scrollAmount, behavior: 'smooth' });
           } else {
             // Use scrollTop for better compatibility with all elements
-            const maxScroll = scrollableElement.scrollHeight - scrollableElement.clientHeight;
             const targetScroll = Math.min(maxScroll, scrollableElement.scrollTop + scrollAmount);
+            console.log(`   Setting scrollTop from ${scrollableElement.scrollTop} to ${targetScroll}`);
             scrollableElement.scrollTop = targetScroll;
           }
 
           setTimeout(() => {
-            console.log(`   ✓ Scrolled down by ${scrollAmount}px (from ${beforeScroll} to ${scrollableElement.scrollTop})`);
+            const afterScroll = scrollableElement.scrollTop;
+            const actualDelta = afterScroll - beforeScroll;
+            console.log(`   ✓ Scrolled down by ${actualDelta}px (from ${beforeScroll} to ${afterScroll})`);
+            if (actualDelta === 0 && beforeScroll < maxScroll) {
+              console.warn(`   ⚠️ Scroll didn't move! This might indicate a scrolling issue with this element.`);
+            }
           }, 100);
-          return { success: true, message: `Scrolled down by ${scrollAmount}px` };
+          return { success: true, message: `Scrolled down by ${scrollAmount}px from position ${beforeScroll} to ${Math.min(maxScroll, beforeScroll + scrollAmount)}` };
         } else if (selector || target) {
           const element = document.querySelector(selector || target!);
           if (element) {
