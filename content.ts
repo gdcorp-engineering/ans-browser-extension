@@ -1403,6 +1403,31 @@ async function executePageAction(
           focusedElement.dispatchEvent(new KeyboardEvent('keydown', keyEventInit));
           focusedElement.dispatchEvent(new KeyboardEvent('keypress', keyEventInit));
 
+          // IMPORTANT: Synthetic keyboard events have isTrusted=false and browsers
+          // won't perform default actions (scrolling, navigation, etc.) for security.
+          // We need to manually implement the default behavior for navigation keys.
+
+          // Manually perform default action for navigation keys
+          if (keyToPress === 'PageDown') {
+            console.log('   ↳ Manually scrolling page down (synthetic events cannot trigger default scroll)');
+            window.scrollBy({ top: window.innerHeight, behavior: 'smooth' });
+          } else if (keyToPress === 'PageUp') {
+            console.log('   ↳ Manually scrolling page up (synthetic events cannot trigger default scroll)');
+            window.scrollBy({ top: -window.innerHeight, behavior: 'smooth' });
+          } else if (keyToPress === 'ArrowDown') {
+            console.log('   ↳ Manually scrolling down (synthetic events cannot trigger default scroll)');
+            window.scrollBy({ top: 40, behavior: 'smooth' });
+          } else if (keyToPress === 'ArrowUp') {
+            console.log('   ↳ Manually scrolling up (synthetic events cannot trigger default scroll)');
+            window.scrollBy({ top: -40, behavior: 'smooth' });
+          } else if (keyToPress === 'Home') {
+            console.log('   ↳ Manually scrolling to top (synthetic events cannot trigger default scroll)');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          } else if (keyToPress === 'End') {
+            console.log('   ↳ Manually scrolling to bottom (synthetic events cannot trigger default scroll)');
+            window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+          }
+
           // Dispatch input for printable characters
           if (keyToPress.length === 1) {
             focusedElement.dispatchEvent(new InputEvent('input', {
