@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -88,6 +88,56 @@ function generateChatTitle(messages: Message[]): string {
     return preview || 'New Chat';
   }
   return 'New Chat';
+}
+
+// Sanitize error messages to remove API keys and sensitive information
+function sanitizeErrorMessage(error: any, settings?: Settings): string {
+  let errorMessage = '';
+  
+  if (error instanceof Error) {
+    errorMessage = error.message;
+  } else if (typeof error === 'string') {
+    errorMessage = error;
+  } else if (error && typeof error === 'object') {
+    errorMessage = JSON.stringify(error, null, 2);
+  } else {
+    errorMessage = String(error);
+  }
+  
+  // Remove API keys from error messages
+  // Pattern: sk- followed by alphanumeric characters (common API key format)
+  errorMessage = errorMessage.replace(/sk-[a-zA-Z0-9_-]{20,}/g, 'sk-***REDACTED***');
+  
+  // Remove Bearer tokens
+  errorMessage = errorMessage.replace(/Bearer\s+[a-zA-Z0-9_-]{20,}/gi, 'Bearer ***REDACTED***');
+  
+  // Remove JWT tokens (typically start with eyJ)
+  errorMessage = errorMessage.replace(/eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+/g, '***REDACTED_JWT***');
+  
+  // Remove any API keys from settings if they appear in the error
+  if (settings) {
+    if (settings.apiKey) {
+      errorMessage = errorMessage.replace(new RegExp(settings.apiKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '***API_KEY_REDACTED***');
+    }
+    if (settings.ansApiToken) {
+      errorMessage = errorMessage.replace(new RegExp(settings.ansApiToken.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '***ANS_TOKEN_REDACTED***');
+    }
+  }
+  
+  // Remove any long alphanumeric strings that might be keys (20+ chars)
+  errorMessage = errorMessage.replace(/\b[a-zA-Z0-9_-]{30,}\b/g, (match) => {
+    // Don't redact URLs or common patterns
+    if (match.startsWith('http://') || match.startsWith('https://') || match.includes('://')) {
+      return match;
+    }
+    // Don't redact if it looks like a UUID
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(match)) {
+      return match;
+    }
+    return '***REDACTED***';
+  });
+  
+  return errorMessage;
 }
 
 // Load chat history from storage
@@ -182,21 +232,59 @@ async function saveCurrentChat(
 
 // Custom component to handle link clicks - opens in new tab
 const LinkComponent = ({ href, children }: { href?: string; children?: React.ReactNode }) => {
+  // Get settings URL once
+  const settingsUrl = chrome.runtime.getURL('settings.html');
+  
   const handleLinkClick = (e: React.MouseEvent) => {
     e.preventDefault();
-    if (href && (href.startsWith('http://') || href.startsWith('https://'))) {
-      chrome.tabs.create({ url: href });
+    e.stopPropagation();
+    
+    // Normalize href - ReactMarkdown might pass it differently
+    const normalizedHref = href || '';
+    console.log('LinkComponent clicked, href:', normalizedHref, 'settingsUrl:', settingsUrl);
+    
+    // Check if it's a chrome-extension:// URL pointing to settings.html
+    const isSettingsPage = normalizedHref.includes('settings.html') || 
+                          normalizedHref === 'settings://open' || 
+                          normalizedHref.includes('settings://open') ||
+                          normalizedHref === settingsUrl;
+    
+    if (isSettingsPage) {
+      // Get the chrome-extension:// URL and open it in a new tab
+      console.log('Opening settings page:', settingsUrl);
+      chrome.tabs.create({ url: settingsUrl }, () => {
+        if (chrome.runtime.lastError) {
+          console.error('Error opening settings:', chrome.runtime.lastError);
+        }
+      });
+      return;
+    }
+    
+    // Handle regular HTTP/HTTPS links
+    if (normalizedHref.startsWith('http://') || normalizedHref.startsWith('https://')) {
+      chrome.tabs.create({ url: normalizedHref });
     }
   };
 
+  // Check if this is a settings link - compare with actual settings URL
+  const isSettingsLink = href?.includes('settings.html') || 
+                        href === 'settings://open' || 
+                        href?.includes('settings://open') ||
+                        href === settingsUrl;
+  
+  // For settings links, ALWAYS use the actual settings URL - force it to be absolute
+  const displayHref = isSettingsLink ? settingsUrl : href;
+  
+  console.log('LinkComponent render, href:', href, 'displayHref:', displayHref, 'isSettingsLink:', isSettingsLink);
+
   return (
     <a
-      href={href}
+      href={displayHref}
       onClick={handleLinkClick}
       style={{ color: '#2563eb', textDecoration: 'underline', cursor: 'pointer' }}
-      title={href}
-      target="_blank"
-      rel="noopener noreferrer"
+      title={isSettingsLink ? 'Open Settings' : href}
+      target={href?.startsWith('http') ? '_blank' : undefined}
+      rel={href?.startsWith('http') ? 'noopener noreferrer' : undefined}
     >
       {children}
     </a>
@@ -279,6 +367,14 @@ const UserMessageParser = ({ content }: { content: string }) => {
 
 // Component to parse and display assistant messages with better formatting
 const MessageParser = ({ content }: { content: string }) => {
+  // Pre-process content to replace [Settings](settings://open) with a unique marker
+  const preprocessContent = (text: string): { content: string; hasSettingsButton: boolean } => {
+    const settingsMarker = '🔗SETTINGS_LINK_PLACEHOLDER🔗';
+    const hasSettingsButton = text.includes('[Settings](settings://open)');
+    const processed = text.replace(/\[Settings\]\(settings:\/\/open\)/g, settingsMarker);
+    return { content: processed, hasSettingsButton };
+  };
+  
   // Helper function to clean up XML-like tool descriptions
   const cleanToolDescription = (text: string): string => {
     // Match patterns like <click_element>...</click_element> with nested tags
@@ -364,6 +460,86 @@ const MessageParser = ({ content }: { content: string }) => {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
       {groups.map((group, idx) => {
         const isTool = group.type === 'tool';
+        const { content: processedContent, hasSettingsButton } = preprocessContent(group.content);
+        
+        // If content has Settings button, render and replace placeholder after mount
+        if (hasSettingsButton && !isTool) {
+          const containerRef = useRef<HTMLDivElement>(null);
+          const settingsMarker = '🔗SETTINGS_LINK_PLACEHOLDER🔗';
+          
+          useEffect(() => {
+            if (containerRef.current) {
+              // Find all text nodes containing the marker and replace with Settings link
+              const walker = document.createTreeWalker(
+                containerRef.current,
+                NodeFilter.SHOW_TEXT,
+                null
+              );
+              
+              const nodesToReplace: { node: Text; parent: Node }[] = [];
+              let node;
+              while (node = walker.nextNode()) {
+                if (node.textContent?.includes(settingsMarker)) {
+                  nodesToReplace.push({ node: node as Text, parent: node.parentNode! });
+                }
+              }
+              
+              nodesToReplace.forEach(({ node, parent }) => {
+                const parts = node.textContent!.split(settingsMarker);
+                const fragment = document.createDocumentFragment();
+                
+                parts.forEach((part, partIdx) => {
+                  if (part) {
+                    fragment.appendChild(document.createTextNode(part));
+                  }
+                  if (partIdx < parts.length - 1) {
+                    const link = document.createElement('a');
+                    link.href = '#';
+                    link.textContent = 'Settings';
+                    link.style.cssText = 'color: #2563eb; text-decoration: underline; cursor: pointer; display: inline;';
+                    link.title = 'Open Settings';
+                    link.onclick = (e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      chrome.runtime.openOptionsPage();
+                    };
+                    fragment.appendChild(link);
+                  }
+                });
+                
+                parent.replaceChild(fragment, node);
+              });
+            }
+          }, [processedContent]);
+          
+          return (
+            <div
+              key={idx}
+              ref={containerRef}
+              style={{
+                padding: isTool ? '4px 8px' : undefined,
+                backgroundColor: isTool ? '#1a1a1a' : undefined,
+                borderLeft: isTool ? '2px solid #555555' : undefined,
+                borderRadius: isTool ? '3px' : undefined,
+                opacity: isTool ? 0.6 : 1,
+                fontFamily: isTool ? 'monospace' : 'inherit',
+                fontSize: isTool ? '0.7em' : 'inherit',
+                color: isTool ? '#888888' : 'inherit',
+                lineHeight: isTool ? '1.2' : 'inherit',
+              }}
+            >
+              <ReactMarkdown 
+                remarkPlugins={[remarkGfm]} 
+                components={{ 
+                  a: LinkComponent as any
+                }}
+              >
+                {processedContent}
+              </ReactMarkdown>
+            </div>
+          );
+        }
+        
         return (
           <div
             key={idx}
@@ -380,7 +556,7 @@ const MessageParser = ({ content }: { content: string }) => {
             }}
           >
             <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: LinkComponent as any }}>
-              {group.content}
+              {processedContent}
             </ReactMarkdown>
           </div>
         );
@@ -470,7 +646,7 @@ function ChatSidebar() {
   const [showChatMenu, setShowChatMenu] = useState(false);
   const [onboardingState, setOnboardingState] = useState<{
     active: boolean;
-    step: 'provider' | 'gocodeUrl' | 'apiKey' | 'optional' | 'complete';
+    step: 'provider' | 'apiKey' | 'optional' | 'complete';
     tempSettings: Partial<Settings>;
     waitingFor?: 'businessServices' | 'ans' | 'customMCP';
   } | null>(null);
@@ -1897,18 +2073,14 @@ function ChatSidebar() {
         const defaultModel = PROVIDER_MODELS[provider][0].id;
         tempSettings.provider = provider;
         tempSettings.model = defaultModel;
+        // Automatically set default GoCode URL
+        tempSettings.customBaseUrl = 'https://caas-gocode-prod.caas-prod.prod.onkatana.net';
         
-        setOnboardingState({
-          active: true,
-          step: 'apiKey',
-          tempSettings
-        });
-
         const providerName = provider === 'google' ? 'Google' : provider === 'anthropic' ? 'Anthropic' : 'OpenAI';
 
         setOnboardingState({
           active: true,
-          step: 'gocodeUrl',
+          step: 'apiKey',
           tempSettings
         });
 
@@ -1919,7 +2091,7 @@ function ChatSidebar() {
         }, {
           id: (Date.now() + 1).toString(),
           role: 'assistant',
-          content: `Great! You've selected **${providerName}**.\n\n**Step 2: GoCode URL**\n\nPlease provide your GoCode URL. This is the endpoint for your GoCode service.\n\nDefault: \`https://caas-gocode-prod.caas-prod.prod.onkatana.net\`\n\nPaste your GoCode URL, or type **"Use Default"** to continue with the default:`
+          content: `Great! You've selected **${providerName}**.\n\n**Step 2: GoCode Key**\n\nPlease provide your GoCode Key. This is your API key for the GoCode service.\n\nPaste your GoCode Key here:\n\n---\n\n💡 **Need help?** You can also configure your GoCode Key in [Settings](settings://open).\n\n**GoCode Key Format:** Your key should start with "sk-" followed by a long string of characters.`
         }]);
       } else {
         setMessages(prev => [...prev, {
@@ -1932,51 +2104,100 @@ function ChatSidebar() {
           content: `I didn't recognize that provider. Please type **"Google"**, **"Anthropic"**, or **"OpenAI"** to continue.`
         }]);
       }
-    } else if (currentStep === 'gocodeUrl') {
-      // Handle GoCode URL input
-      let gocodeUrl = '';
-      if (input.includes('use default') || input.includes('default')) {
-        gocodeUrl = 'https://caas-gocode-prod.caas-prod.prod.onkatana.net';
-      } else if (userInput.trim().length > 0) {
-        gocodeUrl = userInput.trim();
-        // Basic URL validation
-        if (!gocodeUrl.startsWith('http://') && !gocodeUrl.startsWith('https://')) {
-          setMessages(prev => [...prev, {
-            id: Date.now().toString(),
-            role: 'user',
-            content: userInput
-          }, {
-            id: (Date.now() + 1).toString(),
-            role: 'assistant',
-            content: `Please enter a valid URL starting with http:// or https://, or type **"Use Default"** to use the default GoCode URL.`
-          }]);
-          return;
-        }
-      } else {
-        // Empty input, use default
-        gocodeUrl = 'https://caas-gocode-prod.caas-prod.prod.onkatana.net';
-      }
-
-      tempSettings.customBaseUrl = gocodeUrl;
-      
-      setOnboardingState({
-        active: true,
-        step: 'apiKey',
-        tempSettings
-      });
-
-      setMessages(prev => [...prev, {
-        id: Date.now().toString(),
-        role: 'user',
-        content: input.includes('use default') || input.includes('default') ? 'Use Default' : userInput
-      }, {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: `GoCode URL saved! ✅\n\n**Step 3: GoCode Key**\n\nPlease provide your GoCode Key. This is your API key for the GoCode service.\n\nPaste your GoCode Key here:`
-      }]);
     } else if (currentStep === 'apiKey') {
-      if (input.length > 10) { // Basic validation - API keys are usually longer
-        tempSettings.apiKey = userInput.trim();
+      // Validate that the input looks like an API key, not a question or instruction
+      const trimmedInput = userInput.trim();
+      
+      // Comprehensive question detection - check for question words, question marks, and common phrases
+      const lowerInput = trimmedInput.toLowerCase();
+      
+      // Check for question marks
+      const hasQuestionMark = lowerInput.includes('?');
+      
+      // Check for question words (at start or after common prefixes)
+      const questionWords = ['how', 'where', 'what', 'when', 'why', 'who', 'which', 'whose', 'whom'];
+      const hasQuestionWord = questionWords.some(word => {
+        const index = lowerInput.indexOf(word);
+        return index !== -1 && (
+          index === 0 || // At start
+          lowerInput[index - 1] === ' ' || // After space
+          lowerInput.substring(Math.max(0, index - 3), index) === 'do ' || // After "do "
+          lowerInput.substring(Math.max(0, index - 4), index) === 'can ' || // After "can "
+          lowerInput.substring(Math.max(0, index - 6), index) === 'could ' // After "could "
+        );
+      });
+      
+      // Check for question phrases
+      const questionPhrases = [
+        'i need', 'i want', 'i would like', 'i am looking for', 'i am trying to',
+        'can you', 'could you', 'would you', 'will you', 'should i',
+        'please help', 'help me', 'need help', 'looking for', 'trying to find',
+        'where can', 'where do', 'where is', 'where are',
+        'how can', 'how do', 'how to', 'how does', 'how did',
+        'what is', 'what are', 'what do', 'what does',
+        'tell me', 'show me', 'explain', 'describe',
+        'do you know', 'do you have', 'is there', 'are there',
+        'i don\'t know', 'i don\'t have', 'i\'m not sure',
+        'i need to', 'i want to', 'i\'m looking for', 'i\'m trying to'
+      ];
+      const hasQuestionPhrase = questionPhrases.some(phrase => lowerInput.includes(phrase));
+      
+      // Check for imperative/question patterns
+      const imperativePatterns = [
+        /^(please|can|could|would|will|should)\s+(you|i|we)/i,
+        /^(help|show|tell|explain|describe|find|get|obtain|retrieve)/i,
+        /^(i|we)\s+(need|want|would like|am looking|am trying)/i
+      ];
+      const hasImperativePattern = imperativePatterns.some(pattern => pattern.test(trimmedInput));
+      
+      // Check if input contains spaces and common words (likely a sentence/question, not an API key)
+      const wordCount = trimmedInput.split(/\s+/).filter(w => w.length > 0).length;
+      const commonWords = ['the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'should', 'could', 'can', 'may', 'might', 'must'];
+      const hasCommonWords = commonWords.some(word => {
+        const regex = new RegExp(`\\b${word}\\b`, 'i');
+        return regex.test(trimmedInput);
+      });
+      const looksLikeSentence = wordCount > 2 && hasCommonWords;
+      
+      // Check for question indicators in context
+      const isQuestion = hasQuestionMark || 
+                        hasQuestionWord || 
+                        hasQuestionPhrase || 
+                        hasImperativePattern ||
+                        (looksLikeSentence && (hasQuestionWord || hasQuestionPhrase));
+      
+      // Check if it looks like an API key - GoCode keys should start with "sk-"
+      // Also accept Bearer tokens and JWT tokens, but be strict about format
+      const startsWithSk = trimmedInput.startsWith('sk-');
+      const startsWithBearer = trimmedInput.startsWith('Bearer ') && trimmedInput.length > 20;
+      const startsWithJWT = trimmedInput.startsWith('eyJ') && trimmedInput.length > 50; // JWT tokens are longer
+      
+      // For keys starting with "sk-", validate minimum length (at least 20 chars after "sk-")
+      const isValidSkKey = startsWithSk && trimmedInput.length >= 23; // "sk-" + at least 20 chars
+      
+      // For other formats, require longer strings and strict alphanumeric pattern (no spaces)
+      const isValidOtherKey = (startsWithBearer || startsWithJWT) && 
+                             /^[a-zA-Z0-9_.-]+$/.test(trimmedInput.replace(/^Bearer\s+/, '').replace(/^eyJ/, ''));
+      
+      const looksLikeApiKey = isValidSkKey || isValidOtherKey;
+      
+      // ALWAYS reject questions, even if they somehow pass other checks
+      if (isQuestion) {
+        setMessages(prev => [...prev, {
+          id: Date.now().toString(),
+          role: 'user',
+          content: userInput
+        }, {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: `It looks like you're asking a question. Please paste your GoCode Key directly.\n\n**GoCode Key Format:**\nYour GoCode Key should start with "sk-" followed by a long string of characters (at least 20 characters after "sk-").\n\n**How to get your GoCode Key:**\nGet your GoCode Key from [GoCode (Alpha) - How to Get Started](https://secureservernet.sharepoint.com/sites/AIHub/SitePages/Meet-GoCode-(Alpha)--Your-smarter-gateway-to-AI-providers%E2%80%94Now-with-self-issued-keys-for-IDEs-and-CLIs.aspx#how-to-get-started-(alpha))\n\n💡 **Need help?** You can also configure your GoCode Key in [Settings](settings://open).`
+        }]);
+        return;
+      }
+      
+      // Validate API key format
+      if (looksLikeApiKey) {
+        tempSettings.apiKey = trimmedInput;
         
         // Save required settings with GoCode URL
         const finalSettings: Settings = {
@@ -2001,10 +2222,11 @@ function ChatSidebar() {
           }, {
             id: (Date.now() + 1).toString(),
             role: 'assistant',
-            content: `Perfect! Your GoCode Key has been saved. ✅\n\n**Step 4: Optional Configuration**\n\nWould you like to configure optional features now?\n\n• **Enable Business Services** - Access 115 Million verified GoDaddy customer services through AI chat (requires ANS API Token)\n\n• **Custom MCP Servers** - Add custom Model Context Protocol servers\n\nType **"Yes"** to configure these, or **"No"** to skip and start chatting.`
+            content: `Perfect! Your GoCode Key has been saved. ✅\n\n**Step 3: Optional Configuration**\n\nWould you like to configure optional features now?\n\n• **Enable Business Services** - Access 115 Million verified GoDaddy customer services through AI chat (requires ANS API Token)\n\n• **Custom MCP Servers** - Add custom Model Context Protocol servers\n\nType **"Yes"** to configure these, or **"No"** to skip and start chatting.`
           }]);
         });
       } else {
+        // Invalid key format - show helpful error with settings link
         setMessages(prev => [...prev, {
           id: Date.now().toString(),
           role: 'user',
@@ -2012,7 +2234,7 @@ function ChatSidebar() {
         }, {
           id: (Date.now() + 1).toString(),
           role: 'assistant',
-          content: `That doesn't look like a valid GoCode Key. Please paste your full GoCode Key.`
+          content: `That doesn't look like a valid GoCode Key.\n\n**GoCode Key Format:**\nYour GoCode Key should start with "sk-" followed by a long string of characters (at least 20 characters after "sk-").\n\n**Examples of valid formats:**\n• \`sk-abc123...\` (at least 23 characters total)\n• \`Bearer eyJ...\` (for Bearer tokens)\n\n**How to get your GoCode Key:**\nGet your GoCode Key from [GoCode (Alpha) - How to Get Started](https://secureservernet.sharepoint.com/sites/AIHub/SitePages/Meet-GoCode-(Alpha)--Your-smarter-gateway-to-AI-providers%E2%80%94Now-with-self-issued-keys-for-IDEs-and-CLIs.aspx#how-to-get-started-(alpha))\n\n💡 **Need help?** You can also configure your GoCode Key in [Settings](settings://open).`
         }]);
       }
     } else if (currentStep === 'optional') {
@@ -2735,10 +2957,12 @@ TASK COMPLETION REQUIREMENTS:
             errorDetails = { statusText: response.statusText };
           }
 
-          const errorMessage = errorDetails?.error?.message || `API request failed with status ${response.status}: ${response.statusText}`;
+          const rawErrorMessage = errorDetails?.error?.message || `API request failed with status ${response.status}: ${response.statusText}`;
           console.error('❌ Full error details:', errorDetails);
 
-          throw new Error(errorMessage);
+          // Sanitize error message before throwing
+          const sanitizedErrorMessage = sanitizeErrorMessage(rawErrorMessage, settings);
+          throw new Error(sanitizedErrorMessage);
         }
         
         const data = await response.json();
@@ -2773,7 +2997,9 @@ TASK COMPLETION REQUIREMENTS:
 
         if (!candidate) {
           console.error('❌ No candidate in response. Full response:', JSON.stringify(data, null, 2));
-          throw new Error(`No candidate in Gemini response. Finish reason: ${data.candidates?.[0]?.finishReason || 'unknown'}. Full response: ${JSON.stringify(data)}`);
+          const errorData = JSON.stringify(data);
+          const sanitizedErrorData = sanitizeErrorMessage(errorData, settings);
+          throw new Error(`No candidate in Gemini response. Finish reason: ${data.candidates?.[0]?.finishReason || 'unknown'}. Full response: ${sanitizedErrorData}`);
         }
 
         // Check if candidate has safety response requiring confirmation
@@ -3546,7 +3772,8 @@ TASK COMPLETION REQUIREMENTS:
       const updated = [...streamMessagesRef.current];
       const lastMsg = updated[updated.length - 1];
       if (lastMsg && lastMsg.role === 'assistant') {
-        lastMsg.content = `❌ Error: ${error instanceof Error ? error.message : String(error)}`;
+        const sanitizedError = sanitizeErrorMessage(error, settings);
+        lastMsg.content = `❌ Error: ${sanitizedError}`;
       }
       streamMessagesRef.current = updated;
       if (streamTabId !== null) {
@@ -3977,7 +4204,8 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
             const updated = [...prev];
             const lastMsg = updated[updated.length - 1];
             if (lastMsg && lastMsg.role === 'assistant') {
-              lastMsg.content = `Error communicating with A2A agent: ${error.message}`;
+              const sanitizedError = sanitizeErrorMessage(error, settings);
+              lastMsg.content = `Error communicating with A2A agent: ${sanitizedError}`;
             }
             return updated;
           });
@@ -4139,7 +4367,8 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
                 }
               } catch (error: any) {
                 console.error(`❌ A2A tool execution failed:`, error);
-                return { error: error.message || 'A2A tool execution failed' };
+                const sanitizedError = sanitizeErrorMessage(error, settings);
+                return { error: sanitizedError || 'A2A tool execution failed' };
               }
             }
 
@@ -4156,7 +4385,8 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
                   return result;
                 } catch (error: any) {
                   console.error(`❌ MCP tool execution failed:`, error);
-                  return { error: error.message || 'MCP tool execution failed' };
+                  const sanitizedError = sanitizeErrorMessage(error, settings);
+                  return { error: sanitizedError || 'MCP tool execution failed' };
                 }
               }
             }
@@ -4457,7 +4687,8 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
                     }
                   } catch (error: any) {
                     console.error(`❌ A2A tool execution failed:`, error);
-                    return { error: error.message || 'A2A tool execution failed' };
+                    const sanitizedError = sanitizeErrorMessage(error, settings);
+                    return { error: sanitizedError || 'A2A tool execution failed' };
                   }
                 }
 
@@ -4472,7 +4703,8 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
                     return result;
                   } catch (error: any) {
                     console.error(`❌ MCP tool execution failed:`, error);
-                    return { error: error.message || 'MCP tool execution failed' };
+                    const sanitizedError = sanitizeErrorMessage(error, settings);
+                    return { error: sanitizedError || 'MCP tool execution failed' };
                   }
                 } else {
                   // Browser tool requested but browser tools not enabled
@@ -4653,8 +4885,8 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
       console.error('Full error object:', error);
 
       if (error.name !== 'AbortError') {
-        // Show detailed error message to user
-        const errorDetails = error?.stack || JSON.stringify(error, null, 2);
+        // Sanitize error message to remove API keys
+        const sanitizedError = sanitizeErrorMessage(error, settings);
         const streamTabId = activeStreamTabIdRef.current;
         
         // Try to update existing assistant message, or create new one
@@ -4664,13 +4896,13 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
           
           if (lastMsg && lastMsg.role === 'assistant' && (!lastMsg.content || !lastMsg.content.trim())) {
             // Update existing empty assistant message
-            lastMsg.content = `❌ Error: ${error.message}\n\nPlease check:\n- Your API key is correct\n- Your internet connection\n- The API service is available\n\n\`\`\`\n${errorDetails}\n\`\`\``;
+            lastMsg.content = `❌ Error: ${sanitizedError}\n\nPlease check:\n- Your API key is correct\n- Your internet connection\n- The API service is available`;
           } else {
             // Add new error message
             updated.push({
               id: Date.now().toString(),
               role: 'assistant',
-              content: `❌ Error: ${error.message}\n\nPlease check:\n- Your API key is correct\n- Your internet connection\n- The API service is available\n\n\`\`\`\n${errorDetails}\n\`\`\``,
+              content: `❌ Error: ${sanitizedError}\n\nPlease check:\n- Your API key is correct\n- Your internet connection\n- The API service is available`,
             });
           }
           
@@ -6220,8 +6452,6 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
             onboardingState?.active 
               ? (onboardingState.step === 'provider' 
                   ? "Type Google, Anthropic, or OpenAI..." 
-                  : onboardingState.step === 'gocodeUrl'
-                  ? "Paste GoCode URL or type 'Use Default'..."
                   : onboardingState.step === 'apiKey'
                   ? "Paste your GoCode Key..."
                   : "Type your response...")
