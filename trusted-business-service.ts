@@ -22,7 +22,7 @@ export interface ANSBusinessService {
   verified: boolean;
 }
 
-const API_URL = 'https://ra.int.dev-godaddy.com/v1/agents';
+const API_URL = 'https://api.ote-godaddy.com/v1/agents';
 const DEFAULT_LIMIT = 100; // Fetch 100 at a time
 
 // Cache-related code removed per user request

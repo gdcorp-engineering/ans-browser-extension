@@ -188,7 +188,7 @@ function SettingsPage() {
 
       try {
         addLog('🔄 Starting fetch from ANS API...');
-        addLog(`📡 Endpoint: https://ra.int.dev-godaddy.com/v1/agents`);
+        addLog(`📡 Endpoint: https://api.ote-godaddy.com/v1/agents`);
 
         if (settings.ansApiToken) {
           addLog('🔑 Using ANS API token from settings');
@@ -817,7 +817,7 @@ function SettingsPage() {
             <label>ANS Authentication</label>
             <button
               onClick={() => {
-                window.open('https://ra.int.dev-godaddy.com/', '_blank');
+                window.open('https://api.ote-godaddy.com/', '_blank');
               }}
               style={{
                 padding: '12px 20px',

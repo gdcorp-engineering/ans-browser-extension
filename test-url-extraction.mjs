@@ -16,15 +16,15 @@ const mockAgent = {
   "links": [
     {
       "rel": "agent-details",
-      "href": "https://ra.int.dev-godaddy.com/v1/agents/a2a/www-godaddy-com.Airo.Godaddy.v1.0.0.ans-testing1.com"
+      "href": "https://api.ote-godaddy.com/v1/agents/a2a/www-godaddy-com.Airo.Godaddy.v1.0.0.ans-testing1.com"
     },
     {
       "rel": "server-certificates",
-      "href": "https://ra.int.dev-godaddy.com/v1/agents/a2a/www-godaddy-com.Airo.Godaddy.v1.0.0.ans-testing1.com/certificates/server"
+      "href": "https://api.ote-godaddy.com/v1/agents/a2a/www-godaddy-com.Airo.Godaddy.v1.0.0.ans-testing1.com/certificates/server"
     },
     {
       "rel": "identity-certificates",
-      "href": "https://ra.int.dev-godaddy.com/v1/agents/a2a/www-godaddy-com.Airo.Godaddy.v1.0.0.ans-testing1.com/certificates/identity"
+      "href": "https://api.ote-godaddy.com/v1/agents/a2a/www-godaddy-com.Airo.Godaddy.v1.0.0.ans-testing1.com/certificates/identity"
     }
   ],
   "ttl": 300,

@@ -48,7 +48,7 @@ AI-powered browser automation with GoDaddy Agent Naming System (ANS) integration
      https://caas-gocode-prod.caas-prod.prod.onkatana.net
      ```
    - Get your GoCode API key: [https://caas.godaddy.com/gocode/my-api-keys](https://caas.godaddy.com/gocode/my-api-keys)
-   - Get your ANS credentials: [https://ra.int.dev-godaddy.com/v1/agents](https://ra.int.dev-godaddy.com/v1/agents)
+   - Get your ANS credentials: [https://api.ote-godaddy.com/v1/agents](https://api.ote-godaddy.com/v1/agents)
 
 ### For Developers (Building from Source)
 
@@ -166,4 +166,4 @@ This extension also supports Composio's Tool Router for accessing Gmail, Slack, 
 - [ChatGPT Atlas](https://openai.com/index/introducing-chatgpt-atlas/) - OpenAI's browser automation AI agent
 - [Gemini Computer Use Model](https://blog.google/technology/google-deepmind/gemini-computer-use-model/) - Google's AI model for browser automation
 - [Gemini API Documentation](https://ai.google.dev/gemini-api/docs/computer-use) - Official documentation for Gemini Computer Use
-- [GoDaddy ANS Documentation](https://ra.int.dev-godaddy.com/v1/agents) - ANS agent registration and credentials
+- [GoDaddy ANS Documentation](https://api.ote-godaddy.com/v1/agents) - ANS agent registration and credentials
