@@ -75,10 +75,23 @@ Be clear and direct when explaining that browser automation requires enabling Br
     fetchOptions.signal = signal;
   }
 
-  const response = await fetch(`${baseUrl}/v1/messages`, fetchOptions);
+  let response;
+  try {
+    response = await fetch(`${baseUrl}/v1/messages`, fetchOptions);
+  } catch (fetchError: any) {
+    // Network error - likely VPN not connected or endpoint unreachable
+    console.error('❌ Network Error:', fetchError);
+    throw new Error(
+      '🔌 Cannot reach GoCode API endpoint.\n\n' +
+      'This usually means:\n' +
+      '• You are not connected to GoDaddy VPN\n' +
+      '• The GoCode service is temporarily unavailable\n\n' +
+      'Please connect to VPN and try again.'
+    );
+  }
 
   if (!response.ok) {
-    let errorMsg = 'Anthropic API request failed';
+    let errorMsg = 'GoCode API request failed';
 
     try {
       const error = await response.json();
@@ -88,7 +101,7 @@ Be clear and direct when explaining that browser automation requires enabling Br
       // Response is not JSON (likely HTML error page)
       const text = await response.text();
       console.error('❌ Non-JSON API Error Response:', text.substring(0, 200));
-      errorMsg = `API Error (${response.status} ${response.statusText}). Please check your API key and settings.`;
+      errorMsg = `API Error (${response.status} ${response.statusText}). Please check your GoCode key and settings.`;
     }
 
     throw new Error(errorMsg);

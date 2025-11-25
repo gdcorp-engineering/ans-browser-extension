@@ -142,24 +142,30 @@ Conversation to summarize:
 ${conversationText}`;
 
     // Call Claude API to get summary
-    const response = await fetch(`${baseUrl}/v1/messages`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: 'claude-3-5-haiku-20241022', // Use fast, cheap model for summarization
-        max_tokens: 500,
-        messages: [
-          {
-            role: 'user',
-            content: summaryPrompt,
-          },
-        ],
-      }),
-    });
+    let response;
+    try {
+      response = await fetch(`${baseUrl}/v1/messages`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify({
+          model: 'claude-3-5-haiku-20241022', // Use fast, cheap model for summarization
+          max_tokens: 500,
+          messages: [
+            {
+              role: 'user',
+              content: summaryPrompt,
+            },
+          ],
+        }),
+      });
+    } catch (fetchError) {
+      console.warn('❌ Network error during summarization, keeping original messages:', fetchError);
+      return messages; // Return original on network error
+    }
 
     if (!response.ok) {
       console.warn('Failed to generate summary, keeping original messages');
@@ -529,10 +535,23 @@ Remember: Take your time, verify each step, and describe what you see before act
       fetchOptions.signal = signal;
     }
 
-    const response = await fetch(`${baseUrl}/v1/messages`, fetchOptions);
+    let response;
+    try {
+      response = await fetch(`${baseUrl}/v1/messages`, fetchOptions);
+    } catch (fetchError: any) {
+      // Network error - likely VPN not connected or endpoint unreachable
+      console.error('❌ Network Error:', fetchError);
+      throw new Error(
+        '🔌 Cannot reach GoCode API endpoint.\n\n' +
+        'This usually means:\n' +
+        '• You are not connected to GoDaddy VPN\n' +
+        '• The GoCode service is temporarily unavailable\n\n' +
+        'Please connect to VPN and try again.'
+      );
+    }
 
     if (!response.ok) {
-      let errorMsg = 'Anthropic API request failed';
+      let errorMsg = 'GoCode API request failed';
 
       try {
         const error = await response.json();
