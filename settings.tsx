@@ -13,11 +13,44 @@ import {
 } from './trusted-business-service';
 
 const PROVIDER_MODELS = {
+  google: [
+    { id: 'gemini-2.5-pro-preview-06-05', name: 'Gemini 2.5 Pro Preview (06-05)', description: 'Latest preview' },
+    { id: 'gemini-2.5-flash-preview-05-20', name: 'Gemini 2.5 Flash Preview (05-20)', description: 'Latest flash preview' },
+    { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', description: 'Fast and efficient' },
+    { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', description: '1M token context' },
+    { id: 'gemini-2.5-flash-thinking-exp-01-21', name: 'Gemini 2.5 Flash Thinking', description: 'Thinking model' },
+    { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash', description: 'Previous generation' },
+    { id: 'gemini-2.0-flash-lite', name: 'Gemini 2.0 Flash Lite', description: 'Lightweight' },
+    { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro', description: 'Stable' },
+    { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash', description: 'Fast' },
+  ],
   anthropic: [
     { id: 'claude-sonnet-4-5-20250929', name: 'Claude Sonnet 4.5', description: 'Latest and most capable' },
-    { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', description: 'Most intelligent model' },
+    { id: 'claude-haiku-4-5-20251110', name: 'Claude Haiku 4.5', description: 'Fast and efficient' },
+    { id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet 4', description: 'Previous flagship' },
+    { id: 'claude-3-7-sonnet-20250219', name: 'Claude 3.7 Sonnet', description: 'Extended context' },
     { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku', description: 'Fastest model' },
+    { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', description: 'Most intelligent model' },
     { id: 'claude-3-opus-20240229', name: 'Claude 3 Opus', description: 'Previous generation' },
+    { id: 'claude-3-haiku-20240307', name: 'Claude 3 Haiku', description: 'Previous generation' },
+  ],
+  openai: [
+    { id: 'gpt-5.1', name: 'GPT-5.1', description: 'Latest flagship' },
+    { id: 'gpt-5.1-codex', name: 'GPT-5.1 Codex', description: 'Code specialized' },
+    { id: 'gpt-5.1-codex-mini', name: 'GPT-5.1 Codex Mini', description: 'Fast coding' },
+    { id: 'gpt-5', name: 'GPT-5', description: 'Flagship model' },
+    { id: 'o3', name: 'o3', description: 'Advanced reasoning' },
+    { id: 'o4-mini', name: 'o4-mini', description: 'Fast reasoning' },
+    { id: 'o1', name: 'o1', description: 'Reasoning model' },
+    { id: 'o1-mini', name: 'o1-mini', description: 'Efficient reasoning' },
+    { id: 'gpt-4.1', name: 'GPT-4.1', description: 'Enhanced GPT-4' },
+    { id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', description: 'Fast GPT-4' },
+    { id: 'gpt-4.1-nano', name: 'GPT-4.1 Nano', description: 'Lightweight' },
+    { id: 'gpt-4o', name: 'GPT-4o', description: 'Most capable' },
+    { id: 'gpt-4o-mini', name: 'GPT-4o Mini', description: 'Fast and affordable' },
+    { id: 'gpt-4-turbo', name: 'GPT-4 Turbo', description: 'Previous generation' },
+    { id: 'gpt-4', name: 'GPT-4', description: 'Classic' },
+    { id: 'gpt-3.5-turbo', name: 'GPT-3.5 Turbo', description: 'Legacy' },
   ],
 };
 

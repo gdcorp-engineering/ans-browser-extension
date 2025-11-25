@@ -5,6 +5,8 @@
  * Provides search, filtering, and validation capabilities
  */
 
+import { parseAnsName, type AnsMetadata } from './ansName';
+
 export interface ANSBusinessService {
   id: string;
   name: string;
@@ -20,6 +22,10 @@ export interface ANSBusinessService {
   connectionCount?: number;
   availableServices?: string[];
   verified: boolean;
+  ansName?: string; // ANS name in format: protocol://agent.capability.provider.vX.Y.Z.extension
+  ansMetadata?: AnsMetadata; // Parsed ANS metadata
+  raStatus?: 'validated' | 'unknown'; // Registration Authority validation status
+  transparencyLogUrl?: string; // URL to transparency log for verified agents
 }
 
 const API_URL = 'https://api.ote-godaddy.com/v1/agents';
@@ -155,28 +161,48 @@ function parseAPIResponse(data: any): ANSBusinessService[] {
     // Log the extracted URL and protocol
     console.log(`📍 ${protocol?.toUpperCase()} URL for ${agent.agentName || 'unknown'}: ${url}`);
 
-    const agentId = agent.ansName || agent.agentName || '';
+    const ansName = agent.ansName || agent.protocolExtensions?.ans?.ansName;
     const agentCapability = agent.agentCapability || 'Other';
+
+    // Parse ANS name if available
+    let ansMetadata: AnsMetadata | undefined;
+    if (ansName) {
+      try {
+        ansMetadata = parseAnsName(ansName);
+      } catch (error) {
+        console.warn(`⚠️  Invalid ANS name for ${agent.agentName}:`, error);
+      }
+    }
+
+    // Determine protocol from ANS metadata or fallback
+    const finalProtocol = ansMetadata?.protocol || protocol;
+
+    // Check if ANS name is valid
+    const hasValidAnsName = !!ansMetadata;
 
     // Log agents with missing or unusual capabilities
     if (!agent.agentCapability) {
-      console.warn(`⚠️  Agent "${agent.agentName}" (${agentId}) has no agentCapability field`);
+      console.warn(`⚠️  Agent "${agent.agentName}" (${ansName || agent.agentName}) has no agentCapability field`);
     }
 
     return {
-      id: agentId,
+      id: ansName && hasValidAnsName ? ansName : agent.agentName,
       name: agent.agentName || 'Unknown Agent',
       description: `${agentCapability} service provided by ${agent.provider || 'provider'}`,
       capability: agentCapability, // Map agentCapability to capability field
       location: '', // Not provided in API
       url: url, // MCP or A2A URL
-      protocol: protocol, // Protocol type: 'mcp' or 'a2a'
+      protocol: finalProtocol, // Protocol type: 'mcp' or 'a2a'
       website: '', // Not provided in API
       phone: '', // Not provided in API
       logo: '', // Not provided in API
       rating: 0, // Not provided in API
       connectionCount: 0, // Not provided in API
       availableServices: [], // Would need to fetch from agent-details link
+      ansName: hasValidAnsName ? ansName : undefined,
+      ansMetadata: ansMetadata,
+      raStatus: agent.raStatus === 'validated' || hasValidAnsName ? 'validated' : 'unknown',
+      transparencyLogUrl: agent.transparencyLogUrl,
       verified: true, // All from ANS API are verified
     };
   });
