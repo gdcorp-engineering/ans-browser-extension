@@ -162,6 +162,7 @@ export interface MCPConnection {
 export interface MCPToolWithOrigin {
   serverId: string;
   serverName: string;
+  serverUrl: string;
   toolDefinition: any;
 }
 

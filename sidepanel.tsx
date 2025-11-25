@@ -2560,9 +2560,9 @@ GUIDELINES:
                         {mcpTools.slice(0, 10).map((tool: any, idx: number) => (
                           <div key={idx} style={{ paddingLeft: '12px', fontSize: '11px' }}>
                             <span style={{ color: '#2563eb', fontFamily: 'monospace' }}>
-                              {tool.toolName}
+                              {tool.toolDefinition.name}
                             </span>
-                            <span style={{ color: '#9ca3af' }}> ({tool.origin})</span>
+                            <span style={{ color: '#9ca3af' }}> ({tool.serverUrl})</span>
                           </div>
                         ))}
                         {mcpTools.length > 10 && (

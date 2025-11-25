@@ -145,6 +145,7 @@ export class MCPService {
           toolsWithOrigin.push({
             serverId: connection.serverId,
             serverName: connection.serverName,
+            serverUrl: connection.serverUrl,
             toolDefinition: { name: toolName, ...toolDefinition },
           });
         });
