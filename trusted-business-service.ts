@@ -113,19 +113,20 @@ function parseAPIResponse(data: any): ANSBusinessService[] {
 
     try {
       console.log(`🔍 Extracting URL for agent "${agent.agentName}":`, {
-        hasMcpRemotes: !!agent.protocolExtensions?.mcp?.remotes?.[0]?.url,
+        hasMcp1Remotes: !!agent.protocolExtensions?.mcp1?.remotes?.[0]?.url,
         hasA2aRemotes: !!agent.protocolExtensions?.a2a?.remotes?.[0]?.url,
         hasA2aUrl: !!agent.protocolExtensions?.a2a?.url,
+        mcp1RemotesUrl: agent.protocolExtensions?.mcp1?.remotes?.[0]?.url,
         a2aRemotesUrl: agent.protocolExtensions?.a2a?.remotes?.[0]?.url,
         a2aUrl: agent.protocolExtensions?.a2a?.url,
         protocolExtensions: JSON.stringify(agent.protocolExtensions, null, 2),
       });
 
-      // Check for MCP protocol: protocolExtensions.mcp.remotes[0].url
-      if (agent.protocolExtensions?.mcp?.remotes?.[0]?.url) {
-        url = agent.protocolExtensions.mcp.remotes[0].url;
+      // Check for MCP protocol: protocolExtensions.mcp1.remotes[0].url
+      if (agent.protocolExtensions?.mcp1?.remotes?.[0]?.url) {
+        url = agent.protocolExtensions.mcp1.remotes[0].url;
         protocol = 'mcp';
-        console.log(`   ✓ Using MCP remote URL: ${url}`);
+        console.log(`   ✓ Using MCP1 remote URL: ${url}`);
       }
       // Check for A2A protocol: protocolExtensions.a2a.remotes[0].url
       else if (agent.protocolExtensions?.a2a?.remotes?.[0]?.url) {
