@@ -214,6 +214,7 @@ function ChatSidebar() {
     console.log('Saving trustedAgentOptIn to storage:', trustedAgentOptIn);
     chrome.storage.local.set({ trustedAgentOptIn });
   }, [trustedAgentOptIn]);
+
   const abortControllerRef = useRef<AbortController | null>(null);
   const mcpClientRef = useRef<MCPClient | null>(null);
   const mcpToolsRef = useRef<Record<string, unknown> | null>(null);
@@ -2218,10 +2219,58 @@ GUIDELINES:
                 const result = await mcpService.executeToolCall(toolName, params);
 
                 // Check if result has audioLink (for music generation tools)
-                if (result && typeof result === 'object' && (result.audioLink || result.audio_link || result.audioUrl)) {
+                if (result && typeof result === 'object') {
                   const audioLink = result.audioLink || result.audio_link || result.audioUrl;
-                  console.log(`🎵 MCP tool returned audio link: ${audioLink}`);
-                  toolAudioLinksRef.current.push(audioLink);
+                  if (audioLink) {
+                    console.log(`🎵 MCP tool returned audio link: ${audioLink}`);
+                    console.log(`🎵 Full result object:`, JSON.stringify(result, null, 2));
+                    toolAudioLinksRef.current.push(audioLink);
+                    
+                    // Attach audioLink immediately to the last assistant message with retry logic
+                    const attachAudioLink = (retryCount = 0, maxRetries = 5) => {
+                      setMessages(prev => {
+                        const updated = [...prev];
+                        if (updated.length === 0) {
+                          if (retryCount < maxRetries) {
+                            console.log(`⏳ No messages yet, retrying in 100ms (attempt ${retryCount + 1}/${maxRetries})`);
+                            setTimeout(() => attachAudioLink(retryCount + 1, maxRetries), 100);
+                          } else {
+                            console.warn(`⚠️ No messages found after ${maxRetries} retries`);
+                          }
+                          return prev;
+                        }
+                        const lastMsg = updated[updated.length - 1];
+                        console.log(`🔍 Last message when attaching audioLink (attempt ${retryCount + 1}):`, {
+                          id: lastMsg?.id,
+                          role: lastMsg?.role,
+                          hasAudioLink: !!lastMsg?.audioLink,
+                          contentLength: lastMsg?.content?.length
+                        });
+                        if (lastMsg && lastMsg.role === 'assistant') {
+                          // Always create a new message object to ensure React detects the change
+                          const newMessage = {
+                            ...lastMsg,
+                            audioLink: audioLink
+                          };
+                          updated[updated.length - 1] = newMessage;
+                          console.log(`✅ Audio link attached immediately to message ${lastMsg.id}: ${audioLink}`);
+                          console.log(`✅ Updated message object:`, newMessage);
+                          return updated;
+                        } else {
+                          if (retryCount < maxRetries) {
+                            console.log(`⏳ Last message not ready yet, retrying in 100ms (attempt ${retryCount + 1}/${maxRetries})`);
+                            setTimeout(() => attachAudioLink(retryCount + 1, maxRetries), 100);
+                          } else {
+                            console.warn(`⚠️ Last message is not assistant or doesn't exist after ${maxRetries} retries:`, lastMsg);
+                          }
+                        }
+                        return prev;
+                      });
+                    };
+                    attachAudioLink();
+                  } else {
+                    console.log(`⚠️ No audioLink found in result object. Result keys:`, Object.keys(result));
+                  }
                 }
 
                 return result;
@@ -2289,21 +2338,42 @@ GUIDELINES:
               // On complete - hide browser automation overlay
               hideBrowserAutomationOverlay();
 
-              // Attach audio links from MCP tools to the assistant message
+              // Attach audio links from MCP tools to the assistant message (fallback if not already attached)
               if (toolAudioLinksRef.current.length > 0) {
-                console.log(`🎵 Attaching audio link to assistant message`);
-                setMessages(prev => {
-                  const updated = [...prev];
-                  const lastMsg = updated[updated.length - 1];
-                  if (lastMsg && lastMsg.role === 'assistant') {
-                    // Create new message object to trigger React re-render
-                    updated[updated.length - 1] = {
-                      ...lastMsg,
-                      audioLink: toolAudioLinksRef.current[0]
-                    };
-                  }
-                  return updated;
-                });
+                console.log(`🎵 onComplete: Checking if audio link needs to be attached`);
+                const audioLinkToAttach = toolAudioLinksRef.current[0];
+                const attachInOnComplete = (retryCount = 0, maxRetries = 3) => {
+                  setMessages(prev => {
+                    const updated = [...prev];
+                    if (updated.length === 0) {
+                      if (retryCount < maxRetries) {
+                        console.log(`⏳ onComplete: No messages yet, retrying in 200ms (attempt ${retryCount + 1}/${maxRetries})`);
+                        setTimeout(() => attachInOnComplete(retryCount + 1, maxRetries), 200);
+                      } else {
+                        console.warn(`⚠️ onComplete: No messages found after ${maxRetries} retries`);
+                      }
+                      return prev;
+                    }
+                    const lastMsg = updated[updated.length - 1];
+                    if (lastMsg && lastMsg.role === 'assistant' && !lastMsg.audioLink) {
+                      // Only attach if not already attached (might have been attached during tool execution)
+                      updated[updated.length - 1] = {
+                        ...lastMsg,
+                        audioLink: audioLinkToAttach
+                      };
+                      console.log(`✅ Audio link attached in onComplete: ${audioLinkToAttach}`);
+                      return updated;
+                    } else if (lastMsg?.audioLink) {
+                      console.log(`ℹ️ Audio link already attached: ${lastMsg.audioLink}`);
+                    } else if (retryCount < maxRetries) {
+                      console.log(`⏳ onComplete: Message not ready, retrying in 200ms (attempt ${retryCount + 1}/${maxRetries})`);
+                      setTimeout(() => attachInOnComplete(retryCount + 1, maxRetries), 200);
+                      return prev;
+                    }
+                    return updated;
+                  });
+                };
+                attachInOnComplete();
                 // Clear for next message
                 toolAudioLinksRef.current = [];
               }
@@ -2510,21 +2580,42 @@ GUIDELINES:
                 });
               },
               () => {
-                // On complete - attach audio links from MCP tools to the assistant message
+                // On complete - attach audio links from MCP tools to the assistant message (fallback if not already attached)
                 if (toolAudioLinksRef.current.length > 0) {
-                  console.log(`🎵 Attaching audio link to assistant message`);
-                  setMessages(prev => {
-                    const updated = [...prev];
-                    const lastMsg = updated[updated.length - 1];
-                    if (lastMsg && lastMsg.role === 'assistant') {
-                      // Create new message object to trigger React re-render
-                      updated[updated.length - 1] = {
-                        ...lastMsg,
-                        audioLink: toolAudioLinksRef.current[0]
-                      };
-                    }
-                    return updated;
-                  });
+                  console.log(`🎵 onComplete: Checking if audio link needs to be attached`);
+                  const audioLinkToAttach = toolAudioLinksRef.current[0];
+                  const attachInOnComplete = (retryCount = 0, maxRetries = 3) => {
+                    setMessages(prev => {
+                      const updated = [...prev];
+                      if (updated.length === 0) {
+                        if (retryCount < maxRetries) {
+                          console.log(`⏳ onComplete: No messages yet, retrying in 200ms (attempt ${retryCount + 1}/${maxRetries})`);
+                          setTimeout(() => attachInOnComplete(retryCount + 1, maxRetries), 200);
+                        } else {
+                          console.warn(`⚠️ onComplete: No messages found after ${maxRetries} retries`);
+                        }
+                        return prev;
+                      }
+                      const lastMsg = updated[updated.length - 1];
+                      if (lastMsg && lastMsg.role === 'assistant' && !lastMsg.audioLink) {
+                        // Only attach if not already attached (might have been attached during tool execution)
+                        updated[updated.length - 1] = {
+                          ...lastMsg,
+                          audioLink: audioLinkToAttach
+                        };
+                        console.log(`✅ Audio link attached in onComplete: ${audioLinkToAttach}`);
+                        return updated;
+                      } else if (lastMsg?.audioLink) {
+                        console.log(`ℹ️ Audio link already attached: ${lastMsg.audioLink}`);
+                      } else if (retryCount < maxRetries) {
+                        console.log(`⏳ onComplete: Message not ready, retrying in 200ms (attempt ${retryCount + 1}/${maxRetries})`);
+                        setTimeout(() => attachInOnComplete(retryCount + 1, maxRetries), 200);
+                        return prev;
+                      }
+                      return updated;
+                    });
+                  };
+                  attachInOnComplete();
                   // Clear for next message
                   toolAudioLinksRef.current = [];
                 }
@@ -2569,10 +2660,58 @@ GUIDELINES:
                     const result = await mcpService.executeToolCall(toolName, params);
 
                     // Check if result has audioLink (for music generation tools)
-                    if (result && typeof result === 'object' && (result.audioLink || result.audio_link || result.audioUrl)) {
+                    if (result && typeof result === 'object') {
                       const audioLink = result.audioLink || result.audio_link || result.audioUrl;
-                      console.log(`🎵 MCP tool returned audio link: ${audioLink}`);
-                      toolAudioLinksRef.current.push(audioLink);
+                      if (audioLink) {
+                        console.log(`🎵 MCP tool returned audio link: ${audioLink}`);
+                        console.log(`🎵 Full result object:`, JSON.stringify(result, null, 2));
+                        toolAudioLinksRef.current.push(audioLink);
+                        
+                        // Attach audioLink immediately to the last assistant message with retry logic
+                        const attachAudioLink = (retryCount = 0, maxRetries = 5) => {
+                          setMessages(prev => {
+                            const updated = [...prev];
+                            if (updated.length === 0) {
+                              if (retryCount < maxRetries) {
+                                console.log(`⏳ No messages yet, retrying in 100ms (attempt ${retryCount + 1}/${maxRetries})`);
+                                setTimeout(() => attachAudioLink(retryCount + 1, maxRetries), 100);
+                              } else {
+                                console.warn(`⚠️ No messages found after ${maxRetries} retries`);
+                              }
+                              return prev;
+                            }
+                            const lastMsg = updated[updated.length - 1];
+                            console.log(`🔍 Last message when attaching audioLink (attempt ${retryCount + 1}):`, {
+                              id: lastMsg?.id,
+                              role: lastMsg?.role,
+                              hasAudioLink: !!lastMsg?.audioLink,
+                              contentLength: lastMsg?.content?.length
+                            });
+                            if (lastMsg && lastMsg.role === 'assistant') {
+                              // Always create a new message object to ensure React detects the change
+                              const newMessage = {
+                                ...lastMsg,
+                                audioLink: audioLink
+                              };
+                              updated[updated.length - 1] = newMessage;
+                              console.log(`✅ Audio link attached immediately to message ${lastMsg.id}: ${audioLink}`);
+                              console.log(`✅ Updated message object:`, newMessage);
+                              return updated;
+                            } else {
+                              if (retryCount < maxRetries) {
+                                console.log(`⏳ Last message not ready yet, retrying in 100ms (attempt ${retryCount + 1}/${maxRetries})`);
+                                setTimeout(() => attachAudioLink(retryCount + 1, maxRetries), 100);
+                              } else {
+                                console.warn(`⚠️ Last message is not assistant or doesn't exist after ${maxRetries} retries:`, lastMsg);
+                              }
+                            }
+                            return prev;
+                          });
+                        };
+                        attachAudioLink();
+                      } else {
+                        console.log(`⚠️ No audioLink found in result object. Result keys:`, Object.keys(result));
+                      }
                     }
 
                     return result;
@@ -2991,7 +3130,7 @@ GUIDELINES:
         ) : (
           messages.map((message) => (
             <div
-              key={message.id}
+              key={`${message.id}-${message.audioLink || ''}`}
               className={`message ${message.role}`}
             >
               <div className="message-content">
@@ -3001,45 +3140,42 @@ GUIDELINES:
                       <MessageParser content={message.content} />
                       {/* Audio player for generated music/audio */}
                       {(() => {
-                        console.log(`🔍 Rendering message ${message.id}: audioLink =`, message.audioLink);
+                        const audioLink = message.audioLink;
+                        if (audioLink && typeof audioLink === 'string' && audioLink.trim().length > 0) {
+                          console.log(`🔍 Rendering audio player for message ${message.id}:`, audioLink);
+                          return (
+                            <div style={{
+                              marginTop: '16px',
+                              padding: '16px',
+                              background: '#f5f5f5',
+                              borderRadius: '12px',
+                              border: '1px solid #e0e0e0'
+                            }}>
+                              <audio
+                                controls
+                                style={{
+                                  width: '100%',
+                                  height: '50px',
+                                  outline: 'none'
+                                }}
+                                src={audioLink}
+                                onError={(e) => {
+                                  console.error('❌ Audio playback error:', e);
+                                  console.error('   Audio source:', audioLink);
+                                }}
+                                onLoadedData={() => {
+                                  console.log('✅ Audio loaded successfully:', audioLink);
+                                }}
+                              >
+                                Your browser does not support the audio element.
+                              </audio>
+                            </div>
+                          );
+                        } else if (audioLink) {
+                          console.warn(`⚠️ Invalid audioLink format for message ${message.id}:`, typeof audioLink, audioLink);
+                        }
                         return null;
                       })()}
-                      {message.audioLink && (
-                        <div style={{
-                          marginTop: '16px',
-                          padding: '16px',
-                          background: '#f5f5f5',
-                          borderRadius: '12px',
-                          border: '1px solid #e0e0e0'
-                        }}>
-                          <div style={{
-                            marginBottom: '12px',
-                            fontSize: '15px',
-                            fontWeight: '600',
-                            color: '#333'
-                          }}>
-                            Lyrics
-                          </div>
-                          <audio
-                            controls
-                            style={{
-                              width: '100%',
-                              height: '50px',
-                              outline: 'none'
-                            }}
-                            src={message.audioLink}
-                          >
-                            Your browser does not support the audio element.
-                          </audio>
-                          <div style={{
-                            marginTop: '12px',
-                            fontSize: '12px',
-                            color: '#666'
-                          }}>
-                            Site: {currentTabUrl ? new URL(currentTabUrl).hostname : 'unknown'}
-                          </div>
-                        </div>
-                      )}
                     </>
                   ) : (
                     <UserMessageParser content={message.content} />
@@ -3056,6 +3192,21 @@ GUIDELINES:
               </div>
             </div>
           ))
+        )}
+        {/* Loading indicator for tool execution */}
+        {isLoading && (
+          <div style={{
+            padding: '12px 16px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}>
+            <div className="typing-indicator">
+              <span></span>
+              <span></span>
+              <span></span>
+            </div>
+          </div>
         )}
         {/* Scroll anchor - must be inside messages-container */}
         <div ref={messagesEndRef} />

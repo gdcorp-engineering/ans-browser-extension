@@ -255,7 +255,7 @@ export class MCPService {
             if (originalOnMessage) {
               transport.onmessage = originalOnMessage;
             }
-            reject(new Error('Timeout after 5 minutes'));
+            reject(new Error('I\'m sorry, the request took too long and timed out. Please try again later.'));
           }
         }, 300000);
       });
