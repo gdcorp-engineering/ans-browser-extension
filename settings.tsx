@@ -56,7 +56,7 @@ function SettingsPage() {
   const [selectedCapability, setSelectedCapability] = useState('all');
   const [showMarketplace, setShowMarketplace] = useState(false);
   const [marketplaceLoading, setMarketplaceLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'connected' | 'marketplace' | 'custom'>('connected');
+  const [activeTab, setActiveTab] = useState<'marketplace' | 'custom' | 'mappings'>('mappings');
   const [fetchLogs, setFetchLogs] = useState<string[]>([]);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [updateChecking, setUpdateChecking] = useState(false);
@@ -960,7 +960,7 @@ function SettingsPage() {
             <label>ANS Authentication</label>
             <button
               onClick={() => {
-                window.open('https://api.ote-godaddy.com/', '_blank');
+                window.open('https://ra.int.ote-godaddy.com/', '_blank');
               }}
               style={{
                 padding: '12px 20px',
@@ -979,26 +979,7 @@ function SettingsPage() {
             </button>
             <p className="help-text">
               Click the button above to sign in to ANS. Once signed in, the extension will automatically use your browser cookies to access the ANS API.
-              <br />
-              <br />
-              <strong>Advanced:</strong> If cookie authentication doesn't work, you can manually enter a Bearer token below (optional).
             </p>
-            <div className="api-key-input-wrapper" style={{ marginTop: '10px' }}>
-              <input
-                type={showAnsToken ? 'text' : 'password'}
-                value={settings.ansApiToken || ''}
-                onChange={(e) => setSettings({ ...settings, ansApiToken: e.target.value })}
-                placeholder="Optional: Manual Bearer token (eyJraWQiOi...)"
-                className="api-key-input"
-              />
-              <button
-                type="button"
-                className="toggle-visibility"
-                onClick={() => setShowAnsToken(!showAnsToken)}
-              >
-                {showAnsToken ? '👁️' : '👁️‍🗨️'}
-              </button>
-            </div>
           </div>
         )}
 
@@ -1007,20 +988,6 @@ function SettingsPage() {
             {/* Tabs */}
             <div className="setting-group">
               <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', borderBottom: '2px solid #eee' }}>
-                <button
-                  onClick={() => setActiveTab('connected')}
-                  style={{
-                    padding: '10px 20px',
-                    background: 'none',
-                    border: 'none',
-                    borderBottom: activeTab === 'connected' ? '3px solid #007bff' : '3px solid transparent',
-                    cursor: 'pointer',
-                    fontWeight: activeTab === 'connected' ? 'bold' : 'normal',
-                    color: activeTab === 'connected' ? '#007bff' : '#666'
-                  }}
-                >
-                  My Services ({(settings.mcpServers || []).length})
-                </button>
                 <button
                   onClick={() => setActiveTab('marketplace')}
                   style={{
@@ -1066,96 +1033,6 @@ function SettingsPage() {
               </div>
             </div>
           </>
-        )}
-
-        {/* My Services Tab */}
-        {settings.mcpEnabled && activeTab === 'connected' && (
-          <div className="setting-group">
-            <label>Connected Services</label>
-
-            {(settings.mcpServers || []).length > 0 ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {(settings.mcpServers || []).map((server) => (
-                  <div
-                    key={server.id}
-                    style={{
-                      padding: '16px',
-                      border: server.isTrusted ? '2px solid #28a745' : '1px solid #ddd',
-                      borderRadius: '8px',
-                      background: '#f9f9f9'
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                          <div style={{ fontWeight: 'bold', fontSize: '16px' }}>{server.name}</div>
-                          {server.isTrusted && <span style={{ background: '#28a745', color: 'white', padding: '2px 8px', borderRadius: '12px', fontSize: '11px' }}>✓ Verified</span>}
-                          {server.isCustom && <span style={{ background: '#ffc107', color: '#333', padding: '2px 8px', borderRadius: '12px', fontSize: '11px' }}>⚠️  Custom</span>}
-                        </div>
-
-                        {server.businessInfo?.description && (
-                          <div style={{ fontSize: '13px', color: '#666', marginBottom: '6px' }}>
-                            {server.businessInfo.description}
-                          </div>
-                        )}
-
-                        <div style={{ fontSize: '12px', color: '#888', marginBottom: '4px' }}>
-                          {server.businessInfo?.location && `📍 ${server.businessInfo.location} • `}
-                          {server.businessInfo?.category && `${server.businessInfo.category}`}
-                        </div>
-
-                        <div style={{ fontSize: '11px', color: '#999' }}>{server.url}</div>
-                      </div>
-
-                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '14px', cursor: 'pointer' }}>
-                          <input
-                            type="checkbox"
-                            checked={server.enabled}
-                            onChange={() => handleToggleServer(server.id)}
-                          />
-                          Active
-                        </label>
-                        <button
-                          onClick={() => handleDisconnectBusiness(server.id)}
-                          style={{
-                            padding: '6px 12px',
-                            background: '#dc3545',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '4px',
-                            cursor: 'pointer',
-                            fontSize: '12px'
-                          }}
-                        >
-                          Disconnect
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div style={{ textAlign: 'center', padding: '40px 20px', color: '#666' }}>
-                <p style={{ fontSize: '16px', marginBottom: '10px' }}>No services connected yet</p>
-                <p style={{ fontSize: '14px', marginBottom: '20px' }}>Discover and connect to GoDaddy customer services</p>
-                <button
-                  onClick={() => setActiveTab('marketplace')}
-                  style={{
-                    padding: '10px 20px',
-                    background: '#007bff',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    fontSize: '14px'
-                  }}
-                >
-                  🌐 Browse Marketplace
-                </button>
-              </div>
-            )}
-          </div>
         )}
 
         {/* Marketplace Tab - Discover GoDaddy Customer Services */}
@@ -1367,7 +1244,7 @@ function SettingsPage() {
                     mcpServers: [...(settings.mcpServers || []), server],
                   });
                   setNewServer({ name: '', url: '', apiKey: '' });
-                  setActiveTab('connected');
+                  setActiveTab('mappings');
                 }}
                 disabled={!newServer.name || !newServer.url}
                 style={{
@@ -1486,7 +1363,7 @@ function SettingsPage() {
                 >
                   <option value="">-- Select a service --</option>
                   {(() => {
-                    // Combine connected services (My Services) and marketplace services
+                    // Combine configured services and marketplace services
                     const connectedServices = (settings.mcpServers || []).map(s => ({
                       id: s.id,
                       name: s.name,

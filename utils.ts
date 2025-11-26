@@ -14,7 +14,10 @@
  * @returns true if the URL matches the pattern
  */
 export function matchesUrlPattern(url: string, pattern: string): boolean {
-  if (!url || !pattern) return false;
+  if (!url || !pattern) {
+    console.log(`🔍 matchesUrlPattern: Missing url or pattern`, { url, pattern });
+    return false;
+  }
 
   // Normalize URL - remove protocol and trailing slashes
   const normalizedUrl = url
@@ -26,8 +29,11 @@ export function matchesUrlPattern(url: string, pattern: string): boolean {
     .replace(/^https?:\/\//, '')
     .replace(/^www\./, '');
 
+  console.log(`🔍 matchesUrlPattern: "${url}" → "${normalizedUrl}" vs pattern "${pattern}" → "${normalizedPattern}"`);
+
   // Exact match
   if (normalizedUrl === normalizedPattern) {
+    console.log(`   ✓ Exact match!`);
     return true;
   }
 
@@ -38,7 +44,9 @@ export function matchesUrlPattern(url: string, pattern: string): boolean {
     .replace(/\*/g, '.*'); // Convert * to .*
 
   const regex = new RegExp(`^${escapedPattern}$`, 'i');
-  return regex.test(normalizedUrl);
+  const regexMatch = regex.test(normalizedUrl);
+  console.log(`   ${regexMatch ? '✓' : '✗'} Regex match: /^${escapedPattern}$/i.test("${normalizedUrl}") = ${regexMatch}`);
+  return regexMatch;
 }
 
 /**
