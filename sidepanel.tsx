@@ -198,6 +198,7 @@ function ChatSidebar() {
   const [showToolsPanel, setShowToolsPanel] = useState(false);
   const [servicesUpdated, setServicesUpdated] = useState(0); // Increment to force re-render when services update
   const toolAudioLinksRef = useRef<string[]>([]); // Track audio links from tool results
+  const [isToolExecuting, setIsToolExecuting] = useState(false); // Track when tools are executing
 
   // Load trustedAgentOptIn from storage on mount
   useEffect(() => {
@@ -1882,6 +1883,9 @@ GUIDELINES:
     e.preventDefault();
     if (!input.trim() || isLoading || !settings) return;
 
+    // Clear tool executing state at the start of each new message
+    setIsToolExecuting(false);
+
     // Get page context to include with the message
     let pageContext = '';
     try {
@@ -2212,11 +2216,16 @@ GUIDELINES:
             if (mcpTools && mcpToolNameSet?.has(toolName)) {
               mcpToolInvoked = true;
 
+              // Show typing indicator immediately when MCP tool is detected
+              setIsToolExecuting(true);
+
               // Execute MCP tool
               try {
                 const { getMCPService } = await import('./mcp-service');
                 const mcpService = getMCPService();
                 const result = await mcpService.executeToolCall(toolName, params);
+                // Hide typing indicator when tool completes
+                setIsToolExecuting(false);
 
                 // Check if result has audioLink (for music generation tools)
                 if (result && typeof result === 'object') {
@@ -2255,6 +2264,8 @@ GUIDELINES:
                           updated[updated.length - 1] = newMessage;
                           console.log(`✅ Audio link attached immediately to message ${lastMsg.id}: ${audioLink}`);
                           console.log(`✅ Updated message object:`, newMessage);
+                          // Clear typing indicator when audio link is attached
+                          setIsToolExecuting(false);
                           return updated;
                         } else {
                           if (retryCount < maxRetries) {
@@ -2276,6 +2287,7 @@ GUIDELINES:
                 return result;
               } catch (error: any) {
                 console.error(`❌ MCP tool execution failed:`, error);
+                setIsToolExecuting(false); // Hide indicator on error
                 return { error: error.message || 'MCP tool execution failed' };
               }
             }
@@ -2337,6 +2349,8 @@ GUIDELINES:
             () => {
               // On complete - hide browser automation overlay
               hideBrowserAutomationOverlay();
+              // Clear tool executing state
+              setIsToolExecuting(false);
 
               // Attach audio links from MCP tools to the assistant message (fallback if not already attached)
               if (toolAudioLinksRef.current.length > 0) {
@@ -2362,6 +2376,8 @@ GUIDELINES:
                         audioLink: audioLinkToAttach
                       };
                       console.log(`✅ Audio link attached in onComplete: ${audioLinkToAttach}`);
+                      // Clear typing indicator when audio link is attached
+                      setIsToolExecuting(false);
                       return updated;
                     } else if (lastMsg?.audioLink) {
                       console.log(`ℹ️ Audio link already attached: ${lastMsg.audioLink}`);
@@ -2383,7 +2399,13 @@ GUIDELINES:
             mcpTools,
             currentTabUrl || undefined,
             matchedInstructions || undefined,
-            settings // Pass settings for conversation history and summarization
+            settings, // Pass settings for conversation history and summarization
+            (toolName: string, isMcpTool: boolean) => {
+              // Show typing indicator when MCP tool starts executing
+              if (isMcpTool) {
+                setIsToolExecuting(true);
+              }
+            }
           );
         } else {
           throw new Error(`Browser Tools not supported for ${settings.provider}`);
@@ -2580,7 +2602,9 @@ GUIDELINES:
                 });
               },
               () => {
-                // On complete - attach audio links from MCP tools to the assistant message (fallback if not already attached)
+                // On complete - clear tool executing state
+                setIsToolExecuting(false);
+                // Attach audio links from MCP tools to the assistant message (fallback if not already attached)
                 if (toolAudioLinksRef.current.length > 0) {
                   console.log(`🎵 onComplete: Checking if audio link needs to be attached`);
                   const audioLinkToAttach = toolAudioLinksRef.current[0];
@@ -2604,6 +2628,8 @@ GUIDELINES:
                           audioLink: audioLinkToAttach
                         };
                         console.log(`✅ Audio link attached in onComplete: ${audioLinkToAttach}`);
+                        // Clear typing indicator when audio link is attached
+                        setIsToolExecuting(false);
                         return updated;
                       } else if (lastMsg?.audioLink) {
                         console.log(`ℹ️ Audio link already attached: ${lastMsg.audioLink}`);
@@ -2657,7 +2683,11 @@ GUIDELINES:
                 if (toolName in mcpTools) {
                   // Execute MCP tool
                   try {
+                    // Show typing indicator while tool is executing
+                    setIsToolExecuting(true);
                     const result = await mcpService.executeToolCall(toolName, params);
+                    // Hide typing indicator when tool completes
+                    setIsToolExecuting(false);
 
                     // Check if result has audioLink (for music generation tools)
                     if (result && typeof result === 'object') {
@@ -2696,6 +2726,8 @@ GUIDELINES:
                               updated[updated.length - 1] = newMessage;
                               console.log(`✅ Audio link attached immediately to message ${lastMsg.id}: ${audioLink}`);
                               console.log(`✅ Updated message object:`, newMessage);
+                              // Clear typing indicator when audio link is attached
+                              setIsToolExecuting(false);
                               return updated;
                             } else {
                               if (retryCount < maxRetries) {
@@ -2717,6 +2749,7 @@ GUIDELINES:
                     return result;
                   } catch (error: any) {
                     console.error(`❌ MCP tool execution failed:`, error);
+                    setIsToolExecuting(false); // Hide indicator on error
                     return { error: error.message || 'MCP tool execution failed' };
                   }
                 } else {
@@ -2729,7 +2762,13 @@ GUIDELINES:
               mcpTools,  // Pass MCP tools
               currentTabUrl || undefined,
               matchedInstructions || undefined,
-              settings // Pass settings for conversation history and summarization
+              settings, // Pass settings for conversation history and summarization
+              (toolName: string, isMcpTool: boolean) => {
+                // Show typing indicator when MCP tool starts executing
+                if (isMcpTool) {
+                  setIsToolExecuting(true);
+                }
+              }
             );
           } else {
             console.log('ℹ️  No custom MCP tools available');
@@ -2788,6 +2827,7 @@ GUIDELINES:
       // Hide browser automation overlay on error
       await hideBrowserAutomationOverlay();
       setIsLoading(false);
+      setIsToolExecuting(false); // Clear tool executing state on error
     }
   };
 
@@ -3128,7 +3168,10 @@ GUIDELINES:
             <p>I'm GoDaddy ANS, your AI assistant. I can help you browse the web, analyze content, and perform various tasks.</p>
           </div>
         ) : (
-          messages.map((message) => (
+          messages.map((message, index) => {
+            const isLastAssistantMessage = message.role === 'assistant' && 
+              index === messages.length - 1;
+            return (
             <div
               key={`${message.id}-${message.audioLink || ''}`}
               className={`message ${message.role}`}
@@ -3138,6 +3181,14 @@ GUIDELINES:
                   message.role === 'assistant' ? (
                     <>
                       <MessageParser content={message.content} />
+                      {/* Show typing indicator while tools are executing (only on last assistant message, and not if audio player is shown) */}
+                      {isToolExecuting && isLastAssistantMessage && !message.audioLink && (
+                        <div className="typing-indicator" style={{ marginTop: '8px' }}>
+                          <span></span>
+                          <span></span>
+                          <span></span>
+                        </div>
+                      )}
                       {/* Audio player for generated music/audio */}
                       {(() => {
                         const audioLink = message.audioLink;
@@ -3181,7 +3232,7 @@ GUIDELINES:
                     <UserMessageParser content={message.content} />
                   )
                 ) : (
-                  isLoading && message.role === 'assistant' && (
+                  (isLoading || isToolExecuting) && message.role === 'assistant' && (
                     <div className="typing-indicator">
                       <span></span>
                       <span></span>
@@ -3191,7 +3242,8 @@ GUIDELINES:
                 )}
               </div>
             </div>
-          ))
+            );
+          })
         )}
         {/* Loading indicator for tool execution */}
         {isLoading && (

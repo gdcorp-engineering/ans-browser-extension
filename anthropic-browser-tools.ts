@@ -217,7 +217,8 @@ export async function streamAnthropicWithBrowserTools(
   additionalTools?: any[], // Custom MCP tools
   currentUrl?: string, // Current page URL for matching site instructions
   siteInstructions?: string, // Matched site-specific instructions
-  settings?: any // User settings for conversation history and summarization
+  settings?: any, // User settings for conversation history and summarization
+  onToolStart?: (toolName: string, isMcpTool: boolean) => void // Callback when tool execution starts
 ): Promise<void> {
   // Validate API key before making request
   if (!apiKey || apiKey.trim().length === 0) {
@@ -625,6 +626,11 @@ Remember: Take your time, verify each step, and describe what you see before act
         }
       }
       onTextChunk(`${JSON.stringify(toolUse.input)}\n`);
+
+      // Notify that tool execution is starting (for typing indicator)
+      if (onToolStart) {
+        onToolStart(toolUse.name, isMcpToolUse);
+      }
 
       try {
         console.log('🔧 Calling executeTool with:', toolUse.name, toolUse.input);
