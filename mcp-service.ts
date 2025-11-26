@@ -248,16 +248,16 @@ export class MCPService {
           }
         };
 
-        // Timeout after 30s
+        // Timeout after 5 minutes (music generation can take a while)
         setTimeout(() => {
           if (!responseReceived) {
             // Restore original handler
             if (originalOnMessage) {
               transport.onmessage = originalOnMessage;
             }
-            reject(new Error('Timeout after 30s'));
+            reject(new Error('Timeout after 5 minutes'));
           }
-        }, 30000);
+        }, 300000);
       });
 
       // Send the request
@@ -268,18 +268,107 @@ export class MCPService {
       const response = await responsePromise;
 
       console.log(`✅ Tool "${toolName}" executed successfully`);
-      console.log(`📊 Response:`, JSON.stringify(response, null, 2));
+      console.log(`📊 RAW RESPONSE (full):`, JSON.stringify(response, null, 2));
+      console.log(`🔍 RAW response.result:`, JSON.stringify(response.result, null, 2));
+      console.log(`🔍 response.result keys:`, response.result ? Object.keys(response.result) : 'null');
+
+      // Log the ENTIRE response object structure
+      console.log(`🔍 DEEP INSPECTION - response type:`, typeof response);
+      console.log(`🔍 DEEP INSPECTION - response keys:`, Object.keys(response));
+      if (response.result) {
+        console.log(`🔍 DEEP INSPECTION - response.result type:`, typeof response.result);
+        console.log(`🔍 DEEP INSPECTION - response.result keys:`, Object.keys(response.result));
+      }
 
       // Extract result from MCP response
       if (response.result) {
         if (response.result.content && Array.isArray(response.result.content)) {
+          console.log(`🔍 Content array has ${response.result.content.length} items`);
+          response.result.content.forEach((item: any, idx: number) => {
+            console.log(`🔍 Content[${idx}]:`, JSON.stringify(item, null, 2));
+          });
+
           // Return the text from content array
           const textContent = response.result.content
             .filter((item: any) => item.type === 'text')
             .map((item: any) => item.text)
             .join('\n');
-          return { result: textContent };
+
+          // Preserve additional fields like audioLink, audio_link, audioUrl
+          const resultObj: any = { result: textContent };
+
+          // Check for audio link fields in response.result
+          let audioLinkFound = false;
+          if (response.result.audioLink) {
+            resultObj.audioLink = response.result.audioLink;
+            console.log(`🎵 Found audioLink in response.result: ${response.result.audioLink}`);
+            audioLinkFound = true;
+          } else if (response.result.audio_link) {
+            resultObj.audioLink = response.result.audio_link;
+            console.log(`🎵 Found audio_link in response.result: ${response.result.audio_link}`);
+            audioLinkFound = true;
+          } else if (response.result.audioUrl) {
+            resultObj.audioLink = response.result.audioUrl;
+            console.log(`🎵 Found audioUrl in response.result: ${response.result.audioUrl}`);
+            audioLinkFound = true;
+          }
+
+          // Also check inside content array items for audioLink
+          if (!audioLinkFound) {
+            for (const item of response.result.content) {
+              // First check direct fields
+              if (item.audioLink) {
+                resultObj.audioLink = item.audioLink;
+                console.log(`🎵 Found audioLink in content item: ${item.audioLink}`);
+                audioLinkFound = true;
+                break;
+              } else if (item.audio_link) {
+                resultObj.audioLink = item.audio_link;
+                console.log(`🎵 Found audio_link in content item: ${item.audio_link}`);
+                audioLinkFound = true;
+                break;
+              } else if (item.audioUrl) {
+                resultObj.audioLink = item.audioUrl;
+                console.log(`🎵 Found audioUrl in content item: ${item.audioUrl}`);
+                audioLinkFound = true;
+                break;
+              }
+
+              // If item has text field, try parsing it as JSON
+              if (item.text && typeof item.text === 'string') {
+                try {
+                  const parsed = JSON.parse(item.text);
+                  if (parsed.audioLink) {
+                    resultObj.audioLink = parsed.audioLink;
+                    console.log(`🎵 Found audioLink in parsed JSON text: ${parsed.audioLink}`);
+                    audioLinkFound = true;
+                    break;
+                  } else if (parsed.audio_link) {
+                    resultObj.audioLink = parsed.audio_link;
+                    console.log(`🎵 Found audio_link in parsed JSON text: ${parsed.audio_link}`);
+                    audioLinkFound = true;
+                    break;
+                  } else if (parsed.audioUrl) {
+                    resultObj.audioLink = parsed.audioUrl;
+                    console.log(`🎵 Found audioUrl in parsed JSON text: ${parsed.audioUrl}`);
+                    audioLinkFound = true;
+                    break;
+                  }
+                } catch (e) {
+                  // Not JSON, skip
+                }
+              }
+            }
+          }
+
+          if (!audioLinkFound) {
+            console.log(`⚠️ No audioLink found in response.result or content items`);
+          }
+
+          console.log(`🎯 FINAL RESULT OBJECT TO RETURN:`, JSON.stringify(resultObj, null, 2));
+          return resultObj;
         }
+        console.log(`🎯 FINAL RESULT (no content array):`, JSON.stringify({ result: response.result }, null, 2));
         return { result: response.result };
       }
 

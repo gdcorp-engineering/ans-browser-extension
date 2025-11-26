@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
-import type { Settings, MCPServerConfig, SiteInstruction } from './types';
+import type { Settings, MCPServerConfig, SiteInstruction, ServiceMapping } from './types';
 import { DEFAULT_SITE_INSTRUCTIONS } from './default-site-instructions';
 import {
   fetchTrustedBusinesses,
@@ -11,6 +11,7 @@ import {
   sortBusinesses,
   type ANSBusinessService,
 } from './trusted-business-service';
+import { generateUrlPattern, extractDomain } from './utils';
 
 const PROVIDER_MODELS = {
   anthropic: [
@@ -38,6 +39,15 @@ function SettingsPage() {
   const [showAnsToken, setShowAnsToken] = useState(false);
   const [newServer, setNewServer] = useState({ name: '', url: '', apiKey: '' });
   const [newSiteInstruction, setNewSiteInstruction] = useState({ domainPattern: '', instructions: '' });
+
+  // Service Mapping state
+  const [newMapping, setNewMapping] = useState({
+    urlPattern: '',
+    serviceType: 'mcp' as 'mcp' | 'a2a',
+    serviceId: '',
+  });
+  const [allTabs, setAllTabs] = useState<Array<{ id: number; url: string; title: string }>>([]);
+  const [selectedTabUrl, setSelectedTabUrl] = useState<string>('');
 
   // Business Marketplace state
   const [trustedBusinesses, setTrustedBusinesses] = useState<ANSBusinessService[]>([]);
@@ -170,6 +180,24 @@ function SettingsPage() {
           mcpServers: [],
           siteInstructions: DEFAULT_SITE_INSTRUCTIONS,
         });
+      }
+    });
+  }, []);
+
+  // Get all open tabs
+  useEffect(() => {
+    chrome.tabs.query({}, (tabs) => {
+      const validTabs = tabs
+        .filter(tab => tab.url && !tab.url.startsWith('chrome://') && !tab.url.startsWith('chrome-extension://'))
+        .map(tab => ({
+          id: tab.id!,
+          url: tab.url!,
+          title: tab.title || 'Untitled'
+        }));
+      setAllTabs(validTabs);
+      // Auto-select the first tab
+      if (validTabs.length > 0 && !selectedTabUrl) {
+        setSelectedTabUrl(validTabs[0].url);
       }
     });
   }, []);
@@ -425,6 +453,121 @@ function SettingsPage() {
     setSettings({
       ...settings,
       siteInstructions: updatedInstructions,
+    });
+  };
+
+  // Service Mapping handlers
+  const handleAddMapping = () => {
+    if (!newMapping.urlPattern || !newMapping.serviceId) {
+      return;
+    }
+
+    // Find the service details from either connected services or marketplace
+    let service = settings.mcpServers?.find(s => s.id === newMapping.serviceId);
+
+    if (!service) {
+      // Try marketplace services
+      const marketplaceService = trustedBusinesses.find(b => b.id === newMapping.serviceId);
+      if (marketplaceService) {
+        service = {
+          id: marketplaceService.id,
+          name: marketplaceService.name,
+          url: marketplaceService.url,
+          protocol: marketplaceService.protocol
+        };
+      }
+    }
+
+    if (!service) {
+      console.error('Service not found:', newMapping.serviceId);
+      return;
+    }
+
+    const mapping: ServiceMapping = {
+      id: Date.now().toString(),
+      urlPattern: newMapping.urlPattern,
+      serviceType: newMapping.serviceType,
+      serviceId: service.id,
+      serviceName: service.name,
+      serviceUrl: service.url,
+      enabled: true,
+      createdAt: Date.now(),
+    };
+
+    console.log('✅ Adding mapping:', mapping);
+
+    const newSettings = {
+      ...settings,
+      serviceMappings: [...(settings.serviceMappings || []), mapping],
+    };
+
+    setSettings(newSettings);
+
+    // Save to storage immediately
+    chrome.storage.local.set({ atlasSettings: newSettings }, () => {
+      console.log('💾 Mapping saved to storage');
+      chrome.runtime.sendMessage({ type: 'SETTINGS_UPDATED', action: 'mapping_changed' }, () => {
+        if (chrome.runtime.lastError) {
+          console.log('Sidebar not active, but settings saved');
+        }
+      });
+    });
+
+    // Reset form
+    setNewMapping({
+      urlPattern: '',
+      serviceType: 'mcp',
+      serviceId: '',
+    });
+  };
+
+  const handleUseCurrentSite = () => {
+    if (selectedTabUrl) {
+      const pattern = generateUrlPattern(selectedTabUrl);
+      setNewMapping({
+        ...newMapping,
+        urlPattern: pattern,
+      });
+    }
+  };
+
+  const handleToggleMapping = (id: string) => {
+    const newSettings = {
+      ...settings,
+      serviceMappings: settings.serviceMappings?.map(m =>
+        m.id === id ? { ...m, enabled: !m.enabled } : m
+      ),
+    };
+
+    setSettings(newSettings);
+
+    // Save to storage immediately
+    chrome.storage.local.set({ atlasSettings: newSettings }, () => {
+      console.log('💾 Mapping toggle saved to storage');
+      chrome.runtime.sendMessage({ type: 'SETTINGS_UPDATED', action: 'mapping_changed' }, () => {
+        if (chrome.runtime.lastError) {
+          console.log('Sidebar not active, but settings saved');
+        }
+      });
+    });
+  };
+
+  const handleDeleteMapping = (id: string) => {
+    const newSettings = {
+      ...settings,
+      serviceMappings: settings.serviceMappings?.filter(m => m.id !== id),
+    };
+
+    setSettings(newSettings);
+
+    // Save to storage immediately
+    chrome.storage.local.set({ atlasSettings: newSettings }, () => {
+      console.log('💾 Mapping deleted from storage');
+      chrome.runtime.sendMessage({ type: 'SETTINGS_UPDATED', action: 'mapping_changed' }, () => {
+        if (chrome.runtime.lastError) {
+          console.log('Sidebar not active, but settings saved');
+        }
+      });
     });
   };
 
@@ -906,6 +1049,20 @@ function SettingsPage() {
                 >
                   🔧 Custom
                 </button>
+                <button
+                  onClick={() => setActiveTab('mappings')}
+                  style={{
+                    padding: '10px 20px',
+                    background: 'none',
+                    border: 'none',
+                    borderBottom: activeTab === 'mappings' ? '3px solid #007bff' : '3px solid transparent',
+                    cursor: 'pointer',
+                    fontWeight: activeTab === 'mappings' ? 'bold' : 'normal',
+                    color: activeTab === 'mappings' ? '#007bff' : '#666'
+                  }}
+                >
+                  🗺️ Site Mappings
+                </button>
               </div>
             </div>
           </>
@@ -1225,6 +1382,248 @@ function SettingsPage() {
               >
                 + Add Custom Server
               </button>
+            </div>
+          </div>
+        )}
+
+        {/* Site Mappings Tab - Map URLs to Services */}
+        {settings.mcpEnabled && activeTab === 'mappings' && (
+          <div className="setting-group">
+            <label>Site-Specific Service Mappings</label>
+            <p style={{ fontSize: '13px', color: '#666', marginBottom: '15px' }}>
+              Map specific URLs to MCP servers or A2A agents. Services will only be available when browsing matching sites.
+            </p>
+
+            {/* Select Site from Open Tabs */}
+            {allTabs.length > 0 && (
+              <div style={{
+                marginBottom: '20px',
+                padding: '12px',
+                background: '#e7f3ff',
+                border: '1px solid #007bff',
+                borderRadius: '6px'
+              }}>
+                <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px', fontSize: '13px' }}>
+                  📍 Select Site from Open Tabs
+                </label>
+                <select
+                  value={selectedTabUrl}
+                  onChange={(e) => setSelectedTabUrl(e.target.value)}
+                  className="model-select"
+                  style={{ marginBottom: 0 }}
+                >
+                  {allTabs.map(tab => (
+                    <option key={tab.id} value={tab.url}>
+                      {extractDomain(tab.url)} - {tab.title.substring(0, 50)}{tab.title.length > 50 ? '...' : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Add Mapping Form */}
+            <div style={{ marginBottom: '20px', padding: '15px', background: '#f5f5f5', borderRadius: '8px' }}>
+              <div style={{ fontWeight: 'bold', marginBottom: '12px' }}>
+                Add New Mapping
+              </div>
+
+              <div style={{ marginBottom: '10px' }}>
+                <label style={{ display: 'block', fontSize: '12px', color: '#666', marginBottom: '4px' }}>
+                  URL Pattern
+                </label>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <input
+                    type="text"
+                    value={newMapping.urlPattern}
+                    onChange={(e) => setNewMapping({ ...newMapping, urlPattern: e.target.value })}
+                    placeholder="e.g., *.jira.atlassian.net or jira.company.com"
+                    className="api-key-input"
+                    style={{ marginBottom: 0, flex: 1 }}
+                  />
+                  <button
+                    onClick={handleUseCurrentSite}
+                    disabled={!selectedTabUrl}
+                    style={{
+                      padding: '8px 16px',
+                      background: selectedTabUrl ? '#28a745' : '#6c757d',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: selectedTabUrl ? 'pointer' : 'not-allowed',
+                      fontSize: '13px',
+                      whiteSpace: 'nowrap'
+                    }}
+                  >
+                    Use Selected Site
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ marginBottom: '10px' }}>
+                <label style={{ display: 'block', fontSize: '12px', color: '#666', marginBottom: '4px' }}>
+                  Service Type
+                </label>
+                <select
+                  value={newMapping.serviceType}
+                  onChange={(e) => setNewMapping({ ...newMapping, serviceType: e.target.value as 'mcp' | 'a2a' })}
+                  className="model-select"
+                  style={{ marginBottom: 0 }}
+                >
+                  <option value="mcp">🔌 MCP Server</option>
+                  <option value="a2a">🤖 A2A Agent</option>
+                </select>
+              </div>
+
+              <div style={{ marginBottom: '10px' }}>
+                <label style={{ display: 'block', fontSize: '12px', color: '#666', marginBottom: '4px' }}>
+                  Select Service
+                </label>
+                <select
+                  value={newMapping.serviceId}
+                  onChange={(e) => setNewMapping({ ...newMapping, serviceId: e.target.value })}
+                  className="model-select"
+                  style={{ marginBottom: 0 }}
+                >
+                  <option value="">-- Select a service --</option>
+                  {(() => {
+                    // Combine connected services (My Services) and marketplace services
+                    const connectedServices = (settings.mcpServers || []).map(s => ({
+                      id: s.id,
+                      name: s.name,
+                      url: s.url,
+                      protocol: s.protocol || 'mcp',
+                      isConnected: true
+                    }));
+
+                    const marketplaceServices = trustedBusinesses.map(b => ({
+                      id: b.id,
+                      name: b.name,
+                      url: b.url,
+                      protocol: b.protocol,
+                      isConnected: false
+                    }));
+
+                    // Merge and deduplicate by ID (prefer connected services)
+                    const allServices = [...connectedServices, ...marketplaceServices.filter(m =>
+                      !connectedServices.find(c => c.id === m.id)
+                    )];
+
+                    // Filter by service type
+                    const filtered = allServices.filter(s => {
+                      if (newMapping.serviceType === 'mcp') {
+                        return s.protocol === 'mcp';
+                      } else {
+                        return s.protocol === 'a2a';
+                      }
+                    });
+
+                    console.log(`🔍 Service dropdown: serviceType=${newMapping.serviceType}, connected=${connectedServices.length}, marketplace=${marketplaceServices.length}, total=${allServices.length}, filtered=${filtered.length}`);
+                    if (filtered.length === 0) {
+                      console.log('📋 All services protocols:', allServices.map(s => ({ name: s.name, protocol: s.protocol, connected: s.isConnected })));
+                    }
+
+                    return filtered.map(s => (
+                      <option key={s.id} value={s.id}>
+                        {s.isConnected ? '✓ ' : ''}{s.name} ({s.url})
+                      </option>
+                    ));
+                  })()}
+                </select>
+              </div>
+
+              <button
+                onClick={handleAddMapping}
+                disabled={!newMapping.urlPattern || !newMapping.serviceId}
+                style={{
+                  padding: '10px 20px',
+                  background: (!newMapping.urlPattern || !newMapping.serviceId) ? '#6c757d' : '#007bff',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: (!newMapping.urlPattern || !newMapping.serviceId) ? 'not-allowed' : 'pointer',
+                  opacity: (!newMapping.urlPattern || !newMapping.serviceId) ? 0.5 : 1
+                }}
+              >
+                + Add Mapping
+              </button>
+            </div>
+
+            {/* Active Mappings List */}
+            <div style={{ marginBottom: '15px' }}>
+              <div style={{ fontWeight: 'bold', marginBottom: '12px', fontSize: '14px' }}>
+                Active Mappings ({(settings.serviceMappings || []).length})
+              </div>
+
+              {(settings.serviceMappings || []).length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {(settings.serviceMappings || []).map((mapping) => (
+                    <div
+                      key={mapping.id}
+                      style={{
+                        padding: '12px',
+                        border: '1px solid #ddd',
+                        borderRadius: '6px',
+                        background: mapping.enabled ? 'white' : '#f8f9fa',
+                        display: 'flex',
+                        alignItems: 'start',
+                        gap: '12px'
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={mapping.enabled}
+                        onChange={() => handleToggleMapping(mapping.id)}
+                        style={{ marginTop: '4px', cursor: 'pointer' }}
+                      />
+
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                          <span style={{ fontSize: '16px' }}>
+                            {mapping.serviceType === 'mcp' ? '🔌' : '🤖'}
+                          </span>
+                          <span style={{ fontWeight: 'bold', color: '#007bff' }}>
+                            {mapping.urlPattern}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '13px', color: '#333', marginBottom: '2px' }}>
+                          Service: {mapping.serviceName}
+                        </div>
+                        <div style={{ fontSize: '12px', color: '#666', fontFamily: 'monospace' }}>
+                          {mapping.serviceUrl}
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={() => handleDeleteMapping(mapping.id)}
+                        style={{
+                          padding: '6px 12px',
+                          background: '#dc3545',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          fontSize: '12px'
+                        }}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{
+                  textAlign: 'center',
+                  padding: '40px',
+                  color: '#666',
+                  background: '#f8f9fa',
+                  borderRadius: '8px'
+                }}>
+                  <p>No site mappings configured yet.</p>
+                  <p style={{ fontSize: '13px', marginTop: '8px' }}>
+                    Add a mapping above to enable site-specific services.
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         )}

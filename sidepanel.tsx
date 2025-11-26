@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import type { Settings, MCPClient, Message, SiteInstruction } from './types';
+import type { Settings, MCPClient, Message, SiteInstruction, ServiceMapping } from './types';
 import { GeminiResponseSchema } from './types';
 import { experimental_createMCPClient, stepCountIs } from 'ai';
 import { streamAnthropic } from './anthropic-service';
@@ -12,6 +12,7 @@ import { getA2AService, resetA2AService } from './a2a-service';
 import { getToolDescription, mergeToolDefinitions } from './mcp-tool-router';
 import { findAgentForCurrentSite, agentNameToDomain } from './site-detector';
 import { DEFAULT_SITE_INSTRUCTIONS } from './default-site-instructions';
+import { matchesUrlPattern } from './utils';
 
 // Model ID to display name mapping
 const MODEL_DISPLAY_NAMES: Record<string, string> = {
@@ -193,7 +194,10 @@ function ChatSidebar() {
   const [currentTabUrl, setCurrentTabUrl] = useState<string | null>(null);
   const [trustedAgentOptIn, setTrustedAgentOptIn] = useState(true); // User opt-in for trusted agents
   const [currentSiteAgent, setCurrentSiteAgent] = useState<{ serverId: string; serverName: string } | null>(null);
+  const [currentSiteMcpCount, setCurrentSiteMcpCount] = useState(0); // Number of MCP servers for current site
   const [showToolsPanel, setShowToolsPanel] = useState(false);
+  const [servicesUpdated, setServicesUpdated] = useState(0); // Increment to force re-render when services update
+  const toolAudioLinksRef = useRef<string[]>([]); // Track audio links from tool results
 
   // Load trustedAgentOptIn from storage on mount
   useEffect(() => {
@@ -414,30 +418,12 @@ function ChatSidebar() {
           }
         }
 
-        // Initialize MCP and A2A services with settings
-        if (result.atlasSettings.mcpServers && result.atlasSettings.mcpServers.length > 0) {
-          console.log('🚀 Initializing MCP and A2A services...');
-          try {
-            // Initialize MCP service
-            const mcpService = getMCPService();
-            await mcpService.connectToServers(result.atlasSettings.mcpServers);
+        // Note: MCP and A2A services will be initialized on-demand based on site mappings
+        // when messages are sent or when checking for tools on specific sites
+        console.log('✅ Settings loaded. Services will connect based on site mappings.');
 
-            if (mcpService.hasConnections()) {
-              const toolCount = mcpService.getTotalToolCount();
-              console.log(`✅ MCP service initialized - ${toolCount} tool(s) available`);
-            }
-
-            // Initialize A2A service
-            const a2aService = getA2AService();
-            await a2aService.connectToServers(result.atlasSettings.mcpServers);
-            console.log('✅ A2A service initialized');
-
-            // Check for trusted agent after initialization
-            setTimeout(() => checkForTrustedAgent(), 500);
-          } catch (error) {
-            console.error('❌ Failed to initialize MCP/A2A services:', error);
-          }
-        }
+        // Check for trusted agent after a short delay
+        setTimeout(() => checkForTrustedAgent(), 500);
       } else {
         setShowSettings(true);
       }
@@ -446,25 +432,169 @@ function ChatSidebar() {
 
   // Check if current site has a trusted A2A agent
   const checkForTrustedAgent = async () => {
-    const a2aService = getA2AService();
     console.log('🔍 Checking for trusted agent...');
-    console.log('   A2A service has connections:', a2aService.hasConnections());
 
-    if (a2aService.hasConnections()) {
-      const connections = a2aService.getConnectionStatus();
-      console.log('   Available A2A agents:', connections.map(c => c.serverName).join(', '));
+    // Get current tab URL
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const currentUrl = tab?.url;
+    console.log('📍 Current URL:', currentUrl);
 
-      const agent = await findAgentForCurrentSite(connections);
-      setCurrentSiteAgent(agent);
+    if (!currentUrl || currentUrl.startsWith('chrome://') || currentUrl.startsWith('chrome-extension://')) {
+      console.log('⚠️  Not on a regular website, skipping agent check');
+      setCurrentSiteAgent(null);
+      setCurrentSiteMcpCount(0);
+      return;
+    }
 
-      if (agent) {
-        console.log(`✅ Trusted agent available: "${agent.serverName}"`);
+    // Get settings to check for mappings
+    const result = await chrome.storage.local.get(['atlasSettings']);
+    const localSettings = result.atlasSettings;
+
+    if (!localSettings?.mcpServers || localSettings.mcpServers.length === 0) {
+      console.log('⚠️  No services configured');
+      setCurrentSiteAgent(null);
+      setCurrentSiteMcpCount(0);
+      return;
+    }
+
+    console.log('📋 Service mappings:', localSettings.serviceMappings);
+    console.log('📋 MCP servers:', localSettings.mcpServers.map((s: any) => ({ id: s.id, name: s.name, enabled: s.enabled })));
+
+    // Check for service mappings for current site
+    const { a2aMapping, mcpServerIds } = findMatchingMappings(currentUrl, localSettings.serviceMappings);
+    console.log('🗺️  Mapping results:', { a2aMapping, mcpServerIds });
+
+    // Initialize A2A service based on mappings
+    const a2aService = getA2AService();
+    const mcpService = getMCPService();
+
+    // Determine which servers to connect based on mappings
+    let serversToConnect = localSettings.mcpServers.filter(s => s.enabled);
+
+    if (localSettings.serviceMappings && localSettings.serviceMappings.length > 0) {
+      // If mappings exist, only use mapped services
+      const mappedServerIds = [...(a2aMapping ? [a2aMapping.serviceId] : []), ...mcpServerIds];
+
+      if (mappedServerIds.length > 0) {
+        console.log(`🗺️  Found ${mappedServerIds.length} service mapping(s) for current site`);
+        console.log(`🗺️  Mapped server IDs:`, mappedServerIds);
+        console.log(`🗺️  Available server IDs:`, localSettings.mcpServers.map((s: any) => s.id));
+
+        serversToConnect = serversToConnect.filter(s => mappedServerIds.includes(s.id));
+
+        // Check if mapped services exist in mcpServers
+        const missingServerIds = mappedServerIds.filter(id => !localSettings.mcpServers.find((s: any) => s.id === id));
+        if (missingServerIds.length > 0) {
+          console.warn(`⚠️  Mapped services not found in My Services:`, missingServerIds);
+          console.warn(`⚠️  You need to connect these services in Settings > My Services first, or they will be auto-added from mappings`);
+
+          // Auto-add servers from mappings if they don't exist
+          const allMappings = [...(a2aMapping ? [a2aMapping] : []), ...localSettings.serviceMappings.filter((m: ServiceMapping) => mcpServerIds.includes(m.serviceId))];
+          let serversWereAdded = false;
+          for (const mapping of allMappings) {
+            if (missingServerIds.includes(mapping.serviceId)) {
+              console.log(`✅ Auto-adding server from mapping: ${mapping.serviceName}`);
+              const newServer = {
+                id: mapping.serviceId,
+                name: mapping.serviceName,
+                url: mapping.serviceUrl,
+                enabled: true,
+                protocol: mapping.serviceType,
+                isTrusted: true,
+                isCustom: false
+              };
+              localSettings.mcpServers.push(newServer);
+              serversToConnect.push(newServer);
+              serversWereAdded = true;
+            }
+          }
+
+          // Save auto-added servers to storage so they persist
+          if (serversWereAdded) {
+            console.log(`💾 Saving auto-added servers to storage...`);
+            await chrome.storage.local.set({ atlasSettings: localSettings });
+            setSettings(localSettings);
+            console.log(`✅ Auto-added servers saved to storage`);
+          }
+        }
+
+        console.log(`🗺️  Servers to connect:`, serversToConnect.map((s: any) => s.name));
       } else {
-        console.log(`ℹ️  No trusted agent for this site`);
+        console.log('🗺️  No service mappings for current site');
+        serversToConnect = [];
+      }
+    }
+
+    // Reset services first to clear any previous connections
+    console.log('🔄 Resetting services...');
+    resetA2AService();
+    resetMCPService();
+
+    if (serversToConnect.length > 0) {
+      console.log(`🚀 Connecting to ${serversToConnect.length} service(s) for current site...`);
+
+      try {
+        await a2aService.connectToServers(serversToConnect);
+        await mcpService.connectToServers(serversToConnect);
+
+        // Check for A2A agent
+        if (a2aService.hasConnections()) {
+          const connections = a2aService.getConnectionStatus();
+          console.log('   Available A2A agents:', connections.map(c => c.serverName).join(', '));
+
+          // If we have an explicit A2A mapping, use it directly
+          if (a2aMapping) {
+            const mappedAgent = connections.find(c => c.serverId === a2aMapping.serviceId);
+            if (mappedAgent) {
+              console.log(`✅ Using mapped A2A agent: "${mappedAgent.serverName}"`);
+              setCurrentSiteAgent({ serverId: mappedAgent.serverId, serverName: mappedAgent.serverName });
+            } else {
+              console.log(`⚠️  Mapped A2A agent not found in connections`);
+              setCurrentSiteAgent(null);
+            }
+          } else {
+            // Fallback to automatic site detection (legacy behavior)
+            const agent = await findAgentForCurrentSite(connections);
+            setCurrentSiteAgent(agent);
+
+            if (agent) {
+              console.log(`✅ Trusted agent available (auto-detected): "${agent.serverName}"`);
+            } else {
+              console.log(`ℹ️  No trusted agent for this site`);
+            }
+          }
+        } else {
+          console.log('⚠️  A2A service has no connections');
+          setCurrentSiteAgent(null);
+        }
+
+        // Check for MCP servers - only count tools from mapped servers
+        if (mcpService.hasConnections() && mcpServerIds.length > 0) {
+          const allTools = mcpService.getToolsWithOrigin();
+          // Filter to only count tools from servers mapped to current site
+          const filteredTools = allTools.filter(tool => mcpServerIds.includes(tool.serverId));
+          const mcpCount = filteredTools.length;
+          console.log(`✅ ${mcpCount} MCP tool(s) available for current site (from ${mcpServerIds.length} mapped server(s))`);
+          console.log(`📊 MCP tool breakdown:`, filteredTools.map(t => ({ name: t.toolDefinition.name, serverId: t.serverId })));
+          setCurrentSiteMcpCount(mcpCount);
+        } else {
+          console.log('⚠️  No MCP tools for current site');
+          setCurrentSiteMcpCount(0);
+        }
+
+        // Trigger re-render of Available Tools panel
+        setServicesUpdated(prev => prev + 1);
+      } catch (error) {
+        console.error('❌ Failed to connect services:', error);
+        setCurrentSiteAgent(null);
+        setCurrentSiteMcpCount(0);
+        setServicesUpdated(prev => prev + 1);
       }
     } else {
-      console.log('⚠️  A2A service has no connections');
+      console.log('⚠️  No services to connect for current site');
       setCurrentSiteAgent(null);
+      setCurrentSiteMcpCount(0);
+      setServicesUpdated(prev => prev + 1);
     }
   };
 
@@ -498,9 +628,7 @@ function ChatSidebar() {
             setMessages([]);
           }
         }
-
-        // Check for trusted agent on this site
-        checkForTrustedAgent();
+        // Note: checkForTrustedAgent() will be called automatically by the useEffect watching currentTabUrl
       }
     };
 
@@ -516,8 +644,13 @@ function ChatSidebar() {
         tabMessagesRef.current[currentId] = messagesRef.current;
       }
 
+      // Get the new tab's URL
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      console.log('📍 New tab URL:', tab?.url);
+
       // Load new tab's messages
       setCurrentTabId(activeInfo.tabId);
+      setCurrentTabUrl(tab?.url || null);
       if (tabMessagesRef.current[activeInfo.tabId]) {
         setMessages(tabMessagesRef.current[activeInfo.tabId]);
       } else {
@@ -537,9 +670,7 @@ function ChatSidebar() {
           setMessages([]);
         }
       }
-
-      // Check for trusted agent on new tab
-      checkForTrustedAgent();
+      // Note: checkForTrustedAgent() will be called automatically by the useEffect watching currentTabUrl
     };
 
     chrome.tabs.onActivated.addListener(handleTabChange);
@@ -550,8 +681,7 @@ function ChatSidebar() {
       if (changeInfo.url && tabId === currentTabIdRef.current) {
         console.log('📍 Tab URL changed to:', changeInfo.url);
         setCurrentTabUrl(changeInfo.url);
-        // Check for trusted agent on the new URL
-        checkForTrustedAgent();
+        // Note: checkForTrustedAgent() will be called automatically by the useEffect watching currentTabUrl
       }
     };
 
@@ -571,6 +701,14 @@ function ChatSidebar() {
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
+
+  // Re-check services whenever the current tab URL changes
+  useEffect(() => {
+    if (currentTabUrl) {
+      console.log('🔄 Current tab URL changed, re-checking services...');
+      checkForTrustedAgent();
+    }
+  }, [currentTabUrl]);
 
   // Save messages whenever they change
   useEffect(() => {
@@ -1701,6 +1839,44 @@ GUIDELINES:
     }
   };
 
+  /**
+   * Find matching service mappings for the current URL
+   * Returns matching A2A agent (first match) and all matching MCP server IDs
+   */
+  const findMatchingMappings = (url: string | null, mappings: ServiceMapping[] | undefined): {
+    a2aMapping: ServiceMapping | null;
+    mcpServerIds: string[];
+  } => {
+    console.log('🔍 findMatchingMappings called with:', { url, mappingsCount: mappings?.length });
+
+    if (!url || !mappings || mappings.length === 0) {
+      console.log('⚠️  No URL or mappings provided');
+      return { a2aMapping: null, mcpServerIds: [] };
+    }
+
+    // Find all enabled mappings that match the current URL
+    console.log('🔍 Checking each mapping:');
+    const matchingMappings = mappings
+      .filter(m => {
+        const matches = m.enabled && matchesUrlPattern(url, m.urlPattern);
+        console.log(`   ${m.urlPattern} (${m.serviceType}, enabled: ${m.enabled}) → ${matches ? '✓ MATCH' : '✗ no match'}`);
+        return matches;
+      })
+      .sort((a, b) => a.createdAt - b.createdAt); // First created wins
+
+    console.log(`🗺️  Found ${matchingMappings.length} matching mapping(s)`);
+
+    // Find first A2A mapping
+    const a2aMapping = matchingMappings.find(m => m.serviceType === 'a2a') || null;
+
+    // Get all MCP server IDs
+    const mcpServerIds = matchingMappings
+      .filter(m => m.serviceType === 'mcp')
+      .map(m => m.serviceId);
+
+    return { a2aMapping, mcpServerIds };
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || isLoading || !settings) return;
@@ -1738,7 +1914,90 @@ GUIDELINES:
     abortControllerRef.current = new AbortController();
 
     try {
-      // CHECK FOR A2A AGENT FOR CURRENT SITE
+      // CHECK SERVICE MAPPINGS FIRST
+      // Service mappings take precedence over automatic site detection
+      const { a2aMapping, mcpServerIds } = findMatchingMappings(currentTabUrl, settings.serviceMappings);
+
+      // If there's a mapped A2A agent for this site, route to it
+      if (a2aMapping) {
+        console.log(`🗺️  Service mapping found: Routing to A2A agent "${a2aMapping.serviceName}" for URL pattern "${a2aMapping.urlPattern}"`);
+
+        // Create assistant message placeholder with routing indicator
+        const assistantMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: `🗺️ **Routing via Site Mapping:** ${a2aMapping.serviceName}\n\n`,
+        };
+        setMessages(prev => [...prev, assistantMessage]);
+
+        try {
+          const a2aService = getA2AService();
+
+          // Check if A2A service is connected, if not, connect it on-demand
+          const connectionStatus = a2aService.getConnectionStatus();
+          const isConnected = connectionStatus.some(c => c.serverId === a2aMapping.serviceId);
+
+          if (!isConnected) {
+            console.log(`🔌 A2A service not connected, connecting on-demand...`);
+
+            // Find the service config from settings
+            let serviceConfig = settings.mcpServers?.find(s => s.id === a2aMapping.serviceId);
+
+            if (!serviceConfig) {
+              // Create config from mapping if not in settings
+              serviceConfig = {
+                id: a2aMapping.serviceId,
+                name: a2aMapping.serviceName,
+                url: a2aMapping.serviceUrl,
+                enabled: true,
+                protocol: 'a2a',
+              };
+              console.log(`📝 Creating service config from mapping:`, serviceConfig);
+            }
+
+            // Connect the A2A service
+            await a2aService.connectToServers([serviceConfig]);
+            console.log(`✅ A2A service connected on-demand`);
+          }
+
+          // Send message to A2A agent using SDK
+          const response = await a2aService.sendMessage(a2aMapping.serviceId, input);
+
+          // Update assistant message with response
+          setMessages(prev => {
+            const updated = [...prev];
+            const lastMsg = updated[updated.length - 1];
+            if (lastMsg && lastMsg.role === 'assistant') {
+              lastMsg.content = `🗺️ **Routing via Site Mapping:** ${a2aMapping.serviceName}\n\n${response.text}`;
+              // Add audioLink if present
+              if (response.audioLink) {
+                lastMsg.audioLink = response.audioLink;
+              }
+            }
+            return updated;
+          });
+        } catch (error: any) {
+          console.error('A2A agent error:', error);
+          setMessages(prev => {
+            const updated = [...prev];
+            const lastMsg = updated[updated.length - 1];
+            if (lastMsg && lastMsg.role === 'assistant') {
+              lastMsg.content = `🗺️ **Routing via Site Mapping:** ${a2aMapping.serviceName}\n\n**Error:** ${error.message}`;
+            }
+            return updated;
+          });
+        }
+
+        setIsLoading(false);
+        return; // Exit early - message handled by mapped A2A agent
+      }
+
+      // If there are MCP mappings, we'll filter MCPs later in the browser tools section
+      if (mcpServerIds.length > 0) {
+        console.log(`🗺️  Service mapping found: ${mcpServerIds.length} MCP server(s) mapped for current site`);
+      }
+
+      // CHECK FOR A2A AGENT FOR CURRENT SITE (Fallback to automatic detection)
       // If the current site has a registered A2A agent AND user is opted in, route messages directly to it
       if (currentSiteAgent && trustedAgentOptIn) {
         console.log(`🔀 Routing message to A2A agent "${currentSiteAgent.serverName}" for current site (user opted in)`);
@@ -1832,7 +2091,14 @@ GUIDELINES:
           // Initialize custom MCP and A2A if not already initialized
           if (!customMCPToolsRef.current && settings.mcpServers && settings.mcpServers.length > 0) {
             console.log('🚀 Initializing custom MCP/A2A for browser tools...');
-            const enabledServers = settings.mcpServers.filter(s => s.enabled);
+            // Only use MCPs if they're explicitly mapped to the current site
+            let enabledServers: typeof settings.mcpServers = [];
+            if (mcpServerIds.length > 0) {
+              console.log(`🗺️  Using mapped MCP servers: ${mcpServerIds.join(', ')}`);
+              enabledServers = settings.mcpServers.filter(s => s.enabled && mcpServerIds.includes(s.id));
+            } else {
+              console.log('🗺️  No MCP mappings for current site - MCPs disabled');
+            }
 
             if (enabledServers.length > 0 && !customMCPInitPromiseRef.current) {
               customMCPInitPromiseRef.current = (async () => {
@@ -1842,11 +2108,11 @@ GUIDELINES:
                   const mcpService = getMCPService();
                   const a2aService = getA2AService();
 
-                  // Connect to MCP servers
-                  await mcpService.connectToServers(settings.mcpServers);
+                  // Connect to MCP servers (using filtered enabledServers)
+                  await mcpService.connectToServers(enabledServers);
 
-                  // Connect to A2A servers
-                  await a2aService.connectToServers(settings.mcpServers);
+                  // Connect to A2A servers (using filtered enabledServers)
+                  await a2aService.connectToServers(enabledServers);
 
                   if (mcpService.hasConnections()) {
                     customMCPToolsRef.current = mcpService.getAggregatedTools();
@@ -1950,6 +2216,14 @@ GUIDELINES:
                 const { getMCPService } = await import('./mcp-service');
                 const mcpService = getMCPService();
                 const result = await mcpService.executeToolCall(toolName, params);
+
+                // Check if result has audioLink (for music generation tools)
+                if (result && typeof result === 'object' && (result.audioLink || result.audio_link || result.audioUrl)) {
+                  const audioLink = result.audioLink || result.audio_link || result.audioUrl;
+                  console.log(`🎵 MCP tool returned audio link: ${audioLink}`);
+                  toolAudioLinksRef.current.push(audioLink);
+                }
+
                 return result;
               } catch (error: any) {
                 console.error(`❌ MCP tool execution failed:`, error);
@@ -2014,6 +2288,25 @@ GUIDELINES:
             () => {
               // On complete - hide browser automation overlay
               hideBrowserAutomationOverlay();
+
+              // Attach audio links from MCP tools to the assistant message
+              if (toolAudioLinksRef.current.length > 0) {
+                console.log(`🎵 Attaching audio link to assistant message`);
+                setMessages(prev => {
+                  const updated = [...prev];
+                  const lastMsg = updated[updated.length - 1];
+                  if (lastMsg && lastMsg.role === 'assistant') {
+                    // Create new message object to trigger React re-render
+                    updated[updated.length - 1] = {
+                      ...lastMsg,
+                      audioLink: toolAudioLinksRef.current[0]
+                    };
+                  }
+                  return updated;
+                });
+                // Clear for next message
+                toolAudioLinksRef.current = [];
+              }
             },
             wrappedExecuteTool,
             undefined, // Don't pass abort signal for now - causes issues
@@ -2100,13 +2393,32 @@ GUIDELINES:
             customMCPInitPromiseRef.current = (async () => {
               try {
                 console.log('🔌 Initializing custom MCP/A2A servers...');
-                console.log('📋 Servers to connect:', settings.mcpServers.map(s => `${s.name} (${s.enabled ? 'enabled' : 'disabled'}, ${s.protocol || 'mcp'})`));
+
+                // Only use MCPs if they're explicitly mapped to the current site
+                let serversToConnect: typeof settings.mcpServers = [];
+                if (mcpServerIds.length > 0) {
+                  console.log(`🗺️  Using mapped MCP servers: ${mcpServerIds.join(', ')}`);
+                  console.log(`🔍 DEBUG - mcpServerIds array:`, mcpServerIds);
+                  console.log(`🔍 DEBUG - settings.mcpServers:`, settings.mcpServers.map(s => ({ id: s.id, name: s.name, enabled: s.enabled })));
+
+                  serversToConnect = settings.mcpServers.filter(s => {
+                    const isEnabled = s.enabled;
+                    const isInMappedIds = mcpServerIds.includes(s.id);
+                    console.log(`🔍 Checking server "${s.name}" (id: "${s.id}"): enabled=${isEnabled}, inMappedIds=${isInMappedIds}`);
+                    return isEnabled && isInMappedIds;
+                  });
+                } else {
+                  console.log('🗺️  No MCP mappings for current site - MCPs disabled');
+                }
+
+                console.log('📋 Servers to connect:', serversToConnect.map(s => `${s.name} (${s.enabled ? 'enabled' : 'disabled'}, ${s.protocol || 'mcp'})`));
+                console.log('📋 Number of servers to connect:', serversToConnect.length);
 
                 const mcpService = getMCPService();
                 const a2aService = getA2AService();
 
-                await mcpService.connectToServers(settings.mcpServers);
-                await a2aService.connectToServers(settings.mcpServers);
+                await mcpService.connectToServers(serversToConnect);
+                await a2aService.connectToServers(serversToConnect);
 
                 if (mcpService.hasConnections()) {
                   customMCPToolsRef.current = mcpService.getAggregatedTools();
@@ -2198,7 +2510,24 @@ GUIDELINES:
                 });
               },
               () => {
-                // On complete
+                // On complete - attach audio links from MCP tools to the assistant message
+                if (toolAudioLinksRef.current.length > 0) {
+                  console.log(`🎵 Attaching audio link to assistant message`);
+                  setMessages(prev => {
+                    const updated = [...prev];
+                    const lastMsg = updated[updated.length - 1];
+                    if (lastMsg && lastMsg.role === 'assistant') {
+                      // Create new message object to trigger React re-render
+                      updated[updated.length - 1] = {
+                        ...lastMsg,
+                        audioLink: toolAudioLinksRef.current[0]
+                      };
+                    }
+                    return updated;
+                  });
+                  // Clear for next message
+                  toolAudioLinksRef.current = [];
+                }
               },
               async (toolName: string, params: any) => {
                 console.log(`🔧 Tool call: ${toolName}`, params);
@@ -2238,6 +2567,14 @@ GUIDELINES:
                   // Execute MCP tool
                   try {
                     const result = await mcpService.executeToolCall(toolName, params);
+
+                    // Check if result has audioLink (for music generation tools)
+                    if (result && typeof result === 'object' && (result.audioLink || result.audio_link || result.audioUrl)) {
+                      const audioLink = result.audioLink || result.audio_link || result.audioUrl;
+                      console.log(`🎵 MCP tool returned audio link: ${audioLink}`);
+                      toolAudioLinksRef.current.push(audioLink);
+                    }
+
                     return result;
                   } catch (error: any) {
                     console.error(`❌ MCP tool execution failed:`, error);
@@ -2440,62 +2777,91 @@ GUIDELINES:
         </div>
       )}
 
-      {/* Trusted Agent Badge */}
-      <div style={{
-        padding: '8px 16px',
-        background: (currentSiteAgent && trustedAgentOptIn) ? '#dcfce7' : '#f3f4f6',
-        borderBottom: (currentSiteAgent && trustedAgentOptIn) ? '1px solid #86efac' : '1px solid #d1d5db',
-        fontSize: '13px',
-        color: (currentSiteAgent && trustedAgentOptIn) ? '#166534' : '#6b7280',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ fontSize: '16px' }}>{(currentSiteAgent && trustedAgentOptIn) ? '✓' : '○'}</span>
-          <span>
-            {(currentSiteAgent && trustedAgentOptIn)
-              ? `Trusted agent available: ${agentNameToDomain(currentSiteAgent.serverName)}`
-              : 'Trusted agent not available'}
-          </span>
-        </div>
-        {currentSiteAgent && (
-          <button
-            onClick={() => {
-              console.log('Opt In button clicked. Current state:', trustedAgentOptIn);
-              const newState = !trustedAgentOptIn;
-              console.log('Setting new state:', newState);
-              setTrustedAgentOptIn(newState);
-            }}
-            style={{
-              padding: '4px 12px',
-              fontSize: '12px',
-              background: trustedAgentOptIn ? '#16a34a' : '#9ca3af',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontWeight: '500',
-            }}
-            title={trustedAgentOptIn ? 'Click to opt out and use Claude/Gemini instead' : 'Click to opt in and use trusted agent'}
-          >
-            {trustedAgentOptIn ? 'Opted In' : 'Opt In'}
-          </button>
-        )}
-      </div>
-
-      {/* Available Tools Panel - Only show if tools are available */}
+      {/* Trusted Services Badge - Show based on mappings */}
       {(() => {
-        const mcpService = getMCPService();
-        const a2aService = getA2AService();
+        // Get mapped services for current site
+        const mappedServices = currentTabUrl
+          ? findMatchingMappings(currentTabUrl, settings?.serviceMappings)
+          : { a2aMapping: null, mcpServerIds: [] };
 
-        const hasMCPTools = mcpService.hasConnections() && mcpService.getTotalToolCount() > 0;
-        // Only show A2A agent if it's for the current site
-        const hasCurrentSiteAgent = currentSiteAgent !== null;
+        const hasMappedMCPs = mappedServices.mcpServerIds.length > 0;
+        const hasMappedA2A = mappedServices.a2aMapping !== null;
+        const hasServices = hasMappedMCPs || hasMappedA2A;
+
+        const serviceText = (() => {
+          if (hasMappedA2A && hasMappedMCPs) {
+            return `Trusted services: ${mappedServices.a2aMapping!.serviceName} + ${mappedServices.mcpServerIds.length} MCP server(s)`;
+          } else if (hasMappedA2A) {
+            return `Trusted agent: ${mappedServices.a2aMapping!.serviceName}`;
+          } else if (hasMappedMCPs) {
+            return `Trusted MCP servers: ${mappedServices.mcpServerIds.length} mapped`;
+          } else {
+            return 'No trusted services for this site';
+          }
+        })();
+
+        return (
+          <div style={{
+            padding: '8px 16px',
+            background: hasServices ? '#dcfce7' : '#f3f4f6',
+            borderBottom: hasServices ? '1px solid #86efac' : '1px solid #d1d5db',
+            fontSize: '13px',
+            color: hasServices ? '#166534' : '#6b7280',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '16px' }}>{hasServices ? '✓' : '○'}</span>
+              <span>{serviceText}</span>
+            </div>
+            {hasMappedA2A && (
+              <button
+                onClick={() => {
+                  console.log('Opt In button clicked. Current state:', trustedAgentOptIn);
+                  const newState = !trustedAgentOptIn;
+                  console.log('Setting new state:', newState);
+                  setTrustedAgentOptIn(newState);
+                }}
+                style={{
+                  padding: '4px 12px',
+                  fontSize: '12px',
+                  background: trustedAgentOptIn ? '#16a34a' : '#9ca3af',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontWeight: '500',
+                }}
+                title={trustedAgentOptIn ? 'Click to opt out and use Claude/Gemini instead' : 'Click to opt in and use trusted agent'}
+              >
+                {trustedAgentOptIn ? 'Opted In' : 'Opt In'}
+              </button>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* Available Tools Panel - Show mapped services for current site */}
+      {(() => {
+        // Get mapped services for current site (from mappings, not live connections)
+        const mappedServices = currentTabUrl
+          ? findMatchingMappings(currentTabUrl, settings?.serviceMappings)
+          : { a2aMapping: null, mcpServerIds: [] };
+
+        const hasMappedMCPs = mappedServices.mcpServerIds.length > 0;
+        const hasMappedA2A = mappedServices.a2aMapping !== null;
         const hasBrowserTools = browserToolsEnabled;
 
-        // Hide entire panel if no tools available
-        if (!hasMCPTools && !hasCurrentSiteAgent && !hasBrowserTools) {
+        console.log('📊 Available Tools Panel - Mapped services:', {
+          mcpServerIds: mappedServices.mcpServerIds,
+          a2aMapping: mappedServices.a2aMapping,
+          hasBrowserTools,
+          willShow: hasMappedMCPs || hasMappedA2A || hasBrowserTools
+        });
+
+        // Hide entire panel if no services mapped
+        if (!hasMappedMCPs && !hasMappedA2A && !hasBrowserTools) {
           return null;
         }
 
@@ -2525,16 +2891,32 @@ GUIDELINES:
             </button>
 
             {showToolsPanel && (
-              <div style={{
-                padding: '12px 16px',
-                fontSize: '12px',
-                maxHeight: '300px',
-                overflowY: 'auto',
-              }}>
+              <div
+                style={{
+                  padding: '12px 16px',
+                  fontSize: '12px',
+                  maxHeight: '300px',
+                  overflowY: 'auto',
+                }}>
                 {(() => {
-                  const mcpTools = mcpService.hasConnections()
-                    ? mcpService.getToolsWithOrigin()
-                    : [];
+                  // Get mapped MCP servers from mappings (not live connections)
+                  const mappedMcpServers = mappedServices.mcpServerIds
+                    .map(serverId => {
+                      // Find service details from settings or mappings
+                      const server = settings?.mcpServers?.find((s: any) => s.id === serverId);
+                      if (server) {
+                        return { id: server.id, name: server.name, url: server.url };
+                      }
+                      // Fallback: find from mapping
+                      const mapping = settings?.serviceMappings?.find((m: ServiceMapping) => m.serviceId === serverId);
+                      if (mapping) {
+                        return { id: serverId, name: mapping.serviceName, url: mapping.serviceUrl };
+                      }
+                      return null;
+                    })
+                    .filter((s): s is { id: string; name: string; url: string } => s !== null);
+
+                  console.log('🔧 Available Tools Panel - Mapped MCP servers:', mappedMcpServers);
 
               return (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -2550,43 +2932,44 @@ GUIDELINES:
                     </div>
                   )}
 
-                  {/* MCP Tools */}
-                  {hasMCPTools && (
+                  {/* MCP Servers - Show mapped servers */}
+                  {mappedMcpServers.length > 0 && (
                     <div>
                       <div style={{ fontWeight: '600', color: '#1f2937', marginBottom: '6px' }}>
-                        🔌 MCP Tools ({mcpTools.length})
+                        🔌 MCP Servers ({mappedMcpServers.length})
                       </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        {mcpTools.slice(0, 10).map((tool: any, idx: number) => (
-                          <div key={idx} style={{ paddingLeft: '12px', fontSize: '11px' }}>
-                            <span style={{ color: '#2563eb', fontFamily: 'monospace' }}>
-                              {tool.toolDefinition.name}
-                            </span>
-                            <span style={{ color: '#9ca3af' }}> ({tool.serverUrl})</span>
+                      {mappedMcpServers.map((server) => (
+                        <div key={server.id} style={{ marginBottom: '8px' }}>
+                          <div style={{ paddingLeft: '12px', fontSize: '11px', fontWeight: '500', color: '#2563eb' }}>
+                            {server.name}
                           </div>
-                        ))}
-                        {mcpTools.length > 10 && (
-                          <div style={{ paddingLeft: '12px', fontSize: '11px', color: '#6b7280', fontStyle: 'italic' }}>
-                            ... and {mcpTools.length - 10} more
+                          <div style={{ paddingLeft: '24px', fontSize: '10px', color: '#6b7280' }}>
+                            {server.url}
                           </div>
-                        )}
-                      </div>
+                          <div style={{ paddingLeft: '24px', fontSize: '10px', color: '#9ca3af', fontStyle: 'italic', marginTop: '2px' }}>
+                            Mapped to this site
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   )}
 
-                  {/* A2A Agent - Only for Current Site */}
-                  {hasCurrentSiteAgent && currentSiteAgent && (
+                  {/* A2A Agents - Show mapped agent */}
+                  {mappedServices.a2aMapping && (
                     <div>
                       <div style={{ fontWeight: '600', color: '#1f2937', marginBottom: '6px' }}>
-                        🤖 A2A Agent (Current Site)
+                        🤖 A2A Agents (1)
                       </div>
-                      <div style={{ paddingLeft: '12px', fontSize: '11px' }}>
-                        <span style={{ color: '#16a34a', fontWeight: '500' }}>
-                          {currentSiteAgent.serverName}
-                        </span>
-                        <span style={{ color: '#9ca3af' }}>
-                          {' '}(Connected)
-                        </span>
+                      <div style={{ marginBottom: '8px' }}>
+                        <div style={{ paddingLeft: '12px', fontSize: '11px', fontWeight: '500', color: '#16a34a' }}>
+                          {mappedServices.a2aMapping.serviceName}
+                        </div>
+                        <div style={{ paddingLeft: '24px', fontSize: '10px', color: '#6b7280' }}>
+                          {mappedServices.a2aMapping.serviceUrl}
+                        </div>
+                        <div style={{ paddingLeft: '24px', fontSize: '10px', color: '#9ca3af', fontStyle: 'italic', marginTop: '2px' }}>
+                          Mapped to this site
+                        </div>
                       </div>
                     </div>
                   )}
@@ -2614,7 +2997,50 @@ GUIDELINES:
               <div className="message-content">
                 {message.content ? (
                   message.role === 'assistant' ? (
-                    <MessageParser content={message.content} />
+                    <>
+                      <MessageParser content={message.content} />
+                      {/* Audio player for generated music/audio */}
+                      {(() => {
+                        console.log(`🔍 Rendering message ${message.id}: audioLink =`, message.audioLink);
+                        return null;
+                      })()}
+                      {message.audioLink && (
+                        <div style={{
+                          marginTop: '16px',
+                          padding: '16px',
+                          background: '#f5f5f5',
+                          borderRadius: '12px',
+                          border: '1px solid #e0e0e0'
+                        }}>
+                          <div style={{
+                            marginBottom: '12px',
+                            fontSize: '15px',
+                            fontWeight: '600',
+                            color: '#333'
+                          }}>
+                            Lyrics
+                          </div>
+                          <audio
+                            controls
+                            style={{
+                              width: '100%',
+                              height: '50px',
+                              outline: 'none'
+                            }}
+                            src={message.audioLink}
+                          >
+                            Your browser does not support the audio element.
+                          </audio>
+                          <div style={{
+                            marginTop: '12px',
+                            fontSize: '12px',
+                            color: '#666'
+                          }}>
+                            Site: {currentTabUrl ? new URL(currentTabUrl).hostname : 'unknown'}
+                          </div>
+                        </div>
+                      )}
+                    </>
                   ) : (
                     <UserMessageParser content={message.content} />
                   )

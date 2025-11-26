@@ -15,6 +15,15 @@ export interface MCPServerConfig {
   protocol?: ProtocolType; // Protocol type: 'mcp' or 'a2a'
   isTrusted?: boolean; // From ANS marketplace
   isCustom?: boolean; // User-added custom server
+  protocolExtension?: {
+    mcp?: {
+      remotes?: Array<{ url: string }>;
+    };
+    mcp1?: {
+      url?: string;
+      remotes?: Array<{ url: string }>;
+    };
+  };
   businessInfo?: {
     description?: string;
     category?: string;
@@ -31,6 +40,17 @@ export interface SiteInstruction {
   enabled: boolean;
 }
 
+export interface ServiceMapping {
+  id: string;
+  urlPattern: string;        // e.g., "*.jira.atlassian.net" or "jira.atlassian.net"
+  serviceType: 'mcp' | 'a2a';
+  serviceId: string;         // Server/Agent ID from discovery
+  serviceName: string;       // Display name
+  serviceUrl: string;        // MCP/A2A endpoint URL
+  enabled: boolean;          // Active checkbox
+  createdAt: number;
+}
+
 export interface Settings {
   provider: Provider;
   apiKey: string;
@@ -44,6 +64,7 @@ export interface Settings {
   ansApiToken?: string; // ANS API authentication token (optional)
   siteInstructions?: SiteInstruction[]; // Site-specific custom instructions
   autoSaveScreenshots?: boolean; // Automatically save screenshots to Downloads folder
+  serviceMappings?: ServiceMapping[]; // Site-specific service mappings (MCP/A2A)
 
   // Conversation History Settings
   conversationHistoryLength?: number; // Number of messages to keep in initial history (default: 10)
@@ -74,6 +95,7 @@ export interface Message {
   role: 'user' | 'assistant';
   content: string;
   toolCalls?: GeminiFunctionCall[];
+  audioLink?: string; // URL to audio file (e.g., MP3 from music generation)
 }
 
 export interface PageContext {
