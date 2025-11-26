@@ -177,6 +177,34 @@ interface PageContext {
     type?: string;
     ariaLabel?: string;
     visible: boolean;
+    boundingRect?: {
+      top: number;
+      left: number;
+      right: number;
+      bottom: number;
+      width: number;
+      height: number;
+      centerX: number;
+      centerY: number;
+    };
+  }>;
+  searchInputs?: Array<{
+    selector: string;
+    type: string;
+    id: string;
+    name: string;
+    placeholder: string;
+    'aria-label': string | null;
+    'data-automation-id': string | null;
+    role: string | null;
+    className: string;
+    visible: boolean;
+    dimensions: {
+      width: number;
+      height: number;
+      top: number;
+      left: number;
+    };
   }>;
   metadata: {
     description?: string;
@@ -239,7 +267,17 @@ function extractPageContext(): PageContext {
         selector: getElementSelector(el),
         type: (el as HTMLInputElement).type || undefined,
         ariaLabel: el.getAttribute('aria-label') || undefined,
-        visible: rect.width > 0 && rect.height > 0 && rect.top >= 0 && rect.bottom <= window.innerHeight
+        visible: rect.width > 0 && rect.height > 0 && rect.top >= 0 && rect.bottom <= window.innerHeight,
+        boundingRect: {
+          top: rect.top,
+          left: rect.left,
+          right: rect.right,
+          bottom: rect.bottom,
+          width: rect.width,
+          height: rect.height,
+          centerX: rect.left + rect.width / 2,
+          centerY: rect.top + rect.height / 2
+        }
       };
     })
     .filter(el => el.visible); // Only return visible elements
@@ -555,7 +593,7 @@ async function executePageAction(
 
         // 3. If we found an element (by selector or text), click it
         if (element) {
-          const rect = element.getBoundingClientRect();
+          const rect = (element as HTMLElement).getBoundingClientRect();
           const clickX = rect.left + rect.width / 2;
           const clickY = rect.top + rect.height / 2;
 
@@ -566,7 +604,7 @@ async function executePageAction(
           console.log(`   Element text: "${element.textContent?.trim().substring(0, 50)}"`);
 
           // Use complete click sequence for better compatibility
-          await dispatchClickSequence(element, clickX, clickY);
+          await dispatchClickSequence(element as HTMLElement, clickX, clickY);
 
           // Visual feedback
           highlightElement(element, coordinates || { x: clickX, y: clickY });
@@ -670,7 +708,7 @@ async function executePageAction(
           // If element was already found by selector/text but we also have coordinates,
           // verify the element is actually at those coordinates
           if (element) {
-            const rect = element.getBoundingClientRect();
+            const rect = (element as HTMLElement).getBoundingClientRect();
             const isInBounds = coordinates.x >= rect.left && coordinates.x <= rect.right &&
                               coordinates.y >= rect.top && coordinates.y <= rect.bottom;
             console.log(`✓ Found element by selector/text, coordinates ${isInBounds ? 'MATCH' : 'MISMATCH'}`);
@@ -687,7 +725,7 @@ async function executePageAction(
           console.log(`🎯 Element at coordinates:`, element?.tagName, element?.className);
 
           if (element) {
-            const rect = element.getBoundingClientRect();
+            const rect = (element as HTMLElement).getBoundingClientRect();
             console.log(`📦 Element bounds:`, {
               left: rect.left,
               top: rect.top,
@@ -713,7 +751,7 @@ async function executePageAction(
             const rect = element.getBoundingClientRect();
 
             // Use complete click sequence for better compatibility
-            dispatchClickSequence(element, coordinates.x, coordinates.y);
+            await dispatchClickSequence(element as HTMLElement, coordinates.x, coordinates.y);
 
             // Visual feedback
             highlightElement(element, coordinates);
@@ -1678,6 +1716,7 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
 
   if (request.type === 'GET_PAGE_CONTEXT') {
     const context = extractPageContext();
+    console.log('📄 GET_PAGE_CONTEXT payload:', context);
     sendResponse(context);
     return true;
   }

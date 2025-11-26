@@ -8,8 +8,8 @@ import { experimental_createMCPClient, stepCountIs } from 'ai';
 import { streamAnthropic } from './anthropic-service';
 import { streamAnthropicWithBrowserTools } from './anthropic-browser-tools';
 import { getMCPService, resetMCPService } from './mcp-service';
-import { getA2AService, resetA2AService } from './a2a-service';
-import { getToolDescription, mergeToolDefinitions } from './mcp-tool-router';
+import { getA2AService } from './a2a-service';
+import { getToolDescription } from './mcp-tool-router';
 import { findAgentForCurrentSite, agentNameToDomain } from './site-detector';
 import { DEFAULT_SITE_INSTRUCTIONS } from './default-site-instructions';
 
@@ -223,6 +223,15 @@ function ChatSidebar() {
   const currentTabIdRef = useRef<number | null>(null);
   const messagesRef = useRef<Message[]>([]);
   const lastTypedSelectorRef = useRef<string | null>(null); // Store last typed selector for Enter key
+  const pageContextRef = useRef<any | null>(null);
+  const pageContextTimestampRef = useRef<number>(0);
+
+  const cachePageContext = (context: any) => {
+    if (context && typeof context === 'object') {
+      pageContextRef.current = context;
+      pageContextTimestampRef.current = Date.now();
+    }
+  };
 
   // Helper function to match URL against domain patterns and get site instructions
   const getMatchingSiteInstructions = (url: string | null): string | null => {
@@ -280,6 +289,9 @@ function ChatSidebar() {
             }
           }, RETRY_DELAY);
         } else {
+          if (toolName === 'getPageContext' && response && !response?.error) {
+            cachePageContext(response);
+          }
           // Return response as-is (could be success or error)
           resolve(response);
         }
@@ -365,6 +377,141 @@ function ChatSidebar() {
         reject(new Error(`Unknown tool: ${toolName}`));
       }
     });
+  };
+
+  const getCachedPageContext = async (forceRefresh = false): Promise<any | null> => {
+    if (
+      !forceRefresh &&
+      pageContextRef.current &&
+      Date.now() - pageContextTimestampRef.current < 4000
+    ) {
+      return pageContextRef.current;
+    }
+
+    try {
+      const context = await executeTool('getPageContext', {});
+      if (context && !context?.error) {
+        cachePageContext(context);
+        return context;
+      }
+    } catch (error) {
+      console.warn('Failed to refresh page context:', error);
+    }
+
+    return null;
+  };
+
+  const scaleCoordinates = async (x: number, y: number, contextOverride?: any) => {
+    const numericX = typeof x === 'number' ? x : 0;
+    const numericY = typeof y === 'number' ? y : 0;
+
+    const needsScaling = numericX <= 1100 && numericY <= 1100;
+    if (!needsScaling) {
+      return { x: numericX, y: numericY };
+    }
+
+    const pageInfo = contextOverride || (await getCachedPageContext());
+    const viewportWidth = pageInfo?.viewport?.width || 1440;
+    const viewportHeight = pageInfo?.viewport?.height || 900;
+
+    return {
+      x: Math.round((numericX / 1000) * viewportWidth),
+      y: Math.round((numericY / 1000) * viewportHeight)
+    };
+  };
+
+  type ClickTargetResolution = {
+    selector?: string;
+    text?: string;
+    coordinates?: { x: number; y: number };
+  };
+
+  const normalizeMatchText = (value?: string | null) =>
+    typeof value === 'string' ? value.trim().toLowerCase() : '';
+
+  const resolveClickTarget = async (args: any): Promise<ClickTargetResolution | null> => {
+    if (args?.selector && typeof args.selector === 'string') {
+      return { selector: args.selector };
+    }
+
+    const context = await getCachedPageContext();
+    if (!context || !Array.isArray(context?.interactiveElements)) {
+      return null;
+    }
+
+    const interactiveElements = context.interactiveElements;
+    const candidateTexts = [
+      args?.text,
+      args?.label,
+      args?.name,
+      args?.description,
+      args?.ariaLabel,
+      args?.elementText,
+      args?.target
+    ];
+
+    for (const candidate of candidateTexts) {
+      const normalizedCandidate = normalizeMatchText(candidate);
+      if (!normalizedCandidate) continue;
+
+      const match = interactiveElements.find((el: any) => {
+        const haystacks = [
+          normalizeMatchText(el.text),
+          normalizeMatchText(el.ariaLabel),
+          normalizeMatchText(el.value)
+        ].filter(Boolean);
+
+        return haystacks.some(
+          (haystack) =>
+            haystack === normalizedCandidate ||
+            haystack.includes(normalizedCandidate) ||
+            normalizedCandidate.includes(haystack)
+        );
+      });
+
+      if (match) {
+        return {
+          selector: match.selector,
+          text: match.text || match.ariaLabel
+        };
+      }
+    }
+
+    const hasCoordinates =
+      (typeof args?.x === 'number' && typeof args?.y === 'number') ||
+      (typeof args?.coordinate?.x === 'number' && typeof args?.coordinate?.y === 'number');
+
+    if (!hasCoordinates) {
+      return null;
+    }
+
+    const rawCoords =
+      typeof args?.x === 'number' && typeof args?.y === 'number'
+        ? { x: args.x, y: args.y }
+        : { x: args.coordinate.x, y: args.coordinate.y };
+
+    const scaledCoords = await scaleCoordinates(rawCoords.x, rawCoords.y, context);
+
+    const matchByCoords = interactiveElements.find((el: any) => {
+      if (!el.boundingRect) return false;
+      const rect = el.boundingRect;
+      return (
+        scaledCoords.x >= rect.left &&
+        scaledCoords.x <= rect.right &&
+        scaledCoords.y >= rect.top &&
+        scaledCoords.y <= rect.bottom
+      );
+    });
+
+    if (matchByCoords) {
+      return {
+        selector: matchByCoords.selector,
+        text: matchByCoords.text || matchByCoords.ariaLabel,
+        coordinates: scaledCoords
+      };
+    }
+
+    return { coordinates: scaledCoords };
   };
 
   const loadSettings = async (forceRefresh = false) => {
@@ -545,7 +692,7 @@ function ChatSidebar() {
     chrome.tabs.onActivated.addListener(handleTabChange);
 
     // Listen for URL changes within the current tab (e.g., navigation via browser tools)
-    const handleTabUpdate = (tabId: number, changeInfo: chrome.tabs.TabChangeInfo, tab: chrome.tabs.Tab) => {
+    const handleTabUpdate = (tabId: number, changeInfo: chrome.tabs.TabChangeInfo) => {
       // Only react to URL changes on the current tab
       if (changeInfo.url && tabId === currentTabIdRef.current) {
         console.log('📍 Tab URL changed to:', changeInfo.url);
@@ -1136,12 +1283,14 @@ GUIDELINES:
             let currentUrl = '';
             let viewportInfo = '';
             try {
-              const pageInfo = await executeTool('getPageContext', {});
-              currentUrl = pageInfo?.url || '';
+              const pageInfo = await getCachedPageContext(true);
+              if (pageInfo) {
+                currentUrl = pageInfo?.url || '';
 
-              // Include viewport dimensions to help Gemini understand coordinate space
-              if (pageInfo?.viewport) {
-                viewportInfo = ` Viewport: ${pageInfo.viewport.width}x${pageInfo.viewport.height}`;
+                // Include viewport dimensions to help Gemini understand coordinate space
+                if (pageInfo?.viewport) {
+                  viewportInfo = ` Viewport: ${pageInfo.viewport.width}x${pageInfo.viewport.height}`;
+                }
               }
             } catch (error) {
               console.warn('Failed to get page URL:', error);
@@ -1215,29 +1364,13 @@ GUIDELINES:
     }
   };
 
-  // Scale coordinates from Gemini's 1000x1000 grid to actual viewport
-  const scaleCoordinates = async (x: number, y: number) => {
-    try {
-      // Get actual viewport dimensions
-      const pageInfo = await executeTool('getPageContext', {});
-      const viewportWidth = pageInfo?.viewport?.width || 1440;
-      const viewportHeight = pageInfo?.viewport?.height || 900;
-
-      // Gemini uses 1000x1000 normalized coordinates
-      const scaledX = Math.round((x / 1000) * viewportWidth);
-      const scaledY = Math.round((y / 1000) * viewportHeight);
-      return { x: scaledX, y: scaledY };
-    } catch (error) {
-      console.error('Failed to scale coordinates:', error);
-      // Fallback to original coordinates if scaling fails
-      return { x, y };
-    }
-  };
-
   const requiresUserConfirmation = async (functionName: string, args: any): Promise<boolean> => {
     let pageContext: any = {};
     try {
-      pageContext = await executeTool('getPageContext', {});
+      const context = await getCachedPageContext();
+      if (context) {
+        pageContext = context;
+      }
     } catch (e) {
       console.warn('Could not get page context');
     }
@@ -1303,13 +1436,31 @@ GUIDELINES:
 
       case 'click':
       case 'click_at':
-      case 'mouse_click':
-        // Scale coordinates from Gemini's 1000x1000 grid to actual viewport
-        const clickCoords = await scaleCoordinates(
-          args.x || args.coordinate?.x || 0,
-          args.y || args.coordinate?.y || 0
-        );
-        return await executeTool('click', clickCoords);
+      case 'mouse_click': {
+        const resolvedTarget = await resolveClickTarget(args);
+
+        if (resolvedTarget?.selector) {
+          const clickElementResult = await executeTool('clickElement', {
+            selector: resolvedTarget.selector,
+            text: resolvedTarget.text
+          });
+
+          if (clickElementResult?.success !== false) {
+            return clickElementResult;
+          }
+
+          console.warn('clickElement failed, falling back to coordinate click:', clickElementResult?.error);
+        }
+
+        const fallbackCoords =
+          resolvedTarget?.coordinates ||
+          (await scaleCoordinates(
+            args.x ?? args.coordinate?.x ?? 0,
+            args.y ?? args.coordinate?.y ?? 0
+          ));
+
+        return await executeTool('click', fallbackCoords);
+      }
       
       case 'type':
       case 'type_text':
@@ -1354,7 +1505,7 @@ GUIDELINES:
       case 'get_page_info':
       case 'get_url':
       case 'get_page_content':
-        return await executeTool('getPageContext', {});
+        return await getCachedPageContext(true);
       
       case 'wait':
       case 'sleep':
@@ -1708,7 +1859,7 @@ GUIDELINES:
     // Get page context to include with the message
     let pageContext = '';
     try {
-      const context: any = await executeTool('getPageContext', {});
+      const context: any = await getCachedPageContext(true);
       if (context && context.url && context.title) {
         // Reduce page context size in browser tools mode to avoid hitting context limits
         const maxContentLength = browserToolsEnabled ? 300 : 3000; // Further reduced from 500 to 300
@@ -1830,9 +1981,10 @@ GUIDELINES:
             : settings.model;
 
           // Initialize custom MCP and A2A if not already initialized
-          if (!customMCPToolsRef.current && settings.mcpServers && settings.mcpServers.length > 0) {
+          const mcpServers = settings.mcpServers ?? [];
+          if (!customMCPToolsRef.current && mcpServers.length > 0) {
             console.log('🚀 Initializing custom MCP/A2A for browser tools...');
-            const enabledServers = settings.mcpServers.filter(s => s.enabled);
+            const enabledServers = mcpServers.filter(s => s.enabled);
 
             if (enabledServers.length > 0 && !customMCPInitPromiseRef.current) {
               customMCPInitPromiseRef.current = (async () => {
@@ -1843,10 +1995,10 @@ GUIDELINES:
                   const a2aService = getA2AService();
 
                   // Connect to MCP servers
-                  await mcpService.connectToServers(settings.mcpServers);
+                  await mcpService.connectToServers(mcpServers);
 
                   // Connect to A2A servers
-                  await a2aService.connectToServers(settings.mcpServers);
+                  await a2aService.connectToServers(mcpServers);
 
                   if (mcpService.hasConnections()) {
                     customMCPToolsRef.current = mcpService.getAggregatedTools();
@@ -2091,8 +2243,9 @@ GUIDELINES:
         }
       } else {
         // Initialize custom MCP and A2A servers if enabled
-        if (settings.mcpEnabled && settings.mcpServers && settings.mcpServers.length > 0) {
-          console.log(`🔍 MCP/A2A enabled with ${settings.mcpServers.length} configured server(s)`);
+        const configuredMcpServers = settings.mcpServers ?? [];
+        if (settings.mcpEnabled && configuredMcpServers.length > 0) {
+          console.log(`🔍 MCP/A2A enabled with ${configuredMcpServers.length} configured server(s)`);
           console.log(`🔍 customMCPInitPromiseRef.current exists: ${!!customMCPInitPromiseRef.current}`);
 
           if (!customMCPInitPromiseRef.current) {
@@ -2100,13 +2253,13 @@ GUIDELINES:
             customMCPInitPromiseRef.current = (async () => {
               try {
                 console.log('🔌 Initializing custom MCP/A2A servers...');
-                console.log('📋 Servers to connect:', settings.mcpServers.map(s => `${s.name} (${s.enabled ? 'enabled' : 'disabled'}, ${s.protocol || 'mcp'})`));
+                console.log('📋 Servers to connect:', configuredMcpServers.map(s => `${s.name} (${s.enabled ? 'enabled' : 'disabled'}, ${s.protocol || 'mcp'})`));
 
                 const mcpService = getMCPService();
                 const a2aService = getA2AService();
 
-                await mcpService.connectToServers(settings.mcpServers);
-                await a2aService.connectToServers(settings.mcpServers);
+                await mcpService.connectToServers(configuredMcpServers);
+                await a2aService.connectToServers(configuredMcpServers);
 
                 if (mcpService.hasConnections()) {
                   customMCPToolsRef.current = mcpService.getAggregatedTools();
@@ -2135,7 +2288,7 @@ GUIDELINES:
         } else {
           console.log('ℹ️  MCP not enabled or no servers configured');
           console.log(`  - mcpEnabled: ${settings.mcpEnabled}`);
-          console.log(`  - mcpServers count: ${settings.mcpServers?.length || 0}`);
+          console.log(`  - mcpServers count: ${configuredMcpServers.length}`);
         }
 
         // Route to appropriate provider
@@ -2487,7 +2640,6 @@ GUIDELINES:
       {/* Available Tools Panel - Only show if tools are available */}
       {(() => {
         const mcpService = getMCPService();
-        const a2aService = getA2AService();
 
         const hasMCPTools = mcpService.hasConnections() && mcpService.getTotalToolCount() > 0;
         // Only show A2A agent if it's for the current site
