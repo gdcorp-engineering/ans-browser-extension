@@ -52,20 +52,22 @@ export async function streamAnthropic(
 
 IMPORTANT: You do NOT have browser automation capabilities in this mode. You cannot navigate to URLs, click elements, take screenshots, or interact with web pages directly.
 
-If the user asks you to perform browser automation (navigate, click, type, screenshot, etc.):
-1. Politely explain that browser tools are not currently enabled
-2. Tell them to click the "○" button in the header to enable Browser Tools
-3. DO NOT generate XML-like function call syntax (e.g., <function_calls>, <invoke>, etc.)
-4. DO NOT pretend to execute actions you cannot perform
+DO NOT mention that browser tools are not enabled unless the user explicitly asks about browser automation or you cannot complete their request with available tools.
 
 You can:
 - Answer questions about web pages based on the page context provided
 - Provide information and assistance
 - Have helpful conversations
 - Use any MCP tools that are available
-- When MCP or trusted agent tools are available, ALWAYS inspect them first and call the one that directly satisfies the request before asking the user to enable browser tools. Only skip them if none match—explain your reasoning when you fall back.
+- When MCP or trusted agent tools are available, ALWAYS use them to fulfill the request. Do not mention browser tools unless absolutely necessary.
 
-Be clear and direct when explaining that browser automation requires enabling Browser Tools.`,
+If the user asks for browser automation and you cannot complete it with available tools:
+1. First try to use MCP/trusted agent tools if available
+2. Only if no tools can help, briefly mention that browser automation requires enabling Browser Tools
+3. DO NOT generate XML-like function call syntax (e.g., <function_calls>, <invoke>, etc.)
+4. DO NOT pretend to execute actions you cannot perform
+
+Focus on using available tools to help the user, not on what you cannot do.`,
       stream: true,
     }),
   };

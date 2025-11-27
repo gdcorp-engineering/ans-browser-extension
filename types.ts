@@ -175,6 +175,7 @@ export interface MCPConnection {
   client: MCPClient;
   tools: Record<string, any>;
   connected: boolean;
+  connecting?: boolean; // True when connection is in progress (before client.tools() completes)
   error?: string;
 }
 
