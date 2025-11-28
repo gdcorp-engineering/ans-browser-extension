@@ -39,6 +39,9 @@ function SettingsPage() {
   const [showAnsToken, setShowAnsToken] = useState(false);
   const [newServer, setNewServer] = useState({ name: '', url: '', apiKey: '' });
   const [newSiteInstruction, setNewSiteInstruction] = useState({ domainPattern: '', instructions: '' });
+  const [expandedInstructions, setExpandedInstructions] = useState<Set<string>>(new Set());
+  const [editingInstruction, setEditingInstruction] = useState<string | null>(null);
+  const [editedInstructionText, setEditedInstructionText] = useState<string>('');
 
   // Service Mapping state
   const [newMapping, setNewMapping] = useState({
@@ -56,7 +59,7 @@ function SettingsPage() {
   const [selectedCapability, setSelectedCapability] = useState('all');
   const [showMarketplace, setShowMarketplace] = useState(false);
   const [marketplaceLoading, setMarketplaceLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'marketplace' | 'custom' | 'mappings'>('mappings');
+  const [activeTab, setActiveTab] = useState<'marketplace' | 'custom' | 'mappings'>('marketplace');
   const [fetchLogs, setFetchLogs] = useState<string[]>([]);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [updateChecking, setUpdateChecking] = useState(false);
@@ -456,6 +459,54 @@ function SettingsPage() {
     });
   };
 
+  // Toggle expansion of site instruction
+  const toggleInstructionExpansion = (id: string) => {
+    setExpandedInstructions(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(id)) {
+        newSet.delete(id);
+        // Exit edit mode when collapsing
+        if (editingInstruction === id) {
+          setEditingInstruction(null);
+          setEditedInstructionText('');
+        }
+      } else {
+        newSet.add(id);
+      }
+      return newSet;
+    });
+  };
+
+  // Start editing an instruction
+  const startEditingInstruction = (instruction: SiteInstruction) => {
+    setEditingInstruction(instruction.id);
+    setEditedInstructionText(instruction.instructions);
+  };
+
+  // Save edited instruction
+  const saveEditedInstruction = (id: string) => {
+    const updatedInstructions = (settings.siteInstructions || []).map(s => {
+      if (s.id === id) {
+        return { ...s, instructions: editedInstructionText };
+      }
+      return { ...s };
+    });
+
+    setSettings({
+      ...settings,
+      siteInstructions: updatedInstructions,
+    });
+
+    setEditingInstruction(null);
+    setEditedInstructionText('');
+  };
+
+  // Cancel editing
+  const cancelEditingInstruction = () => {
+    setEditingInstruction(null);
+    setEditedInstructionText('');
+  };
+
   // Service Mapping handlers
   const handleAddMapping = () => {
     if (!newMapping.urlPattern || !newMapping.serviceId) {
@@ -473,7 +524,8 @@ function SettingsPage() {
           id: marketplaceService.id,
           name: marketplaceService.name,
           url: marketplaceService.url,
-          protocol: marketplaceService.protocol
+          protocol: marketplaceService.protocol,
+          enabled: true
         };
       }
     }
@@ -956,87 +1008,188 @@ function SettingsPage() {
         </div>
 
         {settings.mcpEnabled && (
-          <div className="setting-group">
-            <label>ANS Authentication</label>
-            <button
-              onClick={() => {
-                window.open('https://ra.int.ote-godaddy.com/', '_blank');
-              }}
-              style={{
-                padding: '12px 20px',
-                background: '#007bff',
-                color: 'white',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                fontSize: '14px',
-                fontWeight: '500',
-                marginBottom: '10px',
-                width: '100%'
-              }}
-            >
-              🔐 Sign In to ANS
-            </button>
-            <p className="help-text">
-              Click the button above to sign in to ANS. Once signed in, the extension will automatically use your browser cookies to access the ANS API.
-            </p>
-          </div>
-        )}
-
-        {settings.mcpEnabled && (
           <>
-            {/* Tabs */}
-            <div className="setting-group">
-              <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', borderBottom: '2px solid #eee' }}>
+            {/* Unified ANS Enablement Section */}
+            <div style={{
+              border: '3px solid #007bff',
+              borderRadius: '10px',
+              padding: '25px',
+              background: 'linear-gradient(to bottom, #f0f7ff 0%, #ffffff 100%)',
+              marginBottom: '20px'
+            }}>
+              {/* Section Header */}
+              <div style={{ marginBottom: '25px', paddingBottom: '15px', borderBottom: '2px solid #007bff' }}>
+                <h2 style={{ margin: 0, fontSize: '20px', color: '#007bff', fontWeight: 'bold' }}>
+                  🔐 Enable ANS
+                </h2>
+                <p style={{ fontSize: '14px', color: '#666', marginTop: '8px', marginBottom: 0 }}>
+                  Follow these three steps to enable ANS and configure site-specific service mappings:
+                </p>
+              </div>
+
+              {/* Step 1: ANS Authentication */}
+              <div style={{
+                marginBottom: '25px',
+                padding: '18px',
+                background: 'white',
+                border: '2px solid #007bff',
+                borderRadius: '8px',
+                boxShadow: '0 2px 4px rgba(0,123,255,0.1)'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '15px' }}>
+                  <div style={{
+                    width: '32px',
+                    height: '32px',
+                    borderRadius: '50%',
+                    background: '#007bff',
+                    color: 'white',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontWeight: 'bold',
+                    fontSize: '16px'
+                  }}>
+                    1
+                  </div>
+                  <label style={{ display: 'block', fontWeight: 'bold', fontSize: '16px', color: '#333' }}>
+                    Sign into ANS Authentication
+                  </label>
+                </div>
                 <button
-                  onClick={() => setActiveTab('marketplace')}
+                  onClick={() => {
+                    window.open('https://ra.int.ote-godaddy.com/', '_blank');
+                  }}
                   style={{
-                    padding: '10px 20px',
-                    background: 'none',
+                    padding: '12px 20px',
+                    background: '#007bff',
+                    color: 'white',
                     border: 'none',
-                    borderBottom: activeTab === 'marketplace' ? '3px solid #007bff' : '3px solid transparent',
+                    borderRadius: '6px',
                     cursor: 'pointer',
-                    fontWeight: activeTab === 'marketplace' ? 'bold' : 'normal',
-                    color: activeTab === 'marketplace' ? '#007bff' : '#666'
+                    fontSize: '14px',
+                    fontWeight: '500',
+                    marginBottom: '10px',
+                    width: '100%'
                   }}
                 >
-                  🌐 Discover Services
+                  🔐 Sign In to ANS
                 </button>
-                <button
-                  onClick={() => setActiveTab('custom')}
-                  style={{
-                    padding: '10px 20px',
-                    background: 'none',
-                    border: 'none',
-                    borderBottom: activeTab === 'custom' ? '3px solid #007bff' : '3px solid transparent',
-                    cursor: 'pointer',
-                    fontWeight: activeTab === 'custom' ? 'bold' : 'normal',
-                    color: activeTab === 'custom' ? '#007bff' : '#666'
-                  }}
-                >
-                  🔧 Custom
-                </button>
-                <button
-                  onClick={() => setActiveTab('mappings')}
-                  style={{
-                    padding: '10px 20px',
-                    background: 'none',
-                    border: 'none',
-                    borderBottom: activeTab === 'mappings' ? '3px solid #007bff' : '3px solid transparent',
-                    cursor: 'pointer',
-                    fontWeight: activeTab === 'mappings' ? 'bold' : 'normal',
-                    color: activeTab === 'mappings' ? '#007bff' : '#666'
-                  }}
-                >
-                  🗺️ Site Mappings
-                </button>
+                <p style={{ fontSize: '12px', color: '#666', margin: 0, fontStyle: 'italic' }}>
+                  ⚠️ Required first step. The extension uses your browser cookies to access the ANS API.
+                </p>
+              </div>
+
+              {/* Visual Connector */}
+              <div style={{
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                marginBottom: '25px'
+              }}>
+                <div style={{
+                  width: '3px',
+                  height: '40px',
+                  background: 'linear-gradient(to bottom, #007bff, #28a745)',
+                  borderRadius: '2px'
+                }}></div>
               </div>
             </div>
           </>
         )}
 
-        {/* Marketplace Tab - Discover GoDaddy Customer Services */}
-        {settings.mcpEnabled && activeTab === 'marketplace' && (
+        {/* Step 2: Site-Specific Service Mappings - Always visible with tabs */}
+        {settings.mcpEnabled && (
+          <div style={{
+            border: '3px solid #007bff',
+            borderRadius: '10px',
+            padding: '25px',
+            background: 'linear-gradient(to bottom, #f0f7ff 0%, #ffffff 100%)',
+            marginBottom: '20px'
+          }}>
+            {/* Step 2 Header */}
+            <div style={{
+              marginBottom: '20px',
+              padding: '18px',
+              background: 'white',
+              border: '2px solid #007bff',
+              borderRadius: '8px',
+              boxShadow: '0 2px 4px rgba(0,123,255,0.1)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '15px' }}>
+                <div style={{
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '50%',
+                  background: '#007bff',
+                  color: 'white',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontWeight: 'bold',
+                  fontSize: '16px'
+                }}>
+                  2
+                </div>
+                <label style={{ fontWeight: 'bold', fontSize: '16px', color: '#333' }}>
+                  Site-Specific Service Mappings
+                </label>
+              </div>
+              <p style={{ fontSize: '13px', color: '#666', marginBottom: '15px' }}>
+                Map specific URLs to MCP servers or A2A agents. Services will only be available when browsing matching sites.
+              </p>
+
+              {/* Tabs for Service Management */}
+              <div style={{ marginBottom: '0', borderBottom: '2px solid #eee' }}>
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button
+                    onClick={() => setActiveTab('marketplace')}
+                    style={{
+                      padding: '10px 20px',
+                      background: 'none',
+                      border: 'none',
+                      borderBottom: activeTab === 'marketplace' ? '3px solid #007bff' : '3px solid transparent',
+                      cursor: 'pointer',
+                      fontWeight: activeTab === 'marketplace' ? 'bold' : 'normal',
+                      color: activeTab === 'marketplace' ? '#007bff' : '#666'
+                    }}
+                  >
+                    🌐 Discover Services
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('custom')}
+                    style={{
+                      padding: '10px 20px',
+                      background: 'none',
+                      border: 'none',
+                      borderBottom: activeTab === 'custom' ? '3px solid #007bff' : '3px solid transparent',
+                      cursor: 'pointer',
+                      fontWeight: activeTab === 'custom' ? 'bold' : 'normal',
+                      color: activeTab === 'custom' ? '#007bff' : '#666'
+                    }}
+                  >
+                    🔧 Custom
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('mappings')}
+                    style={{
+                      padding: '10px 20px',
+                      background: 'none',
+                      border: 'none',
+                      borderBottom: activeTab === 'mappings' ? '3px solid #007bff' : '3px solid transparent',
+                      cursor: 'pointer',
+                      fontWeight: activeTab === 'mappings' ? 'bold' : 'normal',
+                      color: activeTab === 'mappings' ? '#007bff' : '#666'
+                    }}
+                  >
+                    🗺️ Site Mappings
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Tab Content */}
+            {/* Marketplace Tab - Discover GoDaddy Customer Services */}
+            {activeTab === 'marketplace' && (
           <div className="setting-group">
             <label>ANS Business Marketplace</label>
 
@@ -1191,10 +1344,10 @@ function SettingsPage() {
               </div>
             )}
           </div>
-        )}
+            )}
 
-        {/* Custom Tab - Add Your Own MCP Server */}
-        {settings.mcpEnabled && activeTab === 'custom' && (
+            {/* Custom Tab - Add Your Own MCP Server */}
+            {activeTab === 'custom' && (
           <div className="setting-group">
             <label>Custom MCP Server</label>
             <p style={{ fontSize: '13px', color: '#666', marginBottom: '15px' }}>
@@ -1261,48 +1414,56 @@ function SettingsPage() {
               </button>
             </div>
           </div>
-        )}
-
-        {/* Site Mappings Tab - Map URLs to Services */}
-        {settings.mcpEnabled && activeTab === 'mappings' && (
-          <div className="setting-group">
-            <label>Site-Specific Service Mappings</label>
-            <p style={{ fontSize: '13px', color: '#666', marginBottom: '15px' }}>
-              Map specific URLs to MCP servers or A2A agents. Services will only be available when browsing matching sites.
-            </p>
-
-            {/* Select Site from Open Tabs */}
-            {allTabs.length > 0 && (
-              <div style={{
-                marginBottom: '20px',
-                padding: '12px',
-                background: '#e7f3ff',
-                border: '1px solid #007bff',
-                borderRadius: '6px'
-              }}>
-                <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px', fontSize: '13px' }}>
-                  📍 Select Site from Open Tabs
-                </label>
-                <select
-                  value={selectedTabUrl}
-                  onChange={(e) => setSelectedTabUrl(e.target.value)}
-                  className="model-select"
-                  style={{ marginBottom: 0 }}
-                >
-                  {allTabs.map(tab => (
-                    <option key={tab.id} value={tab.url}>
-                      {extractDomain(tab.url)} - {tab.title.substring(0, 50)}{tab.title.length > 50 ? '...' : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
             )}
 
-            {/* Add Mapping Form */}
-            <div style={{ marginBottom: '20px', padding: '15px', background: '#f5f5f5', borderRadius: '8px' }}>
-              <div style={{ fontWeight: 'bold', marginBottom: '12px' }}>
-                Add New Mapping
-              </div>
+            {/* Site Mappings Tab - Map URLs to Services */}
+            {activeTab === 'mappings' && (
+              <>
+                {/* Unified Container for Mapping Controls */}
+                <div style={{
+              border: '1px solid #cce5ff',
+              borderRadius: '8px',
+              padding: '20px',
+              background: '#f8f9ff',
+              marginBottom: '20px'
+            }}>
+              {/* Select Site from Open Tabs */}
+              {allTabs.length > 0 && (
+                <div style={{
+                  marginBottom: '20px',
+                  padding: '12px',
+                  background: 'white',
+                  border: '1px solid #cce5ff',
+                  borderRadius: '6px'
+                }}>
+                  <label style={{ display: 'block', fontWeight: 'bold', fontSize: '13px', color: '#333', marginBottom: '8px' }}>
+                    📍 Select Site from Open Tabs
+                  </label>
+                  <select
+                    value={selectedTabUrl}
+                    onChange={(e) => setSelectedTabUrl(e.target.value)}
+                    className="model-select"
+                    style={{ marginBottom: 0, width: '100%' }}
+                  >
+                    {allTabs.map(tab => (
+                      <option key={tab.id} value={tab.url}>
+                        {extractDomain(tab.url)} - {tab.title.substring(0, 50)}{tab.title.length > 50 ? '...' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Add Mapping Form */}
+              <div style={{
+                padding: '15px',
+                background: 'white',
+                border: '1px solid #cce5ff',
+                borderRadius: '6px'
+              }}>
+                <div style={{ fontWeight: 'bold', fontSize: '14px', color: '#333', marginBottom: '15px' }}>
+                  Add New Mapping
+                </div>
 
               <div style={{ marginBottom: '10px' }}>
                 <label style={{ display: 'block', fontSize: '12px', color: '#666', marginBottom: '4px' }}>
@@ -1418,17 +1579,72 @@ function SettingsPage() {
                   border: 'none',
                   borderRadius: '6px',
                   cursor: (!newMapping.urlPattern || !newMapping.serviceId) ? 'not-allowed' : 'pointer',
-                  opacity: (!newMapping.urlPattern || !newMapping.serviceId) ? 0.5 : 1
+                  opacity: (!newMapping.urlPattern || !newMapping.serviceId) ? 0.5 : 1,
+                  width: '100%',
+                  fontSize: '14px',
+                  fontWeight: '600'
                 }}
               >
                 + Add Mapping
               </button>
+              </div>
+            </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Step 3: Active Mappings List - Always displayed */}
+        {settings.mcpEnabled && (
+          <>
+            {/* Visual Connector */}
+            <div style={{
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              marginBottom: '25px'
+            }}>
+              <div style={{
+                width: '3px',
+                height: '40px',
+                background: 'linear-gradient(to bottom, #007bff, #28a745)',
+                borderRadius: '2px'
+              }}></div>
             </div>
 
-            {/* Active Mappings List */}
-            <div style={{ marginBottom: '15px' }}>
-              <div style={{ fontWeight: 'bold', marginBottom: '12px', fontSize: '14px' }}>
-                Active Mappings ({(settings.serviceMappings || []).length})
+            <div style={{
+              border: '3px solid #28a745',
+              borderRadius: '10px',
+              padding: '25px',
+              background: 'linear-gradient(to bottom, #f0f9f4 0%, #ffffff 100%)',
+              marginBottom: '20px'
+            }}>
+              {/* Step 3: Active Mappings List */}
+              <div style={{
+                padding: '18px',
+                background: 'white',
+                border: '2px solid #28a745',
+                borderRadius: '8px',
+                boxShadow: '0 2px 4px rgba(40,167,69,0.1)'
+              }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '15px' }}>
+                <div style={{
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '50%',
+                  background: '#28a745',
+                  color: 'white',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontWeight: 'bold',
+                  fontSize: '16px'
+                }}>
+                  3
+                </div>
+                <div style={{ fontWeight: 'bold', fontSize: '16px', color: '#333' }}>
+                  Show Active Mappings ({(settings.serviceMappings || []).length})
+                </div>
               </div>
 
               {(settings.serviceMappings || []).length > 0 ? (
@@ -1501,8 +1717,9 @@ function SettingsPage() {
                   </p>
                 </div>
               )}
+              </div>
             </div>
-          </div>
+          </>
         )}
 
         {/* Site-Specific Instructions */}
@@ -1515,58 +1732,175 @@ function SettingsPage() {
 
           {(settings.siteInstructions || []).length > 0 ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '15px' }}>
-              {(settings.siteInstructions || []).map((instruction) => (
-                <div
-                  key={instruction.id}
-                  style={{
-                    padding: '12px',
-                    border: '1px solid #ddd',
-                    borderRadius: '6px',
-                    background: instruction.enabled ? 'white' : '#f8f9fa',
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '8px' }}>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 'bold', color: '#007bff', marginBottom: '4px' }}>
-                        {instruction.domainPattern}
+              {(settings.siteInstructions || []).map((instruction) => {
+                const isExpanded = expandedInstructions.has(instruction.id);
+                const isEditing = editingInstruction === instruction.id;
+                
+                return (
+                  <div
+                    key={instruction.id}
+                    style={{
+                      border: '1px solid #ddd',
+                      borderRadius: '6px',
+                      background: instruction.enabled ? 'white' : '#f8f9fa',
+                      overflow: 'hidden',
+                    }}
+                  >
+                    {/* Collapsible Header */}
+                    <button
+                      type="button"
+                      onClick={() => toggleInstructionExpansion(instruction.id)}
+                      style={{
+                        width: '100%',
+                        padding: '12px',
+                        background: 'transparent',
+                        border: 'none',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
+                        <span style={{ fontSize: '12px', color: '#666' }}>
+                          {isExpanded ? '▼' : '▶'}
+                        </span>
+                        <span style={{ fontWeight: 'bold', color: '#007bff' }}>
+                          {instruction.domainPattern}
+                        </span>
                       </div>
-                      <div style={{ fontSize: '13px', color: '#666', whiteSpace: 'pre-wrap' }}>
-                        {instruction.instructions}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '13px', color: '#4b5563' }}>
+                          <input
+                            type="checkbox"
+                            checked={instruction.enabled}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              handleToggleSiteInstruction(instruction.id);
+                            }}
+                            style={{
+                              width: '16px',
+                              height: '16px',
+                              cursor: 'pointer',
+                            }}
+                          />
+                          <span>Apply</span>
+                        </label>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRemoveSiteInstruction(instruction.id);
+                          }}
+                          style={{
+                            padding: '4px 10px',
+                            background: '#dc3545',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontSize: '11px'
+                          }}
+                        >
+                          Remove
+                        </button>
                       </div>
-                    </div>
-                    <div style={{ display: 'flex', gap: '8px', marginLeft: '12px' }}>
-                      <button
-                        onClick={() => handleToggleSiteInstruction(instruction.id)}
-                        style={{
-                          padding: '6px 12px',
-                          background: instruction.enabled ? '#28a745' : '#6c757d',
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: '4px',
-                          cursor: 'pointer',
-                          fontSize: '12px'
-                        }}
-                      >
-                        {instruction.enabled ? 'Enabled' : 'Disabled'}
-                      </button>
-                      <button
-                        onClick={() => handleRemoveSiteInstruction(instruction.id)}
-                        style={{
-                          padding: '6px 12px',
-                          background: '#dc3545',
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: '4px',
-                          cursor: 'pointer',
-                          fontSize: '12px'
-                        }}
-                      >
-                        Remove
-                      </button>
-                    </div>
+                    </button>
+
+                    {/* Collapsible Content */}
+                    {isExpanded && (
+                      <div style={{ padding: '0 12px 12px 12px', borderTop: '1px solid #eee' }}>
+                        {isEditing ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '12px' }}>
+                            <textarea
+                              value={editedInstructionText}
+                              onChange={(e) => setEditedInstructionText(e.target.value)}
+                              style={{
+                                width: '100%',
+                                minHeight: '200px',
+                                padding: '10px',
+                                fontSize: '13px',
+                                fontFamily: 'monospace',
+                                border: '1px solid #ddd',
+                                borderRadius: '4px',
+                                resize: 'vertical',
+                                background: 'white',
+                                color: '#333',
+                              }}
+                              placeholder="Enter site-specific instructions..."
+                            />
+                            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                              <button
+                                type="button"
+                                onClick={cancelEditingInstruction}
+                                style={{
+                                  padding: '6px 12px',
+                                  background: '#f3f4f6',
+                                  color: '#4b5563',
+                                  border: '1px solid #d1d5db',
+                                  borderRadius: '4px',
+                                  cursor: 'pointer',
+                                  fontSize: '12px',
+                                }}
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => saveEditedInstruction(instruction.id)}
+                                style={{
+                                  padding: '6px 12px',
+                                  background: '#2563eb',
+                                  color: 'white',
+                                  border: 'none',
+                                  borderRadius: '4px',
+                                  cursor: 'pointer',
+                                  fontSize: '12px',
+                                }}
+                              >
+                                Save
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div style={{ marginTop: '12px' }}>
+                            <div style={{ 
+                              fontSize: '13px', 
+                              color: '#666', 
+                              whiteSpace: 'pre-wrap',
+                              fontFamily: 'monospace',
+                              lineHeight: '1.6',
+                              padding: '10px',
+                              background: '#f9fafb',
+                              borderRadius: '4px',
+                              border: '1px solid #e5e7eb',
+                            }}>
+                              {instruction.instructions}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => startEditingInstruction(instruction)}
+                              style={{
+                                marginTop: '10px',
+                                padding: '6px 12px',
+                                background: '#2563eb',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                fontSize: '12px',
+                              }}
+                            >
+                              Edit
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
             <p style={{ color: '#666', fontSize: '14px', fontStyle: 'italic', marginBottom: '15px' }}>
@@ -1622,24 +1956,6 @@ function SettingsPage() {
         >
           {saved ? '✓ Saved!' : 'Save Settings'}
         </button>
-
-        <div className="feature-cards">
-          <div className="feature-card">
-            <div className="feature-icon">◉</div>
-            <h3>Browser Tools</h3>
-            <p>Click the Browser Tools button (◉) to enable Gemini 2.5 Computer Use for direct browser automation with screenshots</p>
-          </div>
-          <div className="feature-card">
-            <div className="feature-icon">🌐</div>
-            <h3>Business Marketplace</h3>
-            <p>Discover and connect to 115 Million verified GoDaddy customer services. Book appointments, order products, and interact with businesses through AI chat.</p>
-          </div>
-          <div className="feature-card">
-            <div className="feature-icon">🔧</div>
-            <h3>Tool Router</h3>
-            <p>Add Composio API key to access 500+ integrations (Gmail, Slack, GitHub, etc.) via AI SDK</p>
-          </div>
-        </div>
 
         <div className="info-box">
           <h3>🔒 Privacy & Security</h3>

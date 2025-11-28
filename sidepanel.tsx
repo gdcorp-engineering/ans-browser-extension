@@ -196,6 +196,9 @@ function ChatSidebar() {
   const [currentSiteAgent, setCurrentSiteAgent] = useState<{ serverId: string; serverName: string } | null>(null);
   const [currentSiteMcpCount, setCurrentSiteMcpCount] = useState(0); // Number of MCP servers for current site
   const [showToolsPanel, setShowToolsPanel] = useState(false);
+  const [showSiteInstructions, setShowSiteInstructions] = useState(false);
+  const [isEditingSiteInstructions, setIsEditingSiteInstructions] = useState(false);
+  const [editedSiteInstructions, setEditedSiteInstructions] = useState('');
   const [servicesUpdated, setServicesUpdated] = useState(0); // Increment to force re-render when services update
   const toolAudioLinksRef = useRef<string[]>([]); // Track audio links from tool results
   const [isToolExecuting, setIsToolExecuting] = useState(false); // Track when tools are executing
@@ -372,7 +375,7 @@ function ChatSidebar() {
     delete tabCustomMCPInitPromiseRef.current[tabId];
   };
 
-  // Helper function to match URL against domain patterns and get site instructions
+  // Helper function to match URL against domain patterns and get site instructions text
   const getMatchingSiteInstructions = (url: string | null): string | null => {
     if (!url || !settings?.siteInstructions) return null;
 
@@ -398,6 +401,38 @@ function ChatSidebar() {
         if (regex.test(hostname)) {
           console.log(`📍 Matched site instructions for ${hostname}: ${pattern}`);
           return instruction.instructions;
+        }
+      }
+    } catch (error) {
+      console.error('Error matching site instructions:', error);
+    }
+
+    return null;
+  };
+
+  // Helper function to get the matching site instruction object (for editing)
+  const getMatchingSiteInstructionObject = (url: string | null): SiteInstruction | null => {
+    if (!url || !settings?.siteInstructions) return null;
+
+    try {
+      const urlObj = new URL(url);
+      const hostname = urlObj.hostname;
+
+      // Find matching site instructions
+      for (const instruction of settings.siteInstructions) {
+        if (!instruction.enabled) continue;
+
+        const pattern = instruction.domainPattern;
+
+        // Convert wildcard pattern to regex
+        const regexPattern = pattern
+          .replace(/\./g, '\\.')  // Escape dots
+          .replace(/\*/g, '.*');   // Convert * to .*
+
+        const regex = new RegExp(`^${regexPattern}$`, 'i');
+
+        if (regex.test(hostname)) {
+          return instruction;
         }
       }
     } catch (error) {
@@ -3506,6 +3541,50 @@ GUIDELINES:
     };
   }, [currentTabUrl, settings?.serviceMappings, settings?.mcpServers, browserToolsEnabled]);
 
+  // Memoized current site instruction - only recalculates when URL or settings change
+  const currentSiteInstruction = useMemo(() => {
+    if (!currentTabUrl || !settings) {
+      return null;
+    }
+    return getMatchingSiteInstructionObject(currentTabUrl);
+  }, [currentTabUrl, settings]);
+
+  // Save edited site instructions
+  const saveSiteInstructions = async () => {
+    if (!currentSiteInstruction || !settings) return;
+
+    const updatedInstructions = (settings.siteInstructions || []).map((inst: SiteInstruction) => {
+      if (inst.id === currentSiteInstruction.id) {
+        return { ...inst, instructions: editedSiteInstructions };
+      }
+      return inst;
+    });
+
+    const updatedSettings = {
+      ...settings,
+      siteInstructions: updatedInstructions
+    };
+
+    await chrome.storage.local.set({ atlasSettings: updatedSettings });
+    setSettings(updatedSettings);
+    setIsEditingSiteInstructions(false);
+    console.log('✅ Site instructions saved');
+  };
+
+  // Initialize edited instructions when entering edit mode
+  useEffect(() => {
+    if (isEditingSiteInstructions && currentSiteInstruction) {
+      setEditedSiteInstructions(currentSiteInstruction.instructions);
+    }
+  }, [isEditingSiteInstructions, currentSiteInstruction]);
+
+  // Reset site instructions panel state when site changes
+  useEffect(() => {
+    setShowSiteInstructions(false);
+    setIsEditingSiteInstructions(false);
+    setEditedSiteInstructions('');
+  }, [currentTabUrl]);
+
   return (
     <div className="chat-container dark-mode">
       <div className="chat-header">
@@ -3605,6 +3684,131 @@ GUIDELINES:
             >
               {trustedAgentOptIn ? 'Opted In' : 'Opt In'}
             </button>
+          )}
+        </div>
+      )}
+
+      {/* Site-Specific Instructions Panel - Show for current site (memoized) */}
+      {currentSiteInstruction && (
+        <div style={{
+          borderBottom: '1px solid #d1d5db',
+          background: '#fafafa',
+        }}>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setShowSiteInstructions(!showSiteInstructions);
+            }}
+            style={{
+              width: '100%',
+              padding: '8px 16px',
+              background: 'transparent',
+              border: 'none',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              cursor: 'pointer',
+              fontSize: '13px',
+              color: '#4b5563',
+              fontWeight: '500',
+            }}
+          >
+            <span>📍 Site-Specific Instructions ({currentSiteInstruction.domainPattern})</span>
+            <span style={{ fontSize: '10px' }}>{showSiteInstructions ? '▼' : '▶'}</span>
+          </button>
+
+          {showSiteInstructions && (
+            <div
+              style={{
+                padding: '12px 16px',
+                fontSize: '12px',
+                maxHeight: '400px',
+                overflowY: 'auto',
+              }}>
+              {isEditingSiteInstructions ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <textarea
+                    value={editedSiteInstructions}
+                    onChange={(e) => setEditedSiteInstructions(e.target.value)}
+                    style={{
+                      width: '100%',
+                      minHeight: '200px',
+                      padding: '8px',
+                      fontSize: '12px',
+                      fontFamily: 'monospace',
+                      border: '1px solid #d1d5db',
+                      borderRadius: '4px',
+                      resize: 'vertical',
+                      background: 'white',
+                      color: '#1f2937',
+                    }}
+                    placeholder="Enter site-specific instructions..."
+                  />
+                  <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                    <button
+                      onClick={() => {
+                        setIsEditingSiteInstructions(false);
+                        setEditedSiteInstructions('');
+                      }}
+                      style={{
+                        padding: '6px 12px',
+                        fontSize: '12px',
+                        background: '#f3f4f6',
+                        color: '#4b5563',
+                        border: '1px solid #d1d5db',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={saveSiteInstructions}
+                      style={{
+                        padding: '6px 12px',
+                        fontSize: '12px',
+                        background: '#2563eb',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Save
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <div style={{
+                    whiteSpace: 'pre-wrap',
+                    color: '#1f2937',
+                    lineHeight: '1.6',
+                    fontFamily: 'monospace',
+                    fontSize: '11px',
+                  }}>
+                    {currentSiteInstruction.instructions}
+                  </div>
+                  <button
+                    onClick={() => setIsEditingSiteInstructions(true)}
+                    style={{
+                      padding: '6px 12px',
+                      fontSize: '12px',
+                      background: '#2563eb',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      alignSelf: 'flex-start',
+                    }}
+                  >
+                    Edit
+                  </button>
+                </div>
+              )}
+            </div>
           )}
         </div>
       )}
