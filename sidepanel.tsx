@@ -4010,8 +4010,21 @@ GUIDELINES:
             );
           })
         )}
-        {/* Loading indicator for tool execution */}
-        {isLoading && (
+        {/* Loading indicator for tool execution - only show if not already showing in a message */}
+        {(() => {
+          // Check if we're already showing a typing indicator inside a message
+          const lastMessage = messages.length > 0 ? messages[messages.length - 1] : null;
+          const isLastAssistantMessage = lastMessage?.role === 'assistant';
+          const hasIndicatorInMessage = isLastAssistantMessage && (
+            // Indicator shown when message has content and isToolExecuting
+            (lastMessage.content && isToolExecuting && !lastMessage.audioLink) ||
+            // Indicator shown when message has no content and (isLoading || isToolExecuting)
+            (!lastMessage.content && (isLoading || isToolExecuting))
+          );
+          
+          // Only show separate indicator if isLoading and we're NOT showing one in a message
+          return isLoading && !hasIndicatorInMessage;
+        })() && (
           <div style={{
             padding: '12px 16px',
             display: 'flex',
