@@ -29,7 +29,7 @@ Before you can create site mappings, you need to install and configure the Chrom
    - Click the extension icon or use the keyboard shortcut to open the sidebar
 
 4. **Open Settings**
-   - In the extension sidebar, look for a Settings (⚙️) icon or gear icon
+   - In the extension sidebar, look for a Settings (...) icon
    - Click it to open the settings page
    - Alternatively, you can right-click the extension icon and select "Options" or "Settings"
 
