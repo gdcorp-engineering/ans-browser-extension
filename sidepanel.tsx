@@ -202,21 +202,29 @@ function ChatSidebar() {
   const [servicesUpdated, setServicesUpdated] = useState(0); // Increment to force re-render when services update
   const toolAudioLinksRef = useRef<string[]>([]); // Track audio links from tool results
   const [isToolExecuting, setIsToolExecuting] = useState(false); // Track when tools are executing
+  const hasLoadedTrustedAgentOptInRef = useRef(false); // Track if we've loaded from storage
 
   // Load trustedAgentOptIn from storage on mount
   useEffect(() => {
     chrome.storage.local.get(['trustedAgentOptIn'], (result) => {
       console.log('Loading trustedAgentOptIn from storage:', result.trustedAgentOptIn);
+      hasLoadedTrustedAgentOptInRef.current = true;
       if (result.trustedAgentOptIn !== undefined) {
         setTrustedAgentOptIn(result.trustedAgentOptIn);
+      } else {
+        // If no value in storage, save the default value
+        chrome.storage.local.set({ trustedAgentOptIn: true });
       }
     });
   }, []);
 
-  // Save trustedAgentOptIn to storage whenever it changes
+  // Save trustedAgentOptIn to storage whenever it changes (but only after initial load)
   useEffect(() => {
-    console.log('Saving trustedAgentOptIn to storage:', trustedAgentOptIn);
-    chrome.storage.local.set({ trustedAgentOptIn });
+    // Only save if we've already loaded from storage to avoid race conditions
+    if (hasLoadedTrustedAgentOptInRef.current) {
+      console.log('Saving trustedAgentOptIn to storage:', trustedAgentOptIn);
+      chrome.storage.local.set({ trustedAgentOptIn });
+    }
   }, [trustedAgentOptIn]);
 
   // Tab-specific refs to allow concurrent conversations
@@ -3440,24 +3448,6 @@ GUIDELINES:
     };
   }, []);
 
-  if (showSettings && !settings) {
-    return (
-      <div className="chat-container">
-        <div className="welcome-message" style={{ padding: '40px 20px' }}>
-          <h2>Welcome to GoDaddy ANS</h2>
-          <p style={{ marginBottom: '20px' }}>Please configure your AI provider to get started.</p>
-          <button
-            onClick={openSettings}
-            className="settings-icon-btn"
-            style={{ width: 'auto', padding: '12px 24px' }}
-          >
-            Open Settings
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   // Memoized badge calculation - only recalculates when URL or settings change
   const badgeData = useMemo(() => {
     // Only check mappings when both currentTabUrl and settings are ready
@@ -3585,6 +3575,25 @@ GUIDELINES:
     setEditedSiteInstructions('');
   }, [currentTabUrl]);
 
+  // Early return for welcome screen - placed AFTER all hooks to comply with React hooks rules
+  if (showSettings && !settings) {
+    return (
+      <div className="chat-container">
+        <div className="welcome-message" style={{ padding: '40px 20px' }}>
+          <h2>Welcome to GoDaddy ANS</h2>
+          <p style={{ marginBottom: '20px' }}>Please configure your AI provider to get started.</p>
+          <button
+            onClick={openSettings}
+            className="settings-icon-btn"
+            style={{ width: 'auto', padding: '12px 24px' }}
+          >
+            Open Settings
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="chat-container dark-mode">
       <div className="chat-header">
@@ -3597,10 +3606,10 @@ GUIDELINES:
                 ? (settings?.provider === 'google'
                   ? getModelDisplayName('gemini-2.5-computer-use-preview-10-2025')
                   : (settings?.model === 'custom' && settings?.customModelName
-                    ? settings.customModelName
+                    ? String(settings.customModelName || '')
                     : getModelDisplayName(settings?.model)) + ' (Browser Tools)')
                 : (settings?.model === 'custom' && settings?.customModelName
-                  ? settings.customModelName
+                  ? String(settings.customModelName || '')
                   : getModelDisplayName(settings?.model))}
           </p>
         </div>
@@ -3660,7 +3669,7 @@ GUIDELINES:
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span style={{ fontSize: '16px' }}>{badgeData.hasServices ? '✓' : '○'}</span>
-            <span>{badgeData.serviceText}</span>
+            <span>{String(badgeData.serviceText || '')}</span>
           </div>
           {badgeData.hasMappedA2A && (
             <button
@@ -3926,7 +3935,7 @@ GUIDELINES:
                 {message.content ? (
                   message.role === 'assistant' ? (
                     <>
-                      <MessageParser content={message.content} />
+                      <MessageParser content={String(message.content)} />
                       {/* Show typing indicator while tools are executing (only on last assistant message, and not if audio player is shown) */}
                       {isToolExecuting && isLastAssistantMessage && !message.audioLink && (
                         <div className="typing-indicator" style={{ marginTop: '8px' }}>
@@ -3975,7 +3984,7 @@ GUIDELINES:
                       })()}
                     </>
                   ) : (
-                    <UserMessageParser content={message.content} />
+                    <UserMessageParser content={String(message.content)} />
                   )
                 ) : (
                   (isLoading || isToolExecuting) && message.role === 'assistant' && (
