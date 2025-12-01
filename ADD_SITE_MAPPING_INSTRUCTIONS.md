@@ -1,15 +1,4 @@
-# How to Add a Site Mapping for *.godaddy.com
-
-This guide walks you through adding a site mapping that connects `*.godaddy.com` to the "agent" service at `https://agent.tuneify.ai/mcp`.
-
-## Quick Reference - Exact Values Needed
-
-When creating the mapping, use these exact values:
-
-- **URL Pattern**: `*.godaddy.com`
-- **Service Type**: 🔌 MCP Server
-- **Service Name**: `agent`
-- **Service URL**: `https://agent.tuneify.ai/mcp`
+# Setting up ANS Browser demo for "Investor Dinner"
 
 ## Chrome Extension Setup
 
