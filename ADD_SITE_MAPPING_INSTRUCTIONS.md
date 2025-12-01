@@ -11,10 +11,78 @@ When creating the mapping, use these exact values:
 - **Service Name**: `agent`
 - **Service URL**: `https://agent.tuneify.ai/mcp`
 
+## Chrome Extension Setup
+
+Before you can create site mappings, you need to install and configure the Chrome extension.
+
+> ⚠️ **Important**: Make sure you are connected to **GoDaddy VPN** before proceeding. The extension requires VPN access to connect to ANS services.
+
+### Installation Steps
+
+1. **Download the Extension**
+   - Download the latest dev or prod build from [GitHub Actions](https://github.com/gdcorp-engineering/ans-browser-extension/actions/workflows/build.yml)
+     - Go to the latest successful workflow run
+     - Click on the workflow run to view details
+     - Scroll down to the "Artifacts" section
+     - Download either the `dev` or `prod` build artifact (zip file)
+   - Unzip the downloaded zip file into a folder (e.g., `dist` or `ans-browser-extension`)
+
+2. **Load Extension in Chrome**
+   - Open Chrome and navigate to `chrome://extensions/`
+   - Enable **"Developer mode"** toggle in the top right corner
+   - Click **"Load unpacked"** button
+   - Select the folder where you unzipped the extension (e.g., the `dist` folder)
+   - The extension should now appear in your extensions list
+
+3. **Access the Extension**
+   - The extension adds a sidebar panel that you can access from any tab
+   - Look for the extension icon in your Chrome toolbar
+   - Click the extension icon or use the keyboard shortcut to open the sidebar
+
+4. **Open Settings**
+   - In the extension sidebar, look for a Settings (⚙️) icon or gear icon
+   - Click it to open the settings page
+   - Alternatively, you can right-click the extension icon and select "Options" or "Settings"
+
+### Updating an Existing Installation
+
+If you already have the extension installed and need to update it with a new version:
+
+1. **Download the Latest Version**
+   - Download the latest dev or prod build from [GitHub Actions](https://github.com/gdcorp-engineering/ans-browser-extension/actions/workflows/build.yml)
+     - Go to the latest successful workflow run
+     - Click on the workflow run to view details
+     - Scroll down to the "Artifacts" section
+     - Download either the `dev` or `prod` build artifact (zip file)
+   - Unzip it to the same folder location (or replace the existing files)
+
+2. **Refresh the Extension**
+   - Open Chrome and navigate to `chrome://extensions/`
+   - Find the extension in your extensions list
+   - Click the **refresh/reload icon** (🔄) on the extension card
+   - The extension will reload with the new version
+
+3. **Verify the Update**
+   - Check that the extension version number has updated (if visible)
+   - Open the extension settings to confirm it's working with the new version
+   - If you encounter any issues, you may need to remove and reinstall the extension
+
+### Verify Installation
+
+- ✅ Extension appears in `chrome://extensions/` and is enabled
+- ✅ Extension icon is visible in Chrome toolbar
+- ✅ Settings page opens successfully
+- ✅ You can see the "Enable ANS" section in settings
+
+---
+
 ## Prerequisites
 
-- The extension is installed and enabled
-- You have access to the settings page
+Before following the site mapping instructions, ensure:
+
+- ✅ The extension is installed and enabled (see Chrome Extension Setup above)
+- ✅ You have access to the settings page
+- ✅ You can see the "Enable ANS" section in the settings
 
 > **Note**: This guide includes screenshot references. Ensure the `screenshots/` directory exists in the same location as this file, and place the corresponding screenshot images there with the filenames referenced in each step.
 
@@ -104,6 +172,38 @@ When creating the mapping, use these exact values:
 
 ---
 
+### Step 4: Final Verification - Test the Mapping
+
+To verify that your site mapping is working correctly, follow these steps:
+
+1. **Navigate to GoDaddy.com**
+   - Open a new tab in Chrome
+   - Go to [https://www.godaddy.com/](https://www.godaddy.com/)
+   - Make sure you're on the actual GoDaddy website
+
+2. **Verify the ANS Certified Badge**
+   - Open the extension sidebar (click the extension icon)
+   - Look for a green badge at the top of the chat interface
+   - You should see: **"✓ ANS certified: 1 mapped"** or similar
+   - This confirms that the extension has detected your site mapping
+
+3. **Test the Service**
+   - In the chat input field, type the following prompt:
+     ```
+     create a rap version of Godaddy.com
+     ```
+   - Press Enter or click Send
+   - Wait approximately **1 minute** for the service to process your request
+
+4. **Verify the Media Player**
+   - After waiting, you should see a media player appear inline in the chat
+   - The media player should allow you to play the generated rap song
+   - This confirms that the "agent" service is working correctly with your site mapping
+
+✅ **Success!** If you see the green badge and the media player, your site mapping is configured correctly and working as expected.
+
+---
+
 ## Adding the Service First (If Needed)
 
 If the "agent" service doesn't appear in the service dropdown, you need to add it first:
@@ -165,6 +265,11 @@ If the "agent" service doesn't appear in the service dropdown, you need to add i
    - Service Type: MCP Server
    - Service: agent
    - Service URL: `https://agent.tuneify.ai/mcp`
+✅ **Step 4**: Final Verification
+   - Go to [https://www.godaddy.com/](https://www.godaddy.com/)
+   - Verify green badge shows "✓ ANS certified: 1 mapped"
+   - Type prompt: "create a rap version of Godaddy.com"
+   - Wait 1 minute and verify media player appears inline
 
 Once complete, the extension will automatically use the "agent" service at `https://agent.tuneify.ai/mcp` when you visit any `*.godaddy.com` website!
 
