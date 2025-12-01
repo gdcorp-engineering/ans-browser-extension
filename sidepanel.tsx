@@ -637,11 +637,21 @@ function ChatSidebar() {
     const result = await chrome.storage.local.get(['atlasSettings']);
     const localSettings = result.atlasSettings;
 
-    if (!localSettings?.mcpServers || localSettings.mcpServers.length === 0) {
-      console.log('⚠️  No services configured');
+    // Check if we have either mcpServers OR serviceMappings configured
+    // Even if mcpServers is empty, we can auto-add from serviceMappings
+    const hasMcpServers = localSettings?.mcpServers && localSettings.mcpServers.length > 0;
+    const hasServiceMappings = localSettings?.serviceMappings && localSettings.serviceMappings.length > 0;
+
+    if (!hasMcpServers && !hasServiceMappings) {
+      console.log('⚠️  No services configured (no mcpServers or serviceMappings)');
       setCurrentSiteAgent(null);
       setCurrentSiteMcpCount(0);
       return;
+    }
+
+    // Initialize mcpServers array if it doesn't exist (needed for auto-add logic)
+    if (!localSettings.mcpServers) {
+      localSettings.mcpServers = [];
     }
 
     console.log('📋 Service mappings:', localSettings.serviceMappings);
