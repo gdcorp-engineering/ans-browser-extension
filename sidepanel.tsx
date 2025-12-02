@@ -6846,7 +6846,10 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
               fontWeight: '500',
             }}
           >
-            <span>🔧{' '}Available Tools</span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span>🔧</span>
+              <span>Available Tools</span>
+            </span>
             <span style={{ fontSize: '10px' }}>{showToolsPanel ? '▼' : '▶'}</span>
           </button>
 
