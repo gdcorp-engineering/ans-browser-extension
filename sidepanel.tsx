@@ -3339,6 +3339,9 @@ function ChatSidebar() {
     setInput('');
     setShowBrowserToolsWarning(false);
 
+    // Clear current chat ID to prevent reloading old chat
+    currentChatIdRef.current = null;
+
     // Clear messages storage for current tab
     if (currentTabId !== null) {
       tabMessagesRef.current[currentTabId] = [];
@@ -3348,6 +3351,9 @@ function ChatSidebar() {
         console.error('Failed to clear persisted messages:', err);
       });
     }
+    
+    // Clear stream messages ref to prevent syncing old messages
+    streamMessagesRef.current = [];
     
     // Clear tab-specific MCP client (but keep service connections for concurrent conversations)
     const tabId = getCurrentTabId();
