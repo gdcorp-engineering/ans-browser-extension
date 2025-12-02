@@ -1015,69 +1015,6 @@ function SettingsPage() {
           </p>
         </div>
 
-        {settings.mcpEnabled && (
-          <div className="setting-group">
-            <label>ANS Authentication</label>
-            <button
-              onClick={() => {
-                window.open('https://ra.int.dev-godaddy.com/', '_blank');
-              }}
-              style={{
-                padding: '12px 20px',
-                background: '#007bff',
-                color: 'white',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                fontSize: '14px',
-                fontWeight: '500',
-                marginBottom: '10px',
-                width: '100%'
-              }}
-            >
-              🔐 Sign In to ANS
-            </button>
-            <p className="help-text">
-              Click the button above to sign in to ANS. Once signed in, the extension will automatically use your browser cookies to access the ANS API.
-              <br />
-              <br />
-              <strong>Advanced:</strong> If cookie authentication doesn't work, you can manually enter a Bearer token below (optional).
-            </p>
-            <div className="api-key-input-wrapper" style={{ marginTop: '10px' }}>
-              <input
-                type={showAnsToken ? 'text' : 'password'}
-                value={settings.ansApiToken || ''}
-                onChange={(e) => setSettings({ ...settings, ansApiToken: e.target.value })}
-                placeholder="Optional: Manual Bearer token (eyJraWQiOi...)"
-                className="api-key-input"
-              />
-              <button
-                type="button"
-                className="toggle-visibility"
-                onClick={() => setShowAnsToken(!showAnsToken)}
-              >
-                {showAnsToken ? '👁️' : '👁️‍🗨️'}
-              </button>
-            </div>
-            <p className="help-text">
-              🔑 JWT token for ANS API access. Get your token from the <code>auth_jomax</code> cookie value at <a href="https://ra.int.dev-godaddy.com" target="_blank" rel="noopener noreferrer">ra.int.dev-godaddy.com</a>.
-              <br />
-              Paste just the token part (without "Bearer"). Token typically starts with "eyJ".
-              <br />
-              <strong>Note:</strong> The extension will set this as the <code>auth_jomax</code> cookie and also send it as a Bearer token to support both authentication methods.
-            </p>
-            {settings.ansApiToken && settings.ansApiToken.startsWith('Bearer ') && (
-              <p style={{ color: '#dc3545', fontSize: '12px', marginTop: '5px' }}>
-                ⚠️ Remove "Bearer " prefix - paste only the token part
-              </p>
-            )}
-            {settings.ansApiToken && !settings.ansApiToken.startsWith('eyJ') && !settings.ansApiToken.startsWith('Bearer ') && settings.ansApiToken.trim().length > 0 && (
-              <p style={{ color: '#ff9800', fontSize: '12px', marginTop: '5px' }}>
-                ⚠️ This doesn't look like a JWT token (should start with "eyJ"). Make sure you're pasting the full token value from the auth_jomax cookie.
-              </p>
-            )}
-          </div>
-        )}
 
         <div className="setting-group">
           <label style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
