@@ -5879,7 +5879,9 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
     
     // Normal chat flow
     if (!settings) return;
-    await submitMessage(input);
+    const messageText = input;
+    setInput(''); // Clear input immediately
+    await submitMessage(messageText);
   };
 
   // Handle file selection
