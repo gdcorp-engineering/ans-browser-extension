@@ -16,6 +16,23 @@ release/
 # Environment variables
 .env
 .env.local
+.env.*.local
+
+# Secrets and credentials
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+*.jks
+*.keystore
+*secret*
+*credential*
+*password*
+*.token
+secrets/
+credentials/
 
 # IDE
 .vscode/
