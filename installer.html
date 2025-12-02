@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ANS Browser Extension - Easy Installer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #333;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 40px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 32px;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            opacity: 0.9;
+            font-size: 16px;
+        }
+        
+        .content {
+            padding: 40px;
+        }
+        
+        .step {
+            margin-bottom: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .step-number {
+            display: inline-block;
+            width: 32px;
+            height: 32px;
+            background: #667eea;
+            color: white;
+            border-radius: 50%;
+            text-align: center;
+            line-height: 32px;
+            font-weight: bold;
+            margin-right: 12px;
+        }
+        
+        .step h2 {
+            display: inline-block;
+            font-size: 20px;
+            margin-bottom: 12px;
+        }
+        
+        .step p {
+            margin-left: 44px;
+            line-height: 1.6;
+            color: #555;
+        }
+        
+        .step ul {
+            margin-left: 60px;
+            margin-top: 10px;
+        }
+        
+        .step li {
+            margin-bottom: 8px;
+            line-height: 1.6;
+        }
+        
+        .button {
+            display: inline-block;
+            padding: 12px 24px;
+            background: #667eea;
+            color: white;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: 600;
+            transition: background 0.3s;
+            margin-top: 10px;
+        }
+        
+        .button:hover {
+            background: #5568d3;
+        }
+        
+        .button-secondary {
+            background: #6c757d;
+        }
+        
+        .button-secondary:hover {
+            background: #5a6268;
+        }
+        
+        .code {
+            background: #2d2d2d;
+            color: #f8f8f2;
+            padding: 12px;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            margin: 10px 0;
+            overflow-x: auto;
+        }
+        
+        .warning {
+            background: #fff3cd;
+            border: 1px solid #ffc107;
+            border-radius: 6px;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        
+        .warning strong {
+            color: #856404;
+        }
+        
+        .success {
+            background: #d4edda;
+            border: 1px solid #28a745;
+            border-radius: 6px;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        
+        .success strong {
+            color: #155724;
+        }
+        
+        .download-section {
+            text-align: center;
+            padding: 30px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            margin: 30px 0;
+        }
+        
+        .download-section h2 {
+            margin-bottom: 20px;
+            color: #333;
+        }
+        
+        .note {
+            background: #e7f3ff;
+            border-left: 4px solid #2196F3;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        
+        .note strong {
+            color: #1976D2;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 ANS Browser Extension</h1>
+            <p>Easy Installation Guide</p>
+        </div>
+        
+        <div class="content">
+            <div class="success">
+                <strong>✅ No Technical Skills Required!</strong><br>
+                Follow these simple steps to install the extension in just a few minutes.
+            </div>
+            
+            <div class="step" style="background: #fff3cd; border-left-color: #ffc107;">
+                <h2 style="color: #856404;">📋 Prerequisites - Get Your API Keys Ready</h2>
+                <p style="margin-left: 0; margin-top: 10px; color: #856404;">
+                    Before installing, make sure you have the following API keys ready. You'll need them to configure the extension after installation.
+                </p>
+                
+                <div style="margin-top: 20px; margin-left: 0;">
+                    <h3 style="color: #856404; margin-bottom: 10px; font-size: 16px;">🔑 Required: GoCode API Key</h3>
+                    <p style="margin-left: 0; margin-bottom: 10px;">
+                        The extension requires a GoCode API key to function. Get your key from:
+                    </p>
+                    <div style="margin-left: 0; margin-bottom: 15px;">
+                        <a href="https://caas.godaddy.com/gocode/my-api-keys" target="_blank" class="button" style="margin-top: 0;">
+                            🔗 Get GoCode API Key
+                        </a>
+                    </div>
+                </div>
+                
+                <div style="margin-top: 20px; margin-left: 0;">
+                    <h3 style="color: #856404; margin-bottom: 10px; font-size: 16px;">🔐 Optional: ANS API Token</h3>
+                    <p style="margin-left: 0; margin-bottom: 10px;">
+                        To access ANS Business Services, you'll need an ANS API token (JWT). Get your token from:
+                    </p>
+                    <div style="margin-left: 0; margin-bottom: 15px;">
+                        <a href="https://ra.int.dev-godaddy.com/v1/agents" target="_blank" class="button" style="margin-top: 0;">
+                            🔗 Get ANS API Token
+                        </a>
+                    </div>
+                    <p style="margin-left: 0; font-size: 13px; color: #666;">
+                        The token should start with <code style="background: #f0f0f0; padding: 2px 6px; border-radius: 3px;">eyJ</code> (JWT format).
+                    </p>
+                </div>
+                
+                <div style="margin-top: 20px; margin-left: 0;">
+                    <h3 style="color: #856404; margin-bottom: 10px; font-size: 16px;">⚙️ Optional: MCP Server Configurations</h3>
+                    <p style="margin-left: 0; margin-bottom: 10px;">
+                        If you want to configure custom Model Context Protocol (MCP) servers for additional integrations, have your MCP server details ready:
+                    </p>
+                    <ul style="margin-left: 20px; margin-top: 5px;">
+                        <li>Server name</li>
+                        <li>Server URL</li>
+                        <li>API key (if required)</li>
+                    </ul>
+                    <p style="margin-left: 0; font-size: 13px; color: #666; margin-top: 10px;">
+                        <strong>Note:</strong> ANS API token and MCP server configuration are optional and can be set up later in the extension settings.
+                    </p>
+                </div>
+            </div>
+            
+            <div class="step">
+                <span class="step-number">1</span>
+                <h2>Download the Extension</h2>
+                <p>Download the extension ZIP file to your computer.</p>
+                <div class="download-section">
+                    <h2>📥 Download Extension</h2>
+                    <p style="margin-bottom: 15px;">Click the button below to download the extension ZIP file:</p>
+                    <a href="./downloads/ans-extension-dev-latest.zip" class="button" download>
+                        📥 Download Extension ZIP
+                    </a>
+                </div>
+            </div>
+            
+            <div class="step">
+                <span class="step-number">2</span>
+                <h2>Extract the ZIP File</h2>
+                <p><strong>Find the downloaded ZIP file</strong> on your computer (usually in your Downloads folder), then:</p>
+                <ul>
+                    <li><strong>Windows:</strong> Right-click the ZIP file → "Extract All" → Choose a location (like Desktop)</li>
+                    <li><strong>Mac:</strong> Double-click the ZIP file (it will extract automatically)</li>
+                    <li><strong>Linux:</strong> Right-click → "Extract Here"</li>
+                </ul>
+                <div class="note">
+                    <strong>💡 Tip:</strong> After extracting, you should see a folder with files like <code>manifest.json</code>, <code>background.js</code>, etc. Remember where this folder is located!
+                </div>
+            </div>
+            
+            <div class="step">
+                <span class="step-number">3</span>
+                <h2>Open Chrome Extensions Page</h2>
+                <p>Open Google Chrome and go to the extensions page:</p>
+                <div class="code">chrome://extensions/</div>
+                <p style="margin-top: 10px;">Or click this button to open it automatically:</p>
+                <button class="button" onclick="openChromeExtensions(this)">🔗 Open Chrome Extensions</button>
+                <div class="note">
+                    <strong>⚠️ Note:</strong> If the button doesn't work, copy <code>chrome://extensions/</code> and paste it into Chrome's address bar.
+                </div>
+            </div>
+            
+            <div class="step">
+                <span class="step-number">4</span>
+                <h2>Enable Developer Mode</h2>
+                <p>On the extensions page, look for a toggle switch in the <strong>top right corner</strong> that says "Developer mode".</p>
+                <ul>
+                    <li>Click the toggle to turn it <strong>ON</strong> (it should turn blue/highlighted)</li>
+                    <li>You may see some new buttons appear - that's normal!</li>
+                </ul>
+            </div>
+            
+            <div class="step">
+                <span class="step-number">5</span>
+                <h2>Load the Extension</h2>
+                <p>After enabling Developer mode, you'll see a button that says <strong>"Load unpacked"</strong>.</p>
+                <ul>
+                    <li>Click the <strong>"Load unpacked"</strong> button</li>
+                    <li>A file picker window will open</li>
+                    <li>Navigate to the <strong>extracted folder</strong> from Step 2</li>
+                    <li>Select the folder (the one containing <code>manifest.json</code>)</li>
+                    <li>Click "Select Folder" or "Open"</li>
+                </ul>
+                <div class="success" style="margin-top: 15px;">
+                    <strong>🎉 Success!</strong> The extension should now appear in your extensions list and be automatically enabled!
+                </div>
+            </div>
+            
+            <div class="step">
+                <span class="step-number">6</span>
+                <h2>Verify Installation</h2>
+                <p>You should see "Agent Chat Powered by GoDaddy ANS" in your extensions list with a toggle switch turned ON.</p>
+                <p><strong>Pin the extension to your toolbar:</strong></p>
+                <ul>
+                    <li>Look for the <strong>puzzle piece icon</strong> (🧩) in Chrome's toolbar (top right, near the address bar)</li>
+                    <li>Click the puzzle piece icon to open the extensions menu</li>
+                    <li>Find "Agent Chat Powered by GoDaddy ANS" in the list</li>
+                    <li>Click the <strong>pin icon</strong> (📌) next to the extension to pin it to your toolbar</li>
+                    <li>The extension icon should now appear directly in your toolbar for easy access</li>
+                </ul>
+                <div class="note" style="margin-top: 15px;">
+                    <strong>💡 Tip:</strong> If you don't see the puzzle piece icon, the extension may already be pinned. Look for the extension icon directly in the toolbar.
+                </div>
+            </div>
+            
+            <div class="warning">
+                <strong>⚠️ Troubleshooting:</strong>
+                <ul style="margin-top: 10px; margin-left: 20px;">
+                    <li>Can't find "Load unpacked"? Make sure Developer mode is ON</li>
+                    <li>Extension shows as "Off"? Click the toggle switch to turn it ON</li>
+                    <li>Can't find the extracted folder? Check your Downloads or Desktop folder</li>
+                    <li>Still having issues? Contact #temp-ans-browser-extension</li>
+                </ul>
+            </div>
+            
+        </div>
+    </div>
+    
+    <script>
+        function openChromeExtensions(button) {
+            // Check if we're running from a local file (file:// protocol)
+            // Chrome blocks chrome:// URLs from local files for security
+            if (window.location.protocol === 'file:') {
+                // Running from local file - show instructions instead
+                showFallbackInstructions(button);
+                return;
+            }
+            
+            // Try to open chrome://extensions/ in a new tab (only works from HTTP/HTTPS)
+            try {
+                const newTab = window.open('chrome://extensions/', '_blank');
+                
+                // Check if the tab was blocked or failed to open
+                setTimeout(function() {
+                    if (!newTab || newTab.closed || typeof newTab.closed === 'undefined') {
+                        // Tab was blocked or failed - show instructions
+                        showFallbackInstructions(button);
+                    }
+                }, 100);
+            } catch (e) {
+                // If window.open fails, show instructions
+                showFallbackInstructions(button);
+            }
+        }
+        
+        function showFallbackInstructions(button) {
+            // Check if instructions container already exists
+            const existingContainer = button.parentNode.querySelector('.chrome-extensions-instructions');
+            if (existingContainer) {
+                // Already shown, don't add again
+                return;
+            }
+            
+            // Show the URL in a prominent input field that users can copy
+            const container = document.createElement('div');
+            container.className = 'chrome-extensions-instructions';
+            container.style.marginTop = '15px';
+            container.style.padding = '15px';
+            container.style.background = '#e7f3ff';
+            container.style.borderRadius = '6px';
+            container.style.border = '2px solid #2196F3';
+            
+            const label = document.createElement('p');
+            label.innerHTML = '<strong>📋 Copy this URL and paste it into Chrome\'s address bar:</strong>';
+            label.style.marginBottom = '10px';
+            label.style.color = '#1976D2';
+            
+            const urlInput = document.createElement('input');
+            urlInput.value = 'chrome://extensions/';
+            urlInput.style.width = '100%';
+            urlInput.style.padding = '12px';
+            urlInput.style.fontSize = '16px';
+            urlInput.style.borderRadius = '4px';
+            urlInput.style.border = '2px solid #2196F3';
+            urlInput.style.fontFamily = 'monospace';
+            urlInput.readOnly = true;
+            urlInput.onclick = function() { 
+                this.select(); 
+                // Try to copy to clipboard
+                try {
+                    document.execCommand('copy');
+                    const originalText = button.textContent;
+                    button.textContent = '✅ Copied!';
+                    setTimeout(function() {
+                        button.textContent = originalText;
+                    }, 2000);
+                } catch (e) {
+                    // Copy failed, but selection still works
+                }
+            };
+            
+            container.appendChild(label);
+            container.appendChild(urlInput);
+            button.parentNode.insertBefore(container, button.nextSibling);
+        }
+    </script>
+</body>
+</html>
+

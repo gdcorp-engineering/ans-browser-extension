@@ -103,6 +103,27 @@ const BROWSER_TOOLS = [
       required: ['key'],
     },
   },
+  {
+    name: 'waitForModal',
+    description: 'Wait for a modal/dialog to appear on the page. Use this when you expect a modal to open after an action.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        timeout: {
+          type: 'number',
+          description: 'Maximum time to wait in milliseconds (default: 5000)',
+        },
+      },
+    },
+  },
+  {
+    name: 'closeModal',
+    description: 'Close the currently visible modal/dialog. Use the close button if available, or try ESC key or backdrop click.',
+    input_schema: {
+      type: 'object',
+      properties: {},
+    },
+  },
 ];
 
 /**
@@ -229,8 +250,6 @@ export async function streamAnthropicWithBrowserTools(
   // Always use GoCode endpoint - no direct Anthropic API access
   const baseUrl = customBaseUrl || 'https://caas-gocode-prod.caas-prod.prod.onkatana.net';
 
-  // Keep only the most recent messages to avoid context length issues
-  // Page context can be large, and tool use adds more messages during the loop
   // User can configure how much history to keep in settings
   const MAX_HISTORY_MESSAGES = settings?.conversationHistoryLength || 10; // Default: 10 messages (increased from 1)
 
@@ -306,22 +325,26 @@ export async function streamAnthropicWithBrowserTools(
 
   console.log('🔧 Total merged tools:', allTools.length);
   console.log('🔧 All tool names:', allTools.map((t: any) => t.name).join(', '));
-  console.log('🔧 Starting with', conversationMessages.length, 'messages (limited from', messages.length, ')');
+    console.log('🔧 Starting with', conversationMessages.length, 'messages (limited from', messages.length, ')');
 
-  const MAX_TURNS = 10; // Prevent infinite loops
-  let turnCount = 0;
+    // Get mode from last user message if using GoCaaS (customBaseUrl)
+    const lastUserMessage = messages.filter(m => m.role === 'user').pop();
+    const mode = customBaseUrl && lastUserMessage?.mode ? lastUserMessage.mode : undefined;
 
-  try {
-    while (turnCount < MAX_TURNS) {
-    turnCount++;
+    const MAX_TURNS = 20; // Increased from 10 to 20 for complex tasks
+    let turnCount = 0;
 
-    console.log('🔧 Anthropic Browser Tools - Turn', turnCount, `of ${MAX_TURNS}`);
-    if (turnCount >= MAX_TURNS - 2) {
-      console.warn(`⚠️ Approaching MAX_TURNS limit (${turnCount}/${MAX_TURNS})`);
-    }
-    console.log('📤 Sending request with tools:', allTools.map((t: any) => t.name));
+    try {
+      while (turnCount < MAX_TURNS) {
+        turnCount++;
 
-    const mcpPrioritySection = hasAdditionalTools ? `
+        console.log('🔧 Anthropic Browser Tools - Turn', turnCount, `of ${MAX_TURNS}`);
+        if (turnCount >= MAX_TURNS - 2) {
+          console.warn(`⚠️ Approaching MAX_TURNS limit (${turnCount}/${MAX_TURNS})`);
+        }
+        console.log('📤 Sending request with tools:', allTools.map((t: any) => t.name));
+
+        const mcpPrioritySection = hasAdditionalTools ? `
 🔴 CRITICAL - MCP / TRUSTED AGENT TOOLS AVAILABLE:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 You have specialized MCP tools available. READ EACH TOOL'S DESCRIPTION to understand what it does.
@@ -370,7 +393,7 @@ IMPORTANT:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ` : '';
 
-    const siteInstructionsSection = siteInstructions ? `
+        const siteInstructionsSection = siteInstructions ? `
 📍 SITE-SPECIFIC INSTRUCTIONS:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Current URL: ${currentUrl}
@@ -381,40 +404,40 @@ ${siteInstructions}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ` : '';
 
-    // Filter out messages with empty content (API requirement)
-    const validMessages = conversationMessages.filter(m => {
-      if (!m.content) {
-        console.warn('⚠️ Filtering out message with empty content:', m);
-        return false;
-      }
-      // Handle both string and array content
-      if (typeof m.content === 'string') {
-        return m.content.trim().length > 0;
-      }
-      const contentArray = m.content as any[];
-      if (Array.isArray(contentArray)) {
-        return contentArray.length > 0;
-      }
-      return true;
-    });
+        // Filter out messages with empty content (API requirement)
+        const validMessages = conversationMessages.filter(m => {
+          if (!m.content) {
+            console.warn('⚠️ Filtering out message with empty content:', m);
+            return false;
+          }
+          // Handle both string and array content
+          if (typeof m.content === 'string') {
+            return m.content.trim().length > 0;
+          }
+          const contentArray = m.content as any[];
+          if (Array.isArray(contentArray)) {
+            return contentArray.length > 0;
+          }
+          return true;
+        });
 
-    console.log(`📨 Sending ${validMessages.length} messages to API (filtered ${conversationMessages.length - validMessages.length} empty)`);
-    console.log(`📨 Message breakdown:`, validMessages.map(m => ({
-      role: m.role,
-      contentType: Array.isArray(m.content) ? `array[${m.content.length}]` : typeof m.content,
-      hasToolUse: Array.isArray(m.content) && m.content.some((c: any) => c.type === 'tool_use'),
-      hasToolResult: Array.isArray(m.content) && m.content.some((c: any) => c.type === 'tool_result'),
-    })));
+        console.log(`📨 Sending ${validMessages.length} messages to API (filtered ${conversationMessages.length - validMessages.length} empty)`);
+        console.log(`📨 Message breakdown:`, validMessages.map(m => ({
+          role: m.role,
+          contentType: Array.isArray(m.content) ? `array[${m.content.length}]` : typeof m.content,
+          hasToolUse: Array.isArray(m.content) && m.content.some((c: any) => c.type === 'tool_use'),
+          hasToolResult: Array.isArray(m.content) && m.content.some((c: any) => c.type === 'tool_result'),
+        })));
 
-    const requestBody = {
-      model,
-      max_tokens: 4096,
-      tools: allTools,
-      messages: validMessages.map(m => ({
-        role: m.role,
-        content: m.content,
-      })),
-      system: `You are a helpful AI assistant${browserToolsEnabled ? ' with browser automation capabilities. You can navigate to websites, click elements, type text, scroll pages, and take screenshots.' : '. Browser automation tools are NOT available in this mode - you cannot navigate, click, type, or take screenshots.'}
+        const requestBody: any = {
+          model,
+          max_tokens: 4096,
+          tools: allTools,
+          messages: validMessages.map(m => ({
+            role: m.role,
+            content: m.content,
+          })),
+          system: `You are a helpful AI assistant${browserToolsEnabled ? ' with browser automation capabilities. You can navigate to websites, click elements, type text, scroll pages, and take screenshots.' : '. Browser automation tools are NOT available in this mode - you cannot navigate, click, type, or take screenshots.'}
 
 ${browserToolsEnabled ? '' : `🚨 CRITICAL: Browser tools are DISABLED. You CANNOT navigate, click, type, or take screenshots.
 
@@ -741,6 +764,12 @@ Remember: Take your time, verify each step, and describe what you see before act
 Remember: When browser tools are disabled, always tell users to perform browser actions manually.`}`,
     };
 
+    // Add mode parameter for GoCaaS integration if using customBaseUrl
+    if (customBaseUrl && mode) {
+      requestBody.mode = mode;
+      console.log(`🔵 [Anthropic Browser Tools] Mode parameter included: ${mode}`);
+    }
+
     console.log('📤 Request body:', JSON.stringify(requestBody, null, 2));
 
     const fetchOptions: RequestInit = {
@@ -872,6 +901,20 @@ Remember: When browser tools are disabled, always tell users to perform browser 
 
     // Check for tool use
     const toolUses = data.content?.filter((c: any) => c.type === 'tool_use') || [];
+
+    // Detect if model is describing tool calls instead of making them
+    if (toolUses.length === 0 && textContent?.text) {
+      const text = textContent.text.toLowerCase();
+      const toolKeywords = ['click_element', 'clickelement', 'executing:', 'selector:', 'description:'];
+      const hasToolLikeText = toolKeywords.some(keyword => text.includes(keyword));
+      
+      if (hasToolLikeText) {
+        console.warn('⚠️ Model appears to be describing tool calls instead of making them!');
+        console.warn('⚠️ Text content:', textContent.text.substring(0, 200));
+        console.warn('⚠️ This usually means the model is confused about tool format.');
+        onTextChunk('\n\n⚠️ Note: It looks like I described an action instead of executing it. Let me try again with the proper tool call.\n');
+      }
+    }
 
     if (toolUses.length === 0) {
       // No more tools to execute, we're done

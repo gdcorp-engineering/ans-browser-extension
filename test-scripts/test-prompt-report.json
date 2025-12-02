@@ -1,0 +1,520 @@
+{
+  "total": 32,
+  "passed": 24,
+  "failed": 8,
+  "errors": 0,
+  "details": [
+    {
+      "name": "CNN (homepage)",
+      "url": "https://www.cnn.com",
+      "expected": "article",
+      "detected": "article",
+      "passed": true,
+      "note": "",
+      "characteristics": {
+        "hasArticleTag": false,
+        "hasStructuredContent": true,
+        "isContentDense": true,
+        "hasStrongEcommerceIndicators": false,
+        "paragraphCount": 8,
+        "contentLength": 10000
+      }
+    },
+    {
+      "name": "BBC News",
+      "url": "https://www.bbc.com/news",
+      "expected": "article",
+      "detected": "article",
+      "passed": true,
+      "note": "",
+      "characteristics": {
+        "hasArticleTag": true,
+        "hasStructuredContent": true,
+        "isContentDense": true,
+        "hasStrongEcommerceIndicators": false,
+        "paragraphCount": 32,
+        "contentLength": 7885
+      }
+    },
+    {
+      "name": "NYTimes (homepage)",
+      "url": "https://www.nytimes.com",
+      "expected": "article",
+      "detected": "article",
+      "passed": true,
+      "note": "",
+      "characteristics": {
+        "hasArticleTag": false,
+        "hasStructuredContent": true,
+        "isContentDense": true,
+        "hasStrongEcommerceIndicators": false,
+        "paragraphCount": 348,
+        "contentLength": 10000
+      }
+    },
+    {
+      "name": "Reuters (homepage)",
+      "url": "https://www.reuters.com",
+      "expected": "article",
+      "detected": "generic",
+      "passed": false,
+      "note": "",
+      "characteristics": {
+        "hasArticleTag": false,
+        "hasStructuredContent": false,
+        "isContentDense": false,
+        "hasStrongEcommerceIndicators": false,
+        "paragraphCount": 0,
+        "contentLength": 0
+      }
+    },
+    {
+      "name": "The Guardian (homepage)",
+      "url": "https://www.theguardian.com",
+      "expected": "article",
+      "detected": "article",
+      "passed": true,
+      "note": "",
+      "characteristics": {
+        "hasArticleTag": false,
+        "hasStructuredContent": true,
+        "isContentDense": true,
+        "hasStrongEcommerceIndicators": false,
+        "paragraphCount": 1,
+        "contentLength": 10000
+      }
+    },
+    {
+      "name": "NPR (homepage)",
+      "url": "https://www.npr.org",
+      "expected": "article",
+      "detected": "article",
+      "passed": true,
+      "note": "",
+      "characteristics": {
+        "hasArticleTag": true,
+        "hasStructuredContent": true,
+        "isContentDense": true,
+        "hasStrongEcommerceIndicators": false,
+        "paragraphCount": 138,
+        "contentLength": 10000
+      }
+    },
+    {
+      "name": "Amazon (homepage)",
+      "url": "https://www.amazon.com",
+      "expected": "generic",
+      "detected": "generic",
+      "passed": true,
+      "note": "Homepage - should be generic",
+      "characteristics": {
+        "hasArticleTag": false,
+        "hasStructuredContent": false,
+        "isContentDense": false,
+        "hasStrongEcommerceIndicators": false,
+        "paragraphCount": 0,
+        "contentLength": 705
+      }
+    },
+    {
+      "name": "eBay (homepage)",
+      "url": "https://www.ebay.com",
+      "expected": "generic",
+      "detected": "generic",
+      "passed": true,
+      "note": "Homepage - should be generic",
+      "characteristics": {
+        "hasArticleTag": true,
+        "hasStructuredContent": true,
+        "isContentDense": true,
+        "hasStrongEcommerceIndicators": false,
+        "paragraphCount": 9,
+        "contentLength": 6141
+      }
+    },
+    {
+      "name": "Target (homepage)",
+      "url": "https://www.target.com",
+      "expected": "generic",
+      "detected": "generic",
+      "passed": true,
+      "note": "Homepage - should be generic",
+      "characteristics": {
+        "hasArticleTag": false,
+        "hasStructuredContent": true,
+        "isContentDense": true,
+        "hasStrongEcommerceIndicators": false,
+        "paragraphCount": 21,
+        "contentLength": 3752
+      }
+    },
+    {
+      "name": "Amazon Product",
+      "url": "https://www.amazon.com/dp/B08N5WRWNW",
+      "expected": "ecommerce",
+      "detected": "generic",
+      "passed": false,
+      "note": "Product page - should detect e-commerce if cart buttons present",
+      "characteristics": {
+        "hasArticleTag": false,
+        "hasStructuredContent": false,
+        "isContentDense": false,
+        "hasStrongEcommerceIndicators": false,
+        "paragraphCount": 0,
+        "contentLength": 0
+      }
+    },
+    {
+      "name": "Etsy Product",
+      "url": "https://www.etsy.com/listing/123456789",
+      "expected": "ecommerce",
+      "detected": "generic",
+      "passed": false,
+      "note": "Product page - should detect e-commerce",
+      "characteristics": {
+        "hasArticleTag": false,
+        "hasStructuredContent": false,
+        "isContentDense": false,
+        "hasStrongEcommerceIndicators": false,
+        "paragraphCount": 0,
+        "contentLength": 0
+      }
+    },
+    {
+      "name": "GoDaddy Contact",
+      "url": "https://www.godaddy.com/contact-us",
+      "expected": "form",
+      "detected": "generic",
+      "passed": false,
+      "note": "Contact form page",
+      "characteristics": {
+        "hasArticleTag": false,
+        "hasStructuredContent": true,
+        "isContentDense": true,
+        "hasStrongEcommerceIndicators": false,
+        "paragraphCount": 84,
+        "contentLength": 7909
+      }
+    },
+    {
+      "name": "Salesforce Signup",
+      "url": "https://www.salesforce.com/form/signup/freetrial-sales",
+      "expected": "form",
+      "detected": "form",
+      "passed": true,
+      "note": "Registration form",
+      "characteristics": {
+        "hasArticleTag": false,
+        "hasStructuredContent": false,
+        "isContentDense": true,
+        "hasStrongEcommerceIndicators": false,
+        "paragraphCount": 2,
+        "contentLength": 225
+      }
+    },
+    {
+      "name": "HubSpot Signup",
+      "url": "https://www.hubspot.com/products/get-started",
+      "expected": "form",
+      "detected": "article",
+      "passed": false,
+      "note": "Signup form",
+      "characteristics": {
+        "hasArticleTag": false,
+        "hasStructuredContent": true,
+        "isContentDense": false,
+        "hasStrongEcommerceIndicators": false,
+        "paragraphCount": 43,
+        "contentLength": 1604
+      }
+    },
+    {
+      "name": "MDN Web Docs",
+      "url": "https://developer.mozilla.org",
+      "expected": "documentation",
+      "detected": "documentation",
+      "passed": true,
+      "note": "",
+      "characteristics": {
+        "hasArticleTag": true,
+        "hasStructuredContent": true,
+        "isContentDense": true,
+        "hasStrongEcommerceIndicators": false,
+        "paragraphCount": 19,
+        "contentLength": 4620
+      }
+    },
+    {
+      "name": "React Docs",
+      "url": "https://react.dev",
+      "expected": "documentation",
+      "detected": "documentation",
+      "passed": true,
+      "note": "",
+      "characteristics": {
+        "hasArticleTag": true,
+        "hasStructuredContent": true,
+        "isContentDense": true,
+        "hasStrongEcommerceIndicators": false,
+        "paragraphCount": 48,
+        "contentLength": 6499
+      }
+    },
+    {
+      "name": "GitHub Docs",
+      "url": "https://docs.github.com",
+      "expected": "documentation",
+      "detected": "documentation",
+      "passed": true,
+      "note": "",
+      "characteristics": {
+        "hasArticleTag": false,
+        "hasStructuredContent": true,
+        "isContentDense": true,
+        "hasStrongEcommerceIndicators": false,
+        "paragraphCount": 12,
+        "contentLength": 2836
+      }
+    },
+    {
+      "name": "Vue.js Docs",
+      "url": "https://vuejs.org",
+      "expected": "documentation",
+      "detected": "documentation",
+      "passed": true,
+      "note": "",
+      "characteristics": {
+        "hasArticleTag": false,
+        "hasStructuredContent": true,
+        "isContentDense": true,
+        "hasStrongEcommerceIndicators": false,
+        "paragraphCount": 13,
+        "contentLength": 1336
+      }
+    },
+    {
+      "name": "Node.js Docs",
+      "url": "https://nodejs.org/docs",
+      "expected": "documentation",
+      "detected": "documentation",
+      "passed": true,
+      "note": "",
+      "characteristics": {
+        "hasArticleTag": false,
+        "hasStructuredContent": false,
+        "isContentDense": false,
+        "hasStrongEcommerceIndicators": false,
+        "paragraphCount": 0,
+        "contentLength": 10000
+      }
+    },
+    {
+      "name": "LinkedIn",
+      "url": "https://www.linkedin.com",
+      "expected": "generic",
+      "detected": "generic",
+      "passed": true,
+      "note": "",
+      "characteristics": {
+        "hasArticleTag": false,
+        "hasStructuredContent": true,
+        "isContentDense": true,
+        "hasStrongEcommerceIndicators": false,
+        "paragraphCount": 11,
+        "contentLength": 2716
+      }
+    },
+    {
+      "name": "Reddit",
+      "url": "https://www.reddit.com",
+      "expected": "article",
+      "detected": "generic",
+      "passed": false,
+      "note": "",
+      "characteristics": {
+        "hasArticleTag": false,
+        "hasStructuredContent": false,
+        "isContentDense": false,
+        "hasStrongEcommerceIndicators": false,
+        "paragraphCount": 0,
+        "contentLength": 143
+      }
+    },
+    {
+      "name": "YouTube",
+      "url": "https://www.youtube.com",
+      "expected": "video",
+      "detected": "video",
+      "passed": true,
+      "note": "",
+      "characteristics": {
+        "hasArticleTag": false,
+        "hasStructuredContent": false,
+        "isContentDense": false,
+        "hasStrongEcommerceIndicators": false,
+        "paragraphCount": 0,
+        "contentLength": 159
+      }
+    },
+    {
+      "name": "Vimeo",
+      "url": "https://vimeo.com",
+      "expected": "video",
+      "detected": "video",
+      "passed": true,
+      "note": "",
+      "characteristics": {
+        "hasArticleTag": false,
+        "hasStructuredContent": true,
+        "isContentDense": true,
+        "hasStrongEcommerceIndicators": false,
+        "paragraphCount": 45,
+        "contentLength": 8144
+      }
+    },
+    {
+      "name": "GoDaddy",
+      "url": "https://www.godaddy.com",
+      "expected": "generic",
+      "detected": "generic",
+      "passed": true,
+      "note": "Should NOT be article or e-commerce",
+      "characteristics": {
+        "hasArticleTag": false,
+        "hasStructuredContent": true,
+        "isContentDense": true,
+        "hasStrongEcommerceIndicators": false,
+        "paragraphCount": 84,
+        "contentLength": 8591
+      }
+    },
+    {
+      "name": "Salesforce",
+      "url": "https://www.salesforce.com",
+      "expected": "generic",
+      "detected": "generic",
+      "passed": true,
+      "note": "",
+      "characteristics": {
+        "hasArticleTag": false,
+        "hasStructuredContent": false,
+        "isContentDense": false,
+        "hasStrongEcommerceIndicators": false,
+        "paragraphCount": 2,
+        "contentLength": 198
+      }
+    },
+    {
+      "name": "Stripe",
+      "url": "https://stripe.com",
+      "expected": "generic",
+      "detected": "generic",
+      "passed": true,
+      "note": "",
+      "characteristics": {
+        "hasArticleTag": false,
+        "hasStructuredContent": true,
+        "isContentDense": true,
+        "hasStrongEcommerceIndicators": false,
+        "paragraphCount": 48,
+        "contentLength": 10000
+      }
+    },
+    {
+      "name": "Medium",
+      "url": "https://medium.com",
+      "expected": "article",
+      "detected": "article",
+      "passed": true,
+      "note": "",
+      "characteristics": {
+        "hasArticleTag": false,
+        "hasStructuredContent": false,
+        "isContentDense": true,
+        "hasStrongEcommerceIndicators": false,
+        "paragraphCount": 1,
+        "contentLength": 206
+      }
+    },
+    {
+      "name": "Dev.to",
+      "url": "https://dev.to",
+      "expected": "article",
+      "detected": "article",
+      "passed": true,
+      "note": "",
+      "characteristics": {
+        "hasArticleTag": false,
+        "hasStructuredContent": true,
+        "isContentDense": true,
+        "hasStrongEcommerceIndicators": false,
+        "paragraphCount": 46,
+        "contentLength": 7337
+      }
+    },
+    {
+      "name": "Khan Academy",
+      "url": "https://www.khanacademy.org",
+      "expected": "documentation",
+      "detected": "article",
+      "passed": false,
+      "note": "",
+      "characteristics": {
+        "hasArticleTag": false,
+        "hasStructuredContent": true,
+        "isContentDense": true,
+        "hasStrongEcommerceIndicators": false,
+        "paragraphCount": 16,
+        "contentLength": 7915
+      }
+    },
+    {
+      "name": "Wikipedia",
+      "url": "https://www.wikipedia.org",
+      "expected": "article",
+      "detected": "documentation",
+      "passed": false,
+      "note": "",
+      "characteristics": {
+        "hasArticleTag": false,
+        "hasStructuredContent": true,
+        "isContentDense": true,
+        "hasStrongEcommerceIndicators": false,
+        "paragraphCount": 8,
+        "contentLength": 3787
+      }
+    },
+    {
+      "name": "Google Search",
+      "url": "https://www.google.com/search?q=test",
+      "expected": "search",
+      "detected": "search",
+      "passed": true,
+      "note": "",
+      "characteristics": {
+        "hasArticleTag": false,
+        "hasStructuredContent": false,
+        "isContentDense": false,
+        "hasStrongEcommerceIndicators": false,
+        "paragraphCount": 0,
+        "contentLength": 318
+      }
+    },
+    {
+      "name": "Bing Search",
+      "url": "https://www.bing.com/search?q=test",
+      "expected": "search",
+      "detected": "search",
+      "passed": true,
+      "note": "",
+      "characteristics": {
+        "hasArticleTag": false,
+        "hasStructuredContent": false,
+        "isContentDense": false,
+        "hasStrongEcommerceIndicators": false,
+        "paragraphCount": 0,
+        "contentLength": 89
+      }
+    }
+  ]
+}

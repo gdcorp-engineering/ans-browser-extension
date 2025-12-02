@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "GoDaddy ANS Chat Sidebar",
+  "name": "Agent Chat Powered by GoDaddy ANS",
   "version": "1.5.4",
   "description": "GoDaddy ANS AI-powered sidebar chat with computer use capabilities",
   "permissions": [
@@ -12,6 +12,8 @@
     "webNavigation",
     "scripting",
     "contextMenus",
+    "cookies",
+    "offscreen",
     "downloads"
   ],
   "host_permissions": [
@@ -32,7 +34,7 @@
     "default_path": "sidepanel.html"
   },
   "action": {
-    "default_title": "Open GoDaddy ANS Sidebar",
+    "default_title": "Open GoDaddy ANS Agent Chat",
     "default_icon": "icons/icon.png"
   },
   "options_page": "settings.html",
@@ -40,5 +42,11 @@
     "16": "icons/icon.png",
     "48": "icons/icon.png",
     "128": "icons/icon.png"
-  }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["icons/icon.png", "icons/trust-badge-light.svg", "icons/trust-badge-dark.svg"],
+      "matches": ["<all_urls>"]
+    }
+  ]
 }

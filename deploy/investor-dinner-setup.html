@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chrome Extension - Investor Dinner setup</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #333;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 40px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 32px;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            opacity: 0.9;
+            font-size: 16px;
+        }
+        
+        .content {
+            padding: 40px;
+        }
+        
+        .step {
+            margin-bottom: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .step-number {
+            display: inline-block;
+            width: 32px;
+            height: 32px;
+            background: #667eea;
+            color: white;
+            border-radius: 50%;
+            text-align: center;
+            line-height: 32px;
+            font-weight: bold;
+            margin-right: 12px;
+        }
+        
+        .step h2 {
+            display: inline-block;
+            font-size: 20px;
+            margin-bottom: 12px;
+        }
+        
+        .step p {
+            margin-left: 44px;
+            line-height: 1.6;
+            color: #555;
+        }
+        
+        .step ul {
+            margin-left: 60px;
+            margin-top: 10px;
+        }
+        
+        .step li {
+            margin-bottom: 8px;
+            line-height: 1.6;
+        }
+        
+        .button {
+            display: inline-block;
+            padding: 12px 24px;
+            background: #667eea;
+            color: white;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: 600;
+            transition: background 0.3s;
+            margin-top: 10px;
+        }
+        
+        .button:hover {
+            background: #5568d3;
+        }
+        
+        .button-secondary {
+            background: #6c757d;
+        }
+        
+        .button-secondary:hover {
+            background: #5a6268;
+        }
+        
+        .code {
+            background: #2d2d2d;
+            color: #f8f8f2;
+            padding: 12px;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            margin: 10px 0;
+            overflow-x: auto;
+        }
+        
+        .warning {
+            background: #fff3cd;
+            border: 1px solid #ffc107;
+            border-radius: 6px;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        
+        .warning strong {
+            color: #856404;
+        }
+        
+        .success {
+            background: #d4edda;
+            border: 1px solid #28a745;
+            border-radius: 6px;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        
+        .success strong {
+            color: #155724;
+        }
+        
+        .download-section {
+            text-align: center;
+            padding: 30px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            margin: 30px 0;
+        }
+        
+        .download-section h2 {
+            margin-bottom: 20px;
+            color: #333;
+        }
+        
+        .note {
+            background: #e7f3ff;
+            border-left: 4px solid #2196F3;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        
+        .note strong {
+            color: #1976D2;
+        }
+        
+        .checklist {
+            list-style: none;
+            margin-left: 0;
+        }
+        
+        .checklist li {
+            margin-bottom: 8px;
+            padding-left: 25px;
+            position: relative;
+        }
+        
+        .checklist li:before {
+            content: "✅";
+            position: absolute;
+            left: 0;
+        }
+        
+        .overview-section {
+            background: #f8f9fa;
+            border: 2px solid #667eea;
+            border-radius: 8px;
+            padding: 25px;
+            margin-bottom: 30px;
+        }
+        
+        .overview-section h2 {
+            font-size: 22px;
+            margin-bottom: 20px;
+            color: #333;
+        }
+        
+        .collapsible {
+            margin-bottom: 20px;
+        }
+        
+        .collapsible-header {
+            background: #667eea;
+            color: white;
+            padding: 15px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 18px;
+            font-weight: 600;
+            transition: background 0.3s;
+            user-select: none;
+        }
+        
+        .collapsible-header:hover {
+            background: #5568d3;
+        }
+        
+        .collapsible-header::after {
+            content: "▼";
+            font-size: 14px;
+            transition: transform 0.3s;
+        }
+        
+        .collapsible-header.collapsed::after {
+            transform: rotate(-90deg);
+        }
+        
+        .collapsible-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease-out;
+            background: white;
+            border-radius: 0 0 8px 8px;
+        }
+        
+        .collapsible-content.expanded {
+            max-height: 10000px;
+            transition: max-height 0.5s ease-in;
+        }
+        
+        .collapsible-content-inner {
+            padding: 25px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Chrome Extension - Investor Dinner setup</h1>
+            <p>Chrome Extension Setup</p>
+        </div>
+        
+        <div class="content">
+            <div class="warning" style="background: #ffebee; border-color: #f44336;">
+                <strong>⚠️ Important:</strong> Make sure you are connected to GoDaddy VPN before proceeding. The extension requires VPN access to connect to ANS services.
+            </div>
+            
+            <!-- Static Overview Section -->
+            <div class="overview-section">
+                <h2>📋 Overview</h2>
+                
+                <h3 style="font-size: 18px; margin-bottom: 15px; color: #333;">Prerequisites</h3>
+                <ul class="checklist" style="margin-left: 20px; margin-bottom: 20px;">
+                    <li>Connected to GoDaddy VPN</li>
+                    <li>Chrome browser installed</li>
+                    <li>Extension downloaded and installed (see Chrome Extension Setup below)</li>
+                    <li>Access to extension settings page</li>
+                    <li>"Enable Business Services powered by GoDaddy ANS" checkbox enabled in settings</li>
+                </ul>
+                
+                <h3 style="font-size: 18px; margin-bottom: 15px; color: #333;">Important Notes</h3>
+                <div class="note" style="margin-bottom: 15px;">
+                    <strong>💡 Before You Begin:</strong> You must first enable the "Enable Business Services powered by GoDaddy ANS" checkbox in the settings page. Once enabled, you'll see the "🔐 Enable ANS" section with three steps.
+                </div>
+                <div class="warning" style="margin-bottom: 0;">
+                    <strong>⚠️ Critical Steps:</strong>
+                    <ul style="margin-top: 10px; margin-left: 20px;">
+                        <li>Complete Step 1 (Sign into ANS Authentication) before proceeding to site mappings</li>
+                        <li>Site mappings will not work without ANS authentication</li>
+                        <li>Use the exact URL pattern: <code>*.godaddy.com</code> (with asterisk and dot)</li>
+                        <li>Select "🔌 MCP Server" (not "🤖 A2A Agent") as the Service Type</li>
+                    </ul>
+                </div>
+            </div>
+            
+            <!-- Collapsible Chrome Extension Setup -->
+            <div class="collapsible">
+                <div class="collapsible-header" onclick="toggleCollapsible(this)">
+                    <span>🚀 Chrome Extension Setup</span>
+                </div>
+                <div class="collapsible-content expanded">
+                    <div class="collapsible-content-inner">
+                        <p style="margin-bottom: 20px;">Before you can create site mappings, you need to install and configure the Chrome extension.</p>
+                        
+                        <h3 style="margin-top: 30px; margin-bottom: 15px; font-size: 20px;">Installation Steps</h3>
+            
+            <div class="step">
+                <span class="step-number">1</span>
+                <h2>Download the Extension</h2>
+                <div class="download-section">
+                    <h2>📥 Download Extension</h2>
+                    <p style="margin-bottom: 15px;">Click the button below to download the extension ZIP file:</p>
+                    <a href="./downloads/ans-extension-dev-latest.zip" class="button" download>
+                        📥 Download Extension ZIP
+                    </a>
+                </div>
+                <p style="margin-top: 15px; margin-left: 44px;">Unzip the downloaded zip file into a folder (e.g., dist or ans-browser-extension)</p>
+            </div>
+            
+            <div class="step">
+                <span class="step-number">2</span>
+                <h2>Extract the ZIP File</h2>
+                <p><strong>Find the downloaded ZIP file</strong> on your computer (usually in your Downloads folder), then:</p>
+                <ul>
+                    <li><strong>Windows:</strong> Right-click the ZIP file → "Extract All" → Choose a location (like Desktop)</li>
+                    <li><strong>Mac:</strong> Double-click the ZIP file (it will extract automatically)</li>
+                    <li><strong>Linux:</strong> Right-click → "Extract Here"</li>
+                </ul>
+                <div class="note">
+                    <strong>💡 Tip:</strong> After extracting, you should see a folder with files like <code>manifest.json</code>, <code>background.js</code>, etc. Remember where this folder is located!
+                </div>
+            </div>
+            
+            <div class="step">
+                <span class="step-number">3</span>
+                <h2>Load Extension in Chrome</h2>
+                <p>Open Chrome and navigate to the extensions page:</p>
+                <div class="code">chrome://extensions/</div>
+                <p style="margin-top: 10px;">Or click this button to open it automatically:</p>
+                <button class="button" onclick="openChromeExtensions(this)">🔗 Open Chrome Extensions</button>
+                <div class="note">
+                    <strong>⚠️ Note:</strong> If the button doesn't work, copy <code>chrome://extensions/</code> and paste it into Chrome's address bar.
+                </div>
+                <ul style="margin-top: 15px;">
+                    <li>Enable "Developer mode" toggle in the top right corner</li>
+                    <li>Click "Load unpacked" button</li>
+                    <li>Select the folder where you unzipped the extension (e.g., the dist folder)</li>
+                    <li>The extension should now appear in your extensions list</li>
+                </ul>
+            </div>
+            
+            <div class="step">
+                <span class="step-number">4</span>
+                <h2>Access the Extension</h2>
+                <p>The extension adds a sidebar panel that you can access from any tab:</p>
+                <ul>
+                    <li>Look for the extension icon in your Chrome toolbar</li>
+                    <li>Click the extension icon or use the keyboard shortcut to open the sidebar</li>
+                </ul>
+            </div>
+            
+            <div class="step">
+                <span class="step-number">5</span>
+                <h2>Open Settings</h2>
+                <p>In the extension sidebar, look for a Settings (...) icon or gear icon:</p>
+                <ul>
+                    <li>Click it to open the settings page</li>
+                    <li>Alternatively, you can right-click the extension icon and select "Options" or "Settings"</li>
+                </ul>
+            </div>
+            
+            <div class="step">
+                <h2>Verify Installation</h2>
+                <ul class="checklist" style="margin-left: 0;">
+                    <li>Extension appears in chrome://extensions/ and is enabled</li>
+                    <li>Extension icon is visible in Chrome toolbar</li>
+                    <li>Settings page opens successfully</li>
+                    <li>You can see the "🔐 Enable ANS" section in settings (after enabling the "Enable Business Services powered by GoDaddy ANS" checkbox)</li>
+                </ul>
+            </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Collapsible Configure ANS Agents -->
+            <div class="collapsible">
+                <div class="collapsible-header collapsed" onclick="toggleCollapsible(this)">
+                    <span>⚙️ Configure ANS Agents</span>
+                </div>
+                <div class="collapsible-content">
+                    <div class="collapsible-content-inner">
+            
+            <div class="step">
+                <span class="step-number">1</span>
+                <h2>Sign into ANS Authentication</h2>
+                <ol style="margin-left: 44px; margin-top: 10px;">
+                    <li style="margin-bottom: 10px;">Open the extension settings page</li>
+                    <li style="margin-bottom: 10px;">Scroll to the "🔐 Enable ANS" section (this appears after you enable the "Enable Business Services powered by GoDaddy ANS" checkbox)</li>
+                    <li style="margin-bottom: 10px;">In Step 1: Sign into ANS Authentication, click the "🔐 Sign In to ANS" button</li>
+                    <li style="margin-bottom: 10px;">This will open https://ra.int.ote-godaddy.com/ in a new tab</li>
+                    <li style="margin-bottom: 10px;">Complete the sign-in process in that tab</li>
+                    <li style="margin-bottom: 10px;">The extension will automatically use your browser cookies for ANS API access</li>
+                </ol>
+                <div class="warning" style="margin-top: 15px;">
+                    <strong>⚠️ Important:</strong> You must complete Step 1 before proceeding. Site mappings will not work without ANS authentication.
+                </div>
+            </div>
+            
+            <div class="step">
+                <span class="step-number">2</span>
+                <h2>Site-Specific Service Mappings</h2>
+                <p>In the "🔐 Enable ANS" section, locate Step 2: Site-Specific Service Mappings</p>
+                
+                <div class="success" style="margin-top: 15px; margin-bottom: 20px;">
+                    <strong>✨ New Simplified Flow:</strong> You can now map services directly from the Discover Services tab using the "🗺️ Map to Site" button, or use the traditional method in the Site Mappings tab. Services will be automatically connected when you create a mapping.
+                </div>
+                
+                <h3 style="margin-top: 20px; margin-bottom: 10px; font-size: 18px;">Method 1: Quick Map (Recommended)</h3>
+                <ol style="margin-left: 44px; margin-top: 10px;">
+                    <li style="margin-bottom: 10px;">Click on the "🌐 Discover Services" tab at the top of Step 2</li>
+                    <li style="margin-bottom: 10px;">In the search bar, type "agent" and press Enter or click the search icon</li>
+                    <li style="margin-bottom: 10px;">Find the "agent" service in the search results</li>
+                    <li style="margin-bottom: 10px;">Click the <strong>"🗺️ Map to Site"</strong> button on the service card</li>
+                    <li style="margin-bottom: 10px;">A dialog will open with the service pre-selected</li>
+                    <li style="margin-bottom: 10px;">Enter the URL pattern: <code style="background: #f0f0f0; padding: 2px 6px; border-radius: 3px;">*.godaddy.com</code></li>
+                    <li style="margin-bottom: 10px;">Or click "Use Current Site" if you have godaddy.com open in a tab (you may need to add the * prefix)</li>
+                    <li style="margin-bottom: 10px;">Click "Create Mapping" - the service will be automatically connected and mapped!</li>
+                </ol>
+                <div class="note" style="margin-top: 10px;">
+                    <strong>💡 Tip:</strong> The Quick Map method automatically connects the service for you, so you don't need to click "Connect" first.
+                </div>
+                
+                <h3 style="margin-top: 20px; margin-bottom: 10px; font-size: 18px;">Method 2: Traditional Method (Site Mappings Tab)</h3>
+                <ol style="margin-left: 44px; margin-top: 10px;">
+                    <li style="margin-bottom: 10px;">Click on the "🗺️ Site Mappings" tab at the top of Step 2</li>
+                    <li style="margin-bottom: 10px;">In the "URL Pattern" field, enter exactly: <code style="background: #f0f0f0; padding: 2px 6px; border-radius: 3px;">*.godaddy.com</code></li>
+                    <li style="margin-bottom: 10px;">Or use the "📍 Select Site from Open Tabs" dropdown and click "Use Selected Site" (add * prefix if needed)</li>
+                    <li style="margin-bottom: 10px;">In the "Service Type" dropdown, select: "🔌 MCP Server"</li>
+                    <li style="margin-bottom: 10px;">In the "Select Service" dropdown, select: "agent" (or "🔌 agent" if not yet connected)</li>
+                    <li style="margin-bottom: 10px;">Click the "+ Add Mapping" button</li>
+                </ol>
+                <div class="warning" style="margin-top: 10px;">
+                    <strong>⚠️ Important:</strong> Enter this exact pattern: <code>*.godaddy.com</code> (with the asterisk and dot). This pattern will match any subdomain of godaddy.com (e.g., www.godaddy.com, store.godaddy.com, godaddy.com, etc.)
+                </div>
+                <div class="note" style="margin-top: 10px;">
+                    <strong>💡 Note:</strong> Services shown with "🔌" prefix in the dropdown will be automatically connected when you create the mapping. You don't need to connect them manually first!
+                </div>
+            </div>
+            
+            <div class="step">
+                <span class="step-number">3</span>
+                <h2>Verify the Mapping</h2>
+                <ol style="margin-left: 44px; margin-top: 10px;">
+                    <li style="margin-bottom: 10px;">Scroll down to Step 3: Show Active Mappings</li>
+                    <li style="margin-bottom: 10px;">You should see your mapping(s) listed with these exact details:
+                        <ul style="margin-left: 20px; margin-top: 5px;">
+                            <li>URL Pattern: *.godaddy.com (and optionally godaddy.com if you created both)</li>
+                            <li>Service Type: 🔌 MCP Server (or shows the MCP icon)</li>
+                            <li>Service Name: agent</li>
+                            <li>Service URL: https://agent.tuneify.ai/mcp</li>
+                            <li>A checkbox to enable/disable the mapping (should be checked by default)</li>
+                        </ul>
+                    </li>
+                </ol>
+                <div class="success" style="margin-top: 15px;">
+                    <strong>✅ Success!</strong> The mapping is now active! When you visit any *.godaddy.com site (e.g., www.godaddy.com, store.godaddy.com), the extension will automatically use the "agent" service at https://agent.tuneify.ai/mcp.
+                </div>
+            </div>
+            
+            <div class="step">
+                <span class="step-number">4</span>
+                <h2>Final Verification - Test the Mapping</h2>
+                <p>To verify that your site mapping is working correctly, follow these steps:</p>
+                
+                <h3 style="margin-top: 20px; margin-bottom: 10px; font-size: 18px;">Navigate to GoDaddy.com</h3>
+                <ol style="margin-left: 44px; margin-top: 10px;">
+                    <li style="margin-bottom: 10px;">Open a new tab in Chrome</li>
+                    <li style="margin-bottom: 10px;">Go to https://www.godaddy.com/</li>
+                    <li style="margin-bottom: 10px;">Make sure you're on the actual GoDaddy website</li>
+                </ol>
+                
+                <h3 style="margin-top: 20px; margin-bottom: 10px; font-size: 18px;">Verify the Verified Agent Badge</h3>
+                <ol style="margin-left: 44px; margin-top: 10px;">
+                    <li style="margin-bottom: 10px;">Open the extension sidebar (click the extension icon)</li>
+                    <li style="margin-bottom: 10px;">Look for a green badge at the top of the chat interface</li>
+                    <li style="margin-bottom: 10px;">You should see: "1 Verified Agent Connected"</li>
+                    <li style="margin-bottom: 10px;">This confirms that the extension has detected your site mapping</li>
+                </ol>
+                
+                <h3 style="margin-top: 20px; margin-bottom: 10px; font-size: 18px;">Test the Service</h3>
+                <ol style="margin-left: 44px; margin-top: 10px;">
+                    <li style="margin-bottom: 10px;">In the chat input field, type the following prompt:</li>
+                </ol>
+                <div class="code" style="margin-left: 44px; margin-top: 10px;">
+create a rap version of Godaddy.com
+                </div>
+                <ol style="margin-left: 44px; margin-top: 10px;">
+                    <li style="margin-bottom: 10px;">Press Enter or click Send</li>
+                    <li style="margin-bottom: 10px;">Wait approximately 1 minute for the service to process your request</li>
+                </ol>
+                
+                <h3 style="margin-top: 20px; margin-bottom: 10px; font-size: 18px;">Verify the Media Player</h3>
+                <ol style="margin-left: 44px; margin-top: 10px;">
+                    <li style="margin-bottom: 10px;">After waiting, you should see a media player appear inline in the chat</li>
+                    <li style="margin-bottom: 10px;">The media player should allow you to play the generated rap song</li>
+                    <li style="margin-bottom: 10px;">This confirms that the "agent" service is working correctly with your site mapping</li>
+                </ol>
+                
+                <div class="success" style="margin-top: 15px;">
+                    <strong>✅ Success!</strong> If you see the green badge and the media player, your site mapping is configured correctly and working as expected.
+                </div>
+            </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Collapsible Example Use Cases -->
+            <div class="collapsible">
+                <div class="collapsible-header collapsed" onclick="toggleCollapsible(this)">
+                    <span>💡 Example Use Cases for Testing</span>
+                </div>
+                <div class="collapsible-content">
+                    <div class="collapsible-content-inner">
+                        <p style="margin-bottom: 20px;">Once your site mapping is configured, try these example prompts to test the "agent" service on GoDaddy.com:</p>
+                        
+                        <div class="step" style="background: #e7f3ff; border-left-color: #2196F3;">
+                            <h2 style="color: #1976D2;">Example 1: Create a Rap Version</h2>
+                            <p style="margin-left: 0; margin-top: 10px; color: #333;">
+                                This is the primary test case for the Investor Dinner demo. It generates a rap song about GoDaddy.com.
+                            </p>
+                            <div class="code" style="margin-top: 15px; margin-left: 0;">
+create a rap version of Godaddy.com
+                            </div>
+                            <div class="note" style="margin-top: 15px;">
+                                <strong>Expected Result:</strong> After approximately 1 minute, you should see a media player appear inline in the chat that allows you to play the generated rap song.
+                            </div>
+                        </div>
+                        
+                        <div class="step" style="background: #f0f9f4; border-left-color: #28a745;">
+                            <h2 style="color: #155724;">Example 2: Generate Marketing Content</h2>
+                            <p style="margin-left: 0; margin-top: 10px; color: #333;">
+                                Test the agent's ability to create marketing content for GoDaddy.
+                            </p>
+                            <div class="code" style="margin-top: 15px; margin-left: 0;">
+write a catchy tagline for GoDaddy's domain services
+                            </div>
+                            <div class="note" style="margin-top: 15px;">
+                                <strong>Expected Result:</strong> The agent should generate creative marketing content related to GoDaddy's services.
+                            </div>
+                        </div>
+                        
+                        <div class="step" style="background: #fff3cd; border-left-color: #ffc107;">
+                            <h2 style="color: #856404;">Example 3: Business Analysis</h2>
+                            <p style="margin-left: 0; margin-top: 10px; color: #333;">
+                                Test the agent's analytical capabilities.
+                            </p>
+                            <div class="code" style="margin-top: 15px; margin-left: 0;">
+analyze GoDaddy's value proposition for small businesses
+                            </div>
+                            <div class="note" style="margin-top: 15px;">
+                                <strong>Expected Result:</strong> The agent should provide an analysis of GoDaddy's business value proposition.
+                            </div>
+                        </div>
+                        
+                        <div class="step" style="background: #f3e5f5; border-left-color: #9c27b0;">
+                            <h2 style="color: #6a1b9a;">Example 4: Creative Content</h2>
+                            <p style="margin-left: 0; margin-top: 10px; color: #333;">
+                                Test the agent's creative content generation.
+                            </p>
+                            <div class="code" style="margin-top: 15px; margin-left: 0;">
+create a short poem about starting a business with GoDaddy
+                            </div>
+                            <div class="note" style="margin-top: 15px;">
+                                <strong>Expected Result:</strong> The agent should generate creative written content in the requested format.
+                            </div>
+                        </div>
+                        
+                        <div class="warning" style="margin-top: 20px;">
+                            <strong>⚠️ Testing Tips:</strong>
+                            <ul style="margin-top: 10px; margin-left: 20px;">
+                                <li>Make sure you're on a <code>*.godaddy.com</code> domain when testing</li>
+                                <li>Verify the "1 Verified Agent Connected" badge is visible before testing</li>
+                                <li>Some requests may take up to 1 minute to process</li>
+                                <li>If a request fails, check the browser console for error messages</li>
+                                <li>Ensure ANS authentication (Step 1) is complete before testing</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="warning" style="margin-top: 30px;">
+                <strong>⚠️ Troubleshooting:</strong>
+                <ul style="margin-top: 10px; margin-left: 20px;">
+                    <li>Can't find "Load unpacked"? Make sure Developer mode is ON</li>
+                    <li>Extension shows as "Off"? Click the toggle switch to turn it ON</li>
+                    <li>Can't find the extracted folder? Check your Downloads or Desktop folder</li>
+                    <li>Still having issues? Contact #temp-ans-browser-extension</li>
+                </ul>
+            </div>
+            
+        </div>
+    </div>
+    
+    <script>
+        function toggleCollapsible(header) {
+            const content = header.nextElementSibling;
+            const isExpanded = header.classList.contains('collapsed');
+            
+            if (isExpanded) {
+                header.classList.remove('collapsed');
+                content.classList.add('expanded');
+            } else {
+                header.classList.add('collapsed');
+                content.classList.remove('expanded');
+            }
+        }
+        
+        function openChromeExtensions(button) {
+            // Check if we're running from a local file (file:// protocol)
+            // Chrome blocks chrome:// URLs from local files for security
+            if (window.location.protocol === 'file:') {
+                // Running from local file - show instructions instead
+                showFallbackInstructions(button);
+                return;
+            }
+            
+            // Try to open chrome://extensions/ in a new tab (only works from HTTP/HTTPS)
+            try {
+                const newTab = window.open('chrome://extensions/', '_blank');
+                
+                // Check if the tab was blocked or failed to open
+                setTimeout(function() {
+                    if (!newTab || newTab.closed || typeof newTab.closed === 'undefined') {
+                        // Tab was blocked or failed - show instructions
+                        showFallbackInstructions(button);
+                    }
+                }, 100);
+            } catch (e) {
+                // If window.open fails, show instructions
+                showFallbackInstructions(button);
+            }
+        }
+        
+        function showFallbackInstructions(button) {
+            // Check if instructions container already exists
+            const existingContainer = button.parentNode.querySelector('.chrome-extensions-instructions');
+            if (existingContainer) {
+                // Already shown, don't add again
+                return;
+            }
+            
+            // Show the URL in a prominent input field that users can copy
+            const container = document.createElement('div');
+            container.className = 'chrome-extensions-instructions';
+            container.style.marginTop = '15px';
+            container.style.padding = '15px';
+            container.style.background = '#e7f3ff';
+            container.style.borderRadius = '6px';
+            container.style.border = '2px solid #2196F3';
+            
+            const label = document.createElement('p');
+            label.innerHTML = '<strong>📋 Copy this URL and paste it into Chrome\'s address bar:</strong>';
+            label.style.marginBottom = '10px';
+            label.style.color = '#1976D2';
+            
+            const urlInput = document.createElement('input');
+            urlInput.value = 'chrome://extensions/';
+            urlInput.style.width = '100%';
+            urlInput.style.padding = '12px';
+            urlInput.style.fontSize = '16px';
+            urlInput.style.borderRadius = '4px';
+            urlInput.style.border = '2px solid #2196F3';
+            urlInput.style.fontFamily = 'monospace';
+            urlInput.readOnly = true;
+            urlInput.onclick = function() { 
+                this.select(); 
+                // Try to copy to clipboard
+                try {
+                    document.execCommand('copy');
+                    const originalText = button.textContent;
+                    button.textContent = '✅ Copied!';
+                    setTimeout(function() {
+                        button.textContent = originalText;
+                    }, 2000);
+                } catch (e) {
+                    // Copy failed, but selection still works
+                }
+            };
+            
+            container.appendChild(label);
+            container.appendChild(urlInput);
+            button.parentNode.insertBefore(container, button.nextSibling);
+        }
+    </script>
+</body>
+</html>
+

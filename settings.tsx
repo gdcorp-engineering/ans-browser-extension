@@ -14,11 +14,44 @@ import {
 import { generateUrlPattern, extractDomain } from './utils';
 
 const PROVIDER_MODELS = {
+  google: [
+    { id: 'gemini-2.5-pro-preview-06-05', name: 'Gemini 2.5 Pro Preview (06-05)', description: 'Latest preview' },
+    { id: 'gemini-2.5-flash-preview-05-20', name: 'Gemini 2.5 Flash Preview (05-20)', description: 'Latest flash preview' },
+    { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', description: 'Fast and efficient' },
+    { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', description: '1M token context' },
+    { id: 'gemini-2.5-flash-thinking-exp-01-21', name: 'Gemini 2.5 Flash Thinking', description: 'Thinking model' },
+    { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash', description: 'Previous generation' },
+    { id: 'gemini-2.0-flash-lite', name: 'Gemini 2.0 Flash Lite', description: 'Lightweight' },
+    { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro', description: 'Stable' },
+    { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash', description: 'Fast' },
+  ],
   anthropic: [
     { id: 'claude-sonnet-4-5-20250929', name: 'Claude Sonnet 4.5', description: 'Latest and most capable' },
-    { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', description: 'Most intelligent model' },
+    { id: 'claude-haiku-4-5-20251110', name: 'Claude Haiku 4.5', description: 'Fast and efficient' },
+    { id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet 4', description: 'Previous flagship' },
+    { id: 'claude-3-7-sonnet-20250219', name: 'Claude 3.7 Sonnet', description: 'Extended context' },
     { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku', description: 'Fastest model' },
+    { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', description: 'Most intelligent model' },
     { id: 'claude-3-opus-20240229', name: 'Claude 3 Opus', description: 'Previous generation' },
+    { id: 'claude-3-haiku-20240307', name: 'Claude 3 Haiku', description: 'Previous generation' },
+  ],
+  openai: [
+    { id: 'gpt-5.1', name: 'GPT-5.1', description: 'Latest flagship' },
+    { id: 'gpt-5.1-codex', name: 'GPT-5.1 Codex', description: 'Code specialized' },
+    { id: 'gpt-5.1-codex-mini', name: 'GPT-5.1 Codex Mini', description: 'Fast coding' },
+    { id: 'gpt-5', name: 'GPT-5', description: 'Flagship model' },
+    { id: 'o3', name: 'o3', description: 'Advanced reasoning' },
+    { id: 'o4-mini', name: 'o4-mini', description: 'Fast reasoning' },
+    { id: 'o1', name: 'o1', description: 'Reasoning model' },
+    { id: 'o1-mini', name: 'o1-mini', description: 'Efficient reasoning' },
+    { id: 'gpt-4.1', name: 'GPT-4.1', description: 'Enhanced GPT-4' },
+    { id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', description: 'Fast GPT-4' },
+    { id: 'gpt-4.1-nano', name: 'GPT-4.1 Nano', description: 'Lightweight' },
+    { id: 'gpt-4o', name: 'GPT-4o', description: 'Most capable' },
+    { id: 'gpt-4o-mini', name: 'GPT-4o Mini', description: 'Fast and affordable' },
+    { id: 'gpt-4-turbo', name: 'GPT-4 Turbo', description: 'Previous generation' },
+    { id: 'gpt-4', name: 'GPT-4', description: 'Classic' },
+    { id: 'gpt-3.5-turbo', name: 'GPT-3.5 Turbo', description: 'Legacy' },
   ],
 };
 
@@ -31,6 +64,7 @@ function SettingsPage() {
     composioApiKey: '',
     mcpEnabled: false,
     mcpServers: [],
+    floatingButtonEnabled: true, // Default to enabled
     siteInstructions: [],
   });
   const [saved, setSaved] = useState(false);
@@ -63,12 +97,16 @@ function SettingsPage() {
   const [fetchLogs, setFetchLogs] = useState<string[]>([]);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [updateChecking, setUpdateChecking] = useState(false);
-  const [updateAvailable, setUpdateAvailable] = useState<{ version: string; downloadUrl: string; releaseNotes?: string } | null>(null);
+  const [updateAvailable, setUpdateAvailable] = useState<{ version: string; downloadUrl: string; releaseNotes?: string; artifactName?: string } | null>(null);
   const [updateError, setUpdateError] = useState<string | null>(null);
   const [updateMessage, setUpdateMessage] = useState<string | null>(null);
+  const [showSignInModal, setShowSignInModal] = useState(false);
+  const [showQuickMapDialog, setShowQuickMapDialog] = useState(false);
+  const [quickMapService, setQuickMapService] = useState<ANSBusinessService | null>(null);
+  const [quickMapUrlPattern, setQuickMapUrlPattern] = useState<string>('');
 
   const CURRENT_VERSION = '1.5.4'; // This should match manifest.json version
-  const GITHUB_REPO = 'gdcorp-engineering/ans-browser-extension';
+  const GITHUB_REPO = 'gdcorp-im/ans-browser-extension-v1-temp';
   const WORKFLOW_NAME = 'build.yml';
 
   // Compare semantic versions (e.g., "1.5.4" vs "1.5.3")
@@ -94,18 +132,26 @@ function SettingsPage() {
     setUpdateAvailable(null);
 
     try {
-      // Fetch latest workflow runs for Prod environment
+      // Fetch latest workflow runs for the build workflow
       const workflowRunsUrl = `https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/${WORKFLOW_NAME}/runs?status=success&per_page=1`;
       const runsResponse = await fetch(workflowRunsUrl);
 
       if (!runsResponse.ok) {
-        throw new Error(`Failed to check for updates: ${runsResponse.status}`);
+        // Handle specific error cases
+        if (runsResponse.status === 404) {
+          throw new Error('Repository or workflow not found. Update checking may not be available for this repository.');
+        } else if (runsResponse.status === 403) {
+          throw new Error('Access denied. Repository may be private or rate limit exceeded.');
+        } else {
+          throw new Error(`Failed to check for updates: ${runsResponse.status} ${runsResponse.statusText}`);
+        }
       }
 
       const runsData = await runsResponse.json();
 
       if (!runsData.workflow_runs || runsData.workflow_runs.length === 0) {
-        throw new Error('No successful builds found');
+        setUpdateMessage('No successful builds found. The workflow may not have run yet.');
+        return;
       }
 
       const latestRun = runsData.workflow_runs[0];
@@ -118,33 +164,50 @@ function SettingsPage() {
       // Compare versions
       const comparison = compareVersions(latestVersion, CURRENT_VERSION);
 
-      // Get artifacts for this run
-      const artifactsUrl = `https://api.github.com/repos/${GITHUB_REPO}/actions/runs/${latestRun.id}/artifacts`;
-      const artifactsResponse = await fetch(artifactsUrl);
-      const artifactsData = await artifactsResponse.json();
+      // Get artifacts for this run (with error handling)
+      let artifact = null;
+      try {
+        const artifactsUrl = `https://api.github.com/repos/${GITHUB_REPO}/actions/runs/${latestRun.id}/artifacts`;
+        const artifactsResponse = await fetch(artifactsUrl);
+        
+        if (artifactsResponse.ok) {
+          const artifactsData = await artifactsResponse.json();
 
-      // Find the Prod artifact
-      const prodArtifact = artifactsData.artifacts?.find((a: any) => a.name === 'extension-prod');
-
-      // Always show update available (for debugging/testing)
-      // Show appropriate message based on version comparison
-      let versionMessage = '';
-      if (comparison > 0) {
-        versionMessage = `Update Available: Version ${latestVersion}`;
-      } else if (comparison === 0) {
-        versionMessage = `Reinstall Current Version: ${latestVersion}`;
-      } else {
-        versionMessage = `Downgrade to Release Version: ${latestVersion} (from dev ${CURRENT_VERSION})`;
+          // Find the latest artifact (prefer prod, then dev, then any extension artifact)
+          const prodArtifact = artifactsData.artifacts?.find((a: any) => 
+            a.name.startsWith('extension-prod-v') || a.name === 'extension-prod'
+          );
+          const devArtifact = artifactsData.artifacts?.find((a: any) => 
+            a.name.startsWith('extension-dev-v') || a.name === 'extension-dev'
+          );
+          const anyExtensionArtifact = artifactsData.artifacts?.find((a: any) => 
+            a.name.startsWith('extension-')
+          );
+          
+          artifact = prodArtifact || devArtifact || anyExtensionArtifact;
+        }
+      } catch (artifactError) {
+        // Artifact fetch failed, but we can still show version info
+        console.warn('Failed to fetch artifacts:', artifactError);
       }
+
+      // Build download URL - link to workflow run page where user can download artifacts
+      const downloadUrl = `https://github.com/${GITHUB_REPO}/actions/runs/${latestRun.id}`;
 
       setUpdateAvailable({
         version: latestVersion,
-        downloadUrl: `https://github.com/${GITHUB_REPO}/actions/runs/${latestRun.id}`,
-        releaseNotes: commitMessage || 'Check GitHub Actions for details'
+        downloadUrl,
+        releaseNotes: commitMessage || 'Check GitHub Actions for details',
+        artifactName: artifact?.name || undefined
       });
     } catch (error) {
       console.error('Update check failed:', error);
-      setUpdateError(error instanceof Error ? error.message : 'Failed to check for updates');
+      const errorMessage = error instanceof Error ? error.message : 'Failed to check for updates';
+      setUpdateError(errorMessage);
+      // Don't show error for 404/403 - these are expected for private repos or missing workflows
+      if (errorMessage.includes('not found') || errorMessage.includes('Access denied')) {
+        setUpdateMessage('Update checking is not available. You can manually check for updates in the GitHub repository.');
+      }
     } finally {
       setUpdateChecking(false);
     }
@@ -515,18 +578,31 @@ function SettingsPage() {
 
     // Find the service details from either connected services or marketplace
     let service = settings.mcpServers?.find(s => s.id === newMapping.serviceId);
+    let needsConnection = false;
 
     if (!service) {
       // Try marketplace services
       const marketplaceService = trustedBusinesses.find(b => b.id === newMapping.serviceId);
       if (marketplaceService) {
+        // Auto-connect: Add service to mcpServers if not already connected
+        needsConnection = true;
         service = {
           id: marketplaceService.id,
           name: marketplaceService.name,
           url: marketplaceService.url,
-          protocol: marketplaceService.protocol,
-          enabled: true
+          protocol: marketplaceService.protocol || 'mcp',
+          enabled: true,
+          isTrusted: true,
+          isCustom: false,
+          businessInfo: {
+            description: marketplaceService.description,
+            category: marketplaceService.capability,
+            location: marketplaceService.location,
+            website: marketplaceService.website,
+            rating: marketplaceService.rating,
+          },
         };
+        console.log('🔌 Auto-connecting service:', service.name);
       }
     }
 
@@ -548,8 +624,14 @@ function SettingsPage() {
 
     console.log('✅ Adding mapping:', mapping);
 
+    // Update settings: add service to mcpServers if needed, then add mapping
+    const updatedServers = needsConnection && service
+      ? [...(settings.mcpServers || []), service as MCPServerConfig]
+      : settings.mcpServers;
+
     const newSettings = {
       ...settings,
+      mcpServers: updatedServers,
       serviceMappings: [...(settings.serviceMappings || []), mapping],
     };
 
@@ -558,6 +640,9 @@ function SettingsPage() {
     // Save to storage immediately
     chrome.storage.local.set({ atlasSettings: newSettings }, () => {
       console.log('💾 Mapping saved to storage');
+      if (needsConnection) {
+        console.log('💾 Service auto-connected');
+      }
       chrome.runtime.sendMessage({ type: 'SETTINGS_UPDATED', action: 'mapping_changed' }, () => {
         if (chrome.runtime.lastError) {
           console.log('Sidebar not active, but settings saved');
@@ -581,6 +666,90 @@ function SettingsPage() {
         urlPattern: pattern,
       });
     }
+  };
+
+  // Quick Map handlers
+  const handleOpenQuickMap = (business: ANSBusinessService) => {
+    setQuickMapService(business);
+    // Auto-detect current site if available
+    if (selectedTabUrl) {
+      setQuickMapUrlPattern(generateUrlPattern(selectedTabUrl));
+    } else {
+      setQuickMapUrlPattern('');
+    }
+    setShowQuickMapDialog(true);
+  };
+
+  const handleCloseQuickMap = () => {
+    setShowQuickMapDialog(false);
+    setQuickMapService(null);
+    setQuickMapUrlPattern('');
+  };
+
+  const handleCreateQuickMapping = () => {
+    if (!quickMapService || !quickMapUrlPattern) {
+      return;
+    }
+
+    // Use the same logic as handleAddMapping but with quick map data
+    const serviceType = (quickMapService.protocol || 'mcp') as 'mcp' | 'a2a';
+    const isAlreadyConnected = settings.mcpServers?.some(s => s.id === quickMapService.id);
+    
+    // Auto-connect if needed
+    let updatedServers = settings.mcpServers || [];
+    if (!isAlreadyConnected) {
+      const newServer: MCPServerConfig = {
+        id: quickMapService.id,
+        name: quickMapService.name,
+        url: quickMapService.url,
+        protocol: quickMapService.protocol || 'mcp',
+        enabled: true,
+        isTrusted: true,
+        isCustom: false,
+        businessInfo: {
+          description: quickMapService.description,
+          category: quickMapService.capability,
+          location: quickMapService.location,
+          website: quickMapService.website,
+          rating: quickMapService.rating,
+        },
+      };
+      updatedServers = [...updatedServers, newServer];
+      console.log('🔌 Auto-connecting service:', newServer.name);
+    }
+
+    const mapping: ServiceMapping = {
+      id: Date.now().toString(),
+      urlPattern: quickMapUrlPattern,
+      serviceType: serviceType,
+      serviceId: quickMapService.id,
+      serviceName: quickMapService.name,
+      serviceUrl: quickMapService.url,
+      enabled: true,
+      createdAt: Date.now(),
+    };
+
+    const newSettings = {
+      ...settings,
+      mcpServers: updatedServers,
+      serviceMappings: [...(settings.serviceMappings || []), mapping],
+    };
+
+    setSettings(newSettings);
+
+    // Save to storage
+    chrome.storage.local.set({ atlasSettings: newSettings }, () => {
+      console.log('💾 Quick mapping saved to storage');
+      chrome.runtime.sendMessage({ type: 'SETTINGS_UPDATED', action: 'mapping_changed' }, () => {
+        if (chrome.runtime.lastError) {
+          console.log('Sidebar not active, but settings saved');
+        }
+      });
+    });
+
+    // Close dialog and switch to mappings tab to show result
+    handleCloseQuickMap();
+    setActiveTab('mappings');
   };
 
   const handleToggleMapping = (id: string) => {
@@ -905,7 +1074,40 @@ function SettingsPage() {
             </button>
           </div>
           <p className="help-text">
-            Get your GoCode API key from: <a href="https://caas.godaddy.com/gocode/my-api-keys" target="_blank" rel="noopener noreferrer">https://caas.godaddy.com/gocode/my-api-keys</a>
+            Get your GoCode Key from{' '}
+            <a 
+              href="https://secureservernet.sharepoint.com/sites/AIHub/SitePages/Meet-GoCode-(Alpha)--Your-smarter-gateway-to-AI-providers%E2%80%94Now-with-self-issued-keys-for-IDEs-and-CLIs.aspx#how-to-get-started-(alpha)" 
+              target="_blank" 
+              rel="noopener noreferrer"
+            >
+              GoCode (Alpha) - How to Get Started
+            </a>
+            {' '}or get your GoCode API key from: <a href="https://caas.godaddy.com/gocode/my-api-keys" target="_blank" rel="noopener noreferrer">https://caas.godaddy.com/gocode/my-api-keys</a>
+          </p>
+        </div>
+
+        <div className="setting-group">
+          <label style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <input
+              type="checkbox"
+              checked={settings.floatingButtonEnabled !== false}
+              onChange={(e) => {
+                const newSettings = { ...settings, floatingButtonEnabled: e.target.checked };
+                setSettings(newSettings);
+                // Auto-save and notify content scripts
+                chrome.storage.local.set({ atlasSettings: newSettings }, () => {
+                  chrome.runtime.sendMessage({ type: 'SETTINGS_UPDATED', action: 'floating_button_changed' }, () => {
+                    if (chrome.runtime.lastError) {
+                      console.log('Settings saved');
+                    }
+                  });
+                });
+              }}
+            />
+            Show Floating Button
+          </label>
+          <p className="help-text">
+            Show the "Ask GoDaddy ANS" floating button on web pages. When disabled, you can still access the sidebar via the extension icon.
           </p>
         </div>
 
@@ -916,12 +1118,13 @@ function SettingsPage() {
               checked={settings.mcpEnabled || false}
               onChange={(e) => setSettings({ ...settings, mcpEnabled: e.target.checked })}
             />
-            Enable Business Services
+            Enable Business Services powered by GoDaddy ANS
           </label>
           <p className="help-text">
             🌐 Access 115 Million verified GoDaddy customer services through AI chat. Book appointments, place orders, and interact with businesses naturally.
           </p>
         </div>
+
 
         <div className="setting-group">
           <label style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -1057,7 +1260,7 @@ function SettingsPage() {
                 </div>
                 <button
                   onClick={() => {
-                    window.open('https://ra.int.ote-godaddy.com/', '_blank');
+                    setShowSignInModal(true);
                   }}
                   style={{
                     padding: '12px 20px',
@@ -1077,6 +1280,118 @@ function SettingsPage() {
                 <p style={{ fontSize: '12px', color: '#666', margin: 0, fontStyle: 'italic' }}>
                   ⚠️ Required first step. The extension uses your browser cookies to access the ANS API.
                 </p>
+                
+                {/* Sign In Modal */}
+                {showSignInModal && (
+                  <div style={{
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    background: 'rgba(0, 0, 0, 0.5)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 10000,
+                    padding: '20px'
+                  }}
+                  onClick={(e) => {
+                    if (e.target === e.currentTarget) {
+                      setShowSignInModal(false);
+                    }
+                  }}
+                  >
+                    <div style={{
+                      background: 'white',
+                      borderRadius: '12px',
+                      padding: '30px',
+                      maxWidth: '500px',
+                      width: '100%',
+                      boxShadow: '0 10px 40px rgba(0, 0, 0, 0.2)'
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                    >
+                      <h2 style={{
+                        fontSize: '20px',
+                        fontWeight: 'bold',
+                        marginBottom: '16px',
+                        color: '#333'
+                      }}>
+                        🔐 Sign In to ANS
+                      </h2>
+                      
+                      <div style={{
+                        background: '#f0f7ff',
+                        border: '2px solid #007bff',
+                        borderRadius: '8px',
+                        padding: '16px',
+                        marginBottom: '20px'
+                      }}>
+                        <p style={{
+                          fontSize: '14px',
+                          color: '#333',
+                          marginBottom: '12px',
+                          lineHeight: '1.6'
+                        }}>
+                          <strong>What will happen:</strong>
+                        </p>
+                        <ol style={{
+                          fontSize: '14px',
+                          color: '#333',
+                          paddingLeft: '20px',
+                          marginBottom: 0,
+                          lineHeight: '1.8'
+                        }}>
+                          <li>A new tab will open to <strong>ra.int.ote-godaddy.com</strong></li>
+                          <li>Complete the sign-in process in that tab</li>
+                          <li><strong>After signing in, close that tab</strong> and return here</li>
+                          <li>The extension will automatically use your browser cookies for ANS API access</li>
+                        </ol>
+                      </div>
+                      
+                      <div style={{
+                        display: 'flex',
+                        gap: '12px',
+                        justifyContent: 'flex-end'
+                      }}>
+                        <button
+                          onClick={() => setShowSignInModal(false)}
+                          style={{
+                            padding: '10px 20px',
+                            background: '#f3f4f6',
+                            color: '#333',
+                            border: '1px solid #d1d5db',
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            fontSize: '14px',
+                            fontWeight: '500'
+                          }}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={() => {
+                            setShowSignInModal(false);
+                            window.open('https://ra.int.ote-godaddy.com/', '_blank');
+                          }}
+                          style={{
+                            padding: '10px 20px',
+                            background: '#007bff',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            fontSize: '14px',
+                            fontWeight: '500'
+                          }}
+                        >
+                          Open Sign-In Page
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Visual Connector */}
@@ -1295,9 +1610,22 @@ function SettingsPage() {
                     >
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
                         <div style={{ flex: 1 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', flexWrap: 'wrap' }}>
                             <div style={{ fontWeight: 'bold', fontSize: '16px' }}>{business.name}</div>
                             <span style={{ background: '#28a745', color: 'white', padding: '2px 8px', borderRadius: '12px', fontSize: '11px' }}>✓ Verified</span>
+                            {(() => {
+                              const mappedCount = (settings.serviceMappings || []).filter(
+                                m => m.serviceId === business.id
+                              ).length;
+                              if (mappedCount > 0) {
+                                return (
+                                  <span style={{ background: '#007bff', color: 'white', padding: '2px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: '500' }}>
+                                    🗺️ {mappedCount} mapping{mappedCount > 1 ? 's' : ''}
+                                  </span>
+                                );
+                              }
+                              return null;
+                            })()}
                           </div>
 
                           {business.description && (
@@ -1313,25 +1641,109 @@ function SettingsPage() {
                             {business.connectionCount && ` • ${business.connectionCount} connections`}
                           </div>
 
-                          <div style={{ fontSize: '11px', color: '#999', fontFamily: 'monospace' }}>
+                          {/* Mapped sites list */}
+                          {(() => {
+                            const mappings = (settings.serviceMappings || []).filter(
+                              m => m.serviceId === business.id && m.enabled
+                            );
+                            if (mappings.length > 0) {
+                              return (
+                                <div style={{ fontSize: '12px', color: '#007bff', marginBottom: '4px', marginTop: '8px' }}>
+                                  <div style={{ fontWeight: '500', marginBottom: '4px' }}>
+                                    🗺️ Mapped to: {mappings.length} site{mappings.length > 1 ? 's' : ''}
+                                  </div>
+                                  <div style={{ fontSize: '11px', color: '#666', display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                                    {mappings.slice(0, 3).map((m, idx) => (
+                                      <span
+                                        key={m.id}
+                                        style={{
+                                          background: '#e7f3ff',
+                                          color: '#007bff',
+                                          padding: '2px 6px',
+                                          borderRadius: '4px',
+                                          fontFamily: 'monospace',
+                                          fontSize: '10px'
+                                        }}
+                                      >
+                                        {m.urlPattern}
+                                      </span>
+                                    ))}
+                                    {mappings.length > 3 && (
+                                      <span style={{ color: '#666', fontSize: '10px' }}>
+                                        +{mappings.length - 3} more
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            }
+                            return null;
+                          })()}
+
+                          {/* Available Tools */}
+                          {business.availableServices && business.availableServices.length > 0 && (
+                            <div style={{ marginTop: '8px', marginBottom: '4px' }}>
+                              <div style={{ fontSize: '12px', fontWeight: '500', color: '#333', marginBottom: '4px' }}>
+                                Available Tools:
+                              </div>
+                              <div style={{ fontSize: '11px', color: '#666', display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                                {business.availableServices.map((service, idx) => (
+                                  <span
+                                    key={idx}
+                                    style={{
+                                      background: '#e7f3ff',
+                                      color: '#007bff',
+                                      padding: '2px 6px',
+                                      borderRadius: '4px',
+                                      fontSize: '10px'
+                                    }}
+                                  >
+                                    {service}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          <div style={{ fontSize: '11px', color: '#999', fontFamily: 'monospace', marginTop: '4px' }}>
                             ID: {business.id}
                           </div>
                         </div>
 
-                        <button
-                          onClick={() => connected ? handleDisconnectBusiness(business.id) : handleConnectBusiness(business)}
-                          style={{
-                            padding: '8px 16px',
-                            background: connected ? '#dc3545' : '#28a745',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '4px',
-                            cursor: 'pointer',
-                            fontSize: '13px'
-                          }}
-                        >
-                          {connected ? 'Disconnect' : 'Connect'}
-                        </button>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'flex-end' }}>
+                          <button
+                            onClick={() => handleOpenQuickMap(business)}
+                            style={{
+                              padding: '8px 16px',
+                              background: '#007bff',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '4px',
+                              cursor: 'pointer',
+                              fontSize: '13px',
+                              fontWeight: '500',
+                              whiteSpace: 'nowrap'
+                            }}
+                            title="Quickly map this service to a website"
+                          >
+                            🗺️ Map to Site
+                          </button>
+                          <button
+                            onClick={() => connected ? handleDisconnectBusiness(business.id) : handleConnectBusiness(business)}
+                            style={{
+                              padding: '8px 16px',
+                              background: connected ? '#dc3545' : '#28a745',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '4px',
+                              cursor: 'pointer',
+                              fontSize: '13px',
+                              whiteSpace: 'nowrap'
+                            }}
+                          >
+                            {connected ? 'Disconnect' : 'Connect'}
+                          </button>
+                        </div>
                       </div>
                     </div>
                   );
@@ -1562,11 +1974,14 @@ function SettingsPage() {
 
                     return filtered.map(s => (
                       <option key={s.id} value={s.id}>
-                        {s.isConnected ? '✓ ' : ''}{s.name} ({s.url})
+                        {s.isConnected ? '✓ ' : '🔌 '}{s.name} ({s.url}){!s.isConnected ? ' - will auto-connect' : ''}
                       </option>
                     ));
                   })()}
                 </select>
+                <p style={{ fontSize: '11px', color: '#666', marginTop: '4px', fontStyle: 'italic' }}>
+                  💡 Services not yet connected will be automatically connected when you create the mapping
+                </p>
               </div>
 
               <button
@@ -1962,6 +2377,137 @@ function SettingsPage() {
           <p>Your API keys are stored locally in your browser and only sent to the respective AI providers. Never shared with third parties.</p>
         </div>
       </div>
+
+      {/* Quick Map Dialog */}
+      {showQuickMapDialog && quickMapService && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0, 0, 0, 0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 10000,
+          }}
+          onClick={handleCloseQuickMap}
+        >
+          <div
+            style={{
+              background: 'white',
+              borderRadius: '12px',
+              padding: '30px',
+              maxWidth: '500px',
+              width: '90%',
+              boxShadow: '0 10px 40px rgba(0,0,0,0.3)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ marginBottom: '20px' }}>
+              <h2 style={{ marginBottom: '10px', fontSize: '20px', color: '#333' }}>
+                🗺️ Map Service to Site
+              </h2>
+              <p style={{ fontSize: '14px', color: '#666', marginBottom: '15px' }}>
+                Create a site mapping for <strong>{quickMapService.name}</strong>
+              </p>
+            </div>
+
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#333', marginBottom: '8px' }}>
+                Service
+              </label>
+              <div style={{
+                padding: '12px',
+                background: '#f8f9fa',
+                borderRadius: '6px',
+                border: '1px solid #ddd',
+                fontSize: '14px',
+              }}>
+                <div style={{ fontWeight: '600', marginBottom: '4px' }}>{quickMapService.name}</div>
+                <div style={{ fontSize: '12px', color: '#666', fontFamily: 'monospace' }}>
+                  {quickMapService.url}
+                </div>
+                <div style={{ fontSize: '12px', color: '#666', marginTop: '4px' }}>
+                  Type: {quickMapService.protocol === 'a2a' ? '🤖 A2A Agent' : '🔌 MCP Server'}
+                </div>
+              </div>
+            </div>
+
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#333', marginBottom: '8px' }}>
+                URL Pattern
+              </label>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <input
+                  type="text"
+                  value={quickMapUrlPattern}
+                  onChange={(e) => setQuickMapUrlPattern(e.target.value)}
+                  placeholder="e.g., *.godaddy.com or godaddy.com"
+                  className="api-key-input"
+                  style={{ flex: 1, marginBottom: 0 }}
+                />
+                {selectedTabUrl && (
+                  <button
+                    onClick={() => setQuickMapUrlPattern(generateUrlPattern(selectedTabUrl))}
+                    style={{
+                      padding: '8px 16px',
+                      background: '#28a745',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      fontSize: '13px',
+                      whiteSpace: 'nowrap'
+                    }}
+                  >
+                    Use Current Site
+                  </button>
+                )}
+              </div>
+              <p style={{ fontSize: '12px', color: '#666', marginTop: '6px' }}>
+                Use <code>*.domain.com</code> to match all subdomains
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <button
+                onClick={handleCloseQuickMap}
+                style={{
+                  padding: '10px 20px',
+                  background: '#6c757d',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCreateQuickMapping}
+                disabled={!quickMapUrlPattern}
+                style={{
+                  padding: '10px 20px',
+                  background: (!quickMapUrlPattern) ? '#6c757d' : '#007bff',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: (!quickMapUrlPattern) ? 'not-allowed' : 'pointer',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  opacity: (!quickMapUrlPattern) ? 0.5 : 1,
+                }}
+              >
+                Create Mapping
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
