@@ -1494,6 +1494,24 @@ function ChatSidebar() {
     };
   }, [currentTabUrl, settings?.serviceMappings, settings?.mcpServers, browserToolsEnabled]);
 
+  /**
+   * Check if there's a trusted service mapping for the current site
+   * Returns true if there's at least one enabled mapping (MCP or A2A) for the current URL
+   */
+  const hasTrustedMappingForCurrentSite = (): boolean => {
+    if (!currentTabUrl || !settings?.serviceMappings) {
+      return false;
+    }
+
+    // Skip chrome:// and chrome-extension:// URLs
+    if (currentTabUrl.startsWith('chrome://') || currentTabUrl.startsWith('chrome-extension://')) {
+      return false;
+    }
+
+    const { a2aMapping, mcpServerIds } = findMatchingMappings(currentTabUrl, settings.serviceMappings);
+    return a2aMapping !== null || mcpServerIds.length > 0;
+  };
+
   // Comprehensive page analysis based on content, structure, and semantic HTML
   const analyzePageCharacteristics = (context: any) => {
     const title = context.title || '';
