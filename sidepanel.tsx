@@ -5199,11 +5199,12 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
                 };
               }
 
+              // Define executionStartTime before try block so it's available in catch
+              const executionStartTime = Date.now();
               try {
-                const executionStartTime = Date.now();
                 setIsToolExecuting(true);
                 console.log(`🔧 Executing MCP tool: ${toolName}`);
-                const mcpService = getTabMCPService();
+                const mcpService = getTabMcpService();
                 const result = await mcpService.executeToolCall(toolName, params);
                 setIsToolExecuting(false);
                 return result;
@@ -5645,11 +5646,28 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
                     };
                   }
 
+                  // Show typing indicator immediately when MCP tool is detected
+                  setIsToolExecuting(true);
+
                   // Execute MCP tool
+                  const executionStartTime = Date.now();
                   try {
-                    // Show typing indicator while tool is executing
-                    setIsToolExecuting(true);
-                    const result = await mcpService.executeToolCall(toolName, params);
+                    console.log(`🔧 Executing MCP tool "${toolName}" with params:`, JSON.stringify(params, null, 2));
+                    
+                    // Add timeout to prevent hanging (2.5 minutes to match MCP service timeout)
+                    const timeoutMs = 150000; // 2.5 minutes
+                    const timeoutPromise = new Promise<never>((_, reject) => {
+                      setTimeout(() => reject(new Error(`MCP tool "${toolName}" execution timed out after ${timeoutMs/1000} seconds`)), timeoutMs);
+                    });
+                    
+                    console.log(`⏳ Starting MCP tool execution (timeout: ${timeoutMs/1000}s)...`);
+                    const result = await Promise.race([
+                      mcpService.executeToolCall(toolName, params),
+                      timeoutPromise
+                    ]);
+                    const executionDuration = Date.now() - executionStartTime;
+                    console.log(`✅ MCP tool "${toolName}" executed successfully in ${executionDuration}ms`);
+                    
                     // Hide typing indicator when tool completes
                     setIsToolExecuting(false);
 
@@ -5712,7 +5730,28 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
 
                     return result;
                   } catch (error: any) {
-                    console.error(`❌ MCP tool execution failed:`, error);
+                    const executionDuration = Date.now() - executionStartTime;
+                    console.error(`❌ MCP tool execution failed after ${executionDuration}ms:`, error);
+                    console.error(`   Error type: ${error?.constructor?.name}`);
+                    console.error(`   Error message: ${error?.message}`);
+                    console.error(`   Error stack: ${error?.stack}`);
+                    setIsToolExecuting(false); // Hide indicator on error
+                    
+                    // Check if it's a timeout error
+                    const errorMessage = error.message || 'MCP tool execution failed';
+                    const isTimeout = errorMessage.includes('timed out') || 
+                                     errorMessage.includes('took too long') ||
+                                     errorMessage.includes('timeout');
+                    
+                    console.log(`   Is timeout: ${isTimeout}`);
+                    
+                    // Return user-friendly error message
+                    return { 
+                      error: isTimeout 
+                        ? 'The request took too long and timed out. Please try again later or try a different approach.'
+                        : errorMessage,
+                      timeout: isTimeout
+                    };
                   }
                 } else {
                   // Browser tool requested but browser tools not enabled
