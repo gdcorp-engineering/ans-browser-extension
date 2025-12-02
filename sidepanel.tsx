@@ -6781,11 +6781,20 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             {badgeData.hasServices ? (
-              <img 
-                src={chrome.runtime.getURL('icons/trust-badge.svg')} 
-                alt="Trust Badge" 
-                style={{ width: '16px', height: '16px' }}
-              />
+              <>
+                <img 
+                  src={chrome.runtime.getURL('icons/trust-badge-light.svg')} 
+                  alt="Trust Badge" 
+                  style={{ width: '16px', height: '16px', display: 'none' }}
+                  className="trust-badge-icon trust-badge-light"
+                />
+                <img 
+                  src={chrome.runtime.getURL('icons/trust-badge-dark.svg')} 
+                  alt="Trust Badge" 
+                  style={{ width: '16px', height: '16px' }}
+                  className="trust-badge-icon trust-badge-dark"
+                />
+              </>
             ) : (
               <span style={{ fontSize: '16px' }}>○</span>
             )}

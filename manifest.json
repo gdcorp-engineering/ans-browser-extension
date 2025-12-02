@@ -45,7 +45,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["icons/icon.png", "icons/trust-badge.svg"],
+      "resources": ["icons/icon.png", "icons/trust-badge-light.svg", "icons/trust-badge-dark.svg"],
       "matches": ["<all_urls>"]
     }
   ]

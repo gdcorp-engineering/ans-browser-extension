@@ -821,6 +821,20 @@ body {
 }
 
 /* Dark Mode Styles */
+/* Trust badge icons - show dark mode version in dark mode, light mode version otherwise */
+.chat-container.dark-mode .trust-badge-light {
+  display: none !important;
+}
+.chat-container.dark-mode .trust-badge-dark {
+  display: inline-block !important;
+}
+.chat-container:not(.dark-mode) .trust-badge-light {
+  display: inline-block !important;
+}
+.chat-container:not(.dark-mode) .trust-badge-dark {
+  display: none !important;
+}
+
 .chat-container.dark-mode {
   background: #1a1a1a;
   color: #ffffff;
