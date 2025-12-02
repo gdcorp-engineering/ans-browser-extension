@@ -52,8 +52,10 @@ export default defineConfig({
             mkdirSync(distIconsDir, { recursive: true });
           }
 
-          // Copy all PNG icons
-          const iconFiles = readdirSync(iconsDir).filter((f: string) => f.endsWith('.png'));
+          // Copy all PNG and SVG icons
+          const iconFiles = readdirSync(iconsDir).filter((f: string) => 
+            f.endsWith('.png') || f.endsWith('.svg')
+          );
 
           iconFiles.forEach((file: string) => {
             copyFileSync(
