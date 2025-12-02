@@ -1435,12 +1435,13 @@ function ChatSidebar() {
     const hasServices = hasMappedMCPs || hasMappedA2A;
 
     const serviceText = (() => {
+      const totalCount = (hasMappedA2A ? 1 : 0) + mappedServices.mcpServerIds.length;
       if (hasMappedA2A && hasMappedMCPs) {
-        return `Trusted services: ${mappedServices.a2aMapping!.serviceName} + ${mappedServices.mcpServerIds.length} ANS certified server(s)`;
+        return `${totalCount} Verified Agents Connected`;
       } else if (hasMappedA2A) {
-        return `Trusted agent: ${mappedServices.a2aMapping!.serviceName}`;
+        return `${totalCount} Verified Agents Connected`;
       } else if (hasMappedMCPs) {
-        return `ANS certified: ${mappedServices.mcpServerIds.length} mapped`;
+        return `${totalCount} Verified Agents Connected`;
       } else {
         return 'No trusted services for this site';
       }
@@ -6779,7 +6780,15 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
           justifyContent: 'space-between',
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '16px' }}>{badgeData.hasServices ? '✓' : '○'}</span>
+            {badgeData.hasServices ? (
+              <img 
+                src={chrome.runtime.getURL('icons/trust-badge.svg')} 
+                alt="Trust Badge" 
+                style={{ width: '16px', height: '16px' }}
+              />
+            ) : (
+              <span style={{ fontSize: '16px' }}>○</span>
+            )}
             <span>{String(badgeData.serviceText || '')}</span>
           </div>
           {badgeData.hasMappedA2A && (
