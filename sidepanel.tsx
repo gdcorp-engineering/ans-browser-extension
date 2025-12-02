@@ -6273,14 +6273,7 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
           <p style={{ marginBottom: '8px', fontSize: '16px', fontWeight: 500 }}>Let's get your new companion tailored for you.</p>
           <button
             onClick={() => {
-              const startOnboarding = () => {
-                setOnboardingState({
-                  active: true,
-                  step: 'provider',
-                  tempSettings: {}
-                });
-              };
-              startOnboarding();
+              chrome.runtime.openOptionsPage();
             }}
             style={{ 
               width: 'auto', 
