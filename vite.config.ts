@@ -64,7 +64,9 @@ export default defineConfig({
               return;
             }
             // Security: Resolve paths and verify they're within expected directories
+            // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal
             const sourcePath = resolve(iconsDir, file);
+            // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal
             const destPath = resolve(distIconsDir, file);
             // Verify resolved paths are within expected directories
             if (!sourcePath.startsWith(resolve(__dirname, 'icons')) || 

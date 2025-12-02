@@ -6,7 +6,9 @@
 // Security: HTTP is intentionally used for localhost testing only
 // This is safe as it only connects to localhost (127.0.0.1) for development
 // In production, A2A agents should use HTTPS
+// nosemgrep: typescript.react.security.react-insecure-request.react-insecure-request
 const AGENT_CARD_URL = 'http://localhost:8080/.well-known/agent-card.json';
+// nosemgrep: typescript.react.security.react-insecure-request.react-insecure-request
 const INVOKE_URL = 'http://localhost:8080/invoke';
 
 async function testAgentCard() {

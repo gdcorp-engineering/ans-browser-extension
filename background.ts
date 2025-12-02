@@ -201,6 +201,7 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
     (async () => {
       try {
         // Security: Use separate arguments instead of template literal to avoid format string issues
+        // nosemgrep: javascript.lang.security.audit.unsafe-formatstring.unsafe-formatstring
         console.log('[Background] Received', request.type, 'request from:', _sender.url || 'unknown');
         
         // Ensure offscreen document exists

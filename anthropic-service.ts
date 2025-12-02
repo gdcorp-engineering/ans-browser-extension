@@ -215,6 +215,7 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
         // Log unexpected types for debugging
         else if (json.type) {
           // Security: Use separate arguments instead of template literal to avoid format string issues
+          // nosemgrep: javascript.lang.security.audit.unsafe-formatstring.unsafe-formatstring
           console.debug('[Anthropic Service] Received unexpected chunk type:', json.type, json);
         }
       } catch (e) {
