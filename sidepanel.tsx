@@ -7008,7 +7008,55 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
               <div className="message-content">
                 {message.content || (isLoading && message.role === 'assistant') ? (
                   message.role === 'assistant' ? (
-                    <MessageParser content={String(message.content)} />
+                    <>
+                      <MessageParser content={String(message.content)} />
+                      {/* Show typing indicator while tools are executing (only on last assistant message, and not if audio player is shown) */}
+                      {isToolExecuting && isLastAssistantMessage && !message.audioLink && (
+                        <div className="typing-indicator" style={{ marginTop: '8px' }}>
+                          <span></span>
+                          <span></span>
+                          <span></span>
+                        </div>
+                      )}
+                      {/* Audio player for generated music/audio */}
+                      {(() => {
+                        const audioLink = message.audioLink;
+                        if (audioLink && typeof audioLink === 'string' && audioLink.trim().length > 0) {
+                          console.log(`🔍 Rendering audio player for message ${message.id}:`, audioLink);
+                          return (
+                            <div style={{
+                              marginTop: '16px',
+                              padding: '16px',
+                              background: '#f5f5f5',
+                              borderRadius: '12px',
+                              border: '1px solid #e0e0e0'
+                            }}>
+                              <audio
+                                controls
+                                style={{
+                                  width: '100%',
+                                  height: '50px',
+                                  outline: 'none'
+                                }}
+                                src={audioLink}
+                                onError={(e) => {
+                                  console.error('❌ Audio playback error:', e);
+                                  console.error('   Audio source:', audioLink);
+                                }}
+                                onLoadedData={() => {
+                                  console.log('✅ Audio loaded successfully:', audioLink);
+                                }}
+                              >
+                                Your browser does not support the audio element.
+                              </audio>
+                            </div>
+                          );
+                        } else if (audioLink) {
+                          console.warn(`⚠️ Invalid audioLink format for message ${message.id}:`, typeof audioLink, audioLink);
+                        }
+                        return null;
+                      })()}
+                    </>
                   ) : (
                     <UserMessageParser content={String(message.content)} />
                   )
