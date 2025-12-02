@@ -1406,7 +1406,47 @@ function SettingsPage() {
                             {business.connectionCount && ` • ${business.connectionCount} connections`}
                           </div>
 
-                          <div style={{ fontSize: '11px', color: '#999', fontFamily: 'monospace' }}>
+                          {/* ANS certified: # mapped */}
+                          {(() => {
+                            const mappedCount = (settings.serviceMappings || []).filter(
+                              m => m.serviceId === business.id
+                            ).length;
+                            if (mappedCount > 0) {
+                              return (
+                                <div style={{ fontSize: '12px', color: '#28a745', fontWeight: '500', marginBottom: '4px', marginTop: '8px' }}>
+                                  ✓ ANS certified: {mappedCount} mapped
+                                </div>
+                              );
+                            }
+                            return null;
+                          })()}
+
+                          {/* Available Tools */}
+                          {business.availableServices && business.availableServices.length > 0 && (
+                            <div style={{ marginTop: '8px', marginBottom: '4px' }}>
+                              <div style={{ fontSize: '12px', fontWeight: '500', color: '#333', marginBottom: '4px' }}>
+                                Available Tools:
+                              </div>
+                              <div style={{ fontSize: '11px', color: '#666', display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                                {business.availableServices.map((service, idx) => (
+                                  <span
+                                    key={idx}
+                                    style={{
+                                      background: '#e7f3ff',
+                                      color: '#007bff',
+                                      padding: '2px 6px',
+                                      borderRadius: '4px',
+                                      fontSize: '10px'
+                                    }}
+                                  >
+                                    {service}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          <div style={{ fontSize: '11px', color: '#999', fontFamily: 'monospace', marginTop: '4px' }}>
                             ID: {business.id}
                           </div>
                         </div>
