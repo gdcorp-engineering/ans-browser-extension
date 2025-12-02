@@ -4,7 +4,8 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { Settings, MCPClient, Message, ChatHistory, Provider, SiteInstruction, ServiceMapping } from './types';
 import { GeminiResponseSchema } from './types';
-import { experimental_createMCPClient, stepCountIs } from 'ai';
+import { stepCountIs } from 'ai';
+import { experimental_createMCPClient } from '@ai-sdk/mcp';
 import { streamAnthropic } from './anthropic-service';
 import { streamAnthropicWithBrowserTools } from './anthropic-browser-tools';
 import { streamOpenAI } from './openai-service';
@@ -5673,7 +5674,9 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
 
                     // Check if result has audioLink (for music generation tools)
                     if (result && typeof result === 'object') {
-                      const audioLink = result.audioLink || result.audio_link || result.audioUrl;
+                      // Check multiple possible locations for audioLink
+                      const audioLink = result.audioLink || result.audio_link || result.audioUrl ||
+                                       (result.result && (result.result.audioLink || result.result.audio_link || result.result.audioUrl));
                       if (audioLink) {
                         console.log(`🎵 MCP tool returned audio link: ${audioLink}`);
                         console.log(`🎵 Full result object:`, JSON.stringify(result, null, 2));
@@ -7019,7 +7022,7 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
                           <span></span>
                         </div>
                       )}
-                      {/* Audio player for generated music/audio - shows below message content */}
+                      {/* Audio player and link for generated music/audio - shows below message content */}
                       {(() => {
                         const audioLink = message.audioLink;
                         if (audioLink && typeof audioLink === 'string' && audioLink.trim().length > 0) {
@@ -7032,6 +7035,31 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
                               borderRadius: '12px',
                               border: '1px solid #e0e0e0'
                             }}>
+                              {/* Audio link */}
+                              <div style={{
+                                marginBottom: '12px',
+                                fontSize: '14px',
+                                color: '#666'
+                              }}>
+                                <span style={{ marginRight: '8px' }}>🎧</span>
+                                <span>Listen to it here: </span>
+                                <a
+                                  href={audioLink}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  style={{
+                                    color: '#0066cc',
+                                    textDecoration: 'underline',
+                                    wordBreak: 'break-all'
+                                  }}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                  }}
+                                >
+                                  {audioLink}
+                                </a>
+                              </div>
+                              {/* Embedded audio player */}
                               <audio
                                 controls
                                 style={{

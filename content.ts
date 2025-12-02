@@ -3080,6 +3080,15 @@ function showANSFloatingButtonInternal() {
   // Create button container
   ansFloatingButton = document.createElement('div');
   ansFloatingButton.id = 'ans-floating-button';
+  ansFloatingButton.style.cssText = `
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 999997;
+    pointer-events: auto;
+    display: block;
+  `;
+  
   // Create button element safely without innerHTML
   const button = document.createElement('button');
   button.id = 'ans-floating-btn';
@@ -3099,6 +3108,7 @@ function showANSFloatingButtonInternal() {
     transition: all 0.2s ease;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     white-space: nowrap;
+    position: relative;
   `;
   
   // Create image element safely
@@ -3117,15 +3127,67 @@ function showANSFloatingButtonInternal() {
   
   button.appendChild(img);
   button.appendChild(textNode);
-  ansFloatingButton.appendChild(button);
-  ansFloatingButton.style.cssText = `
-    position: fixed;
-    top: 20px;
-    right: 20px;
-    z-index: 999997;
-    pointer-events: auto;
-    display: block;
+  
+  // Create close button (X icon)
+  const closeButton = document.createElement('button');
+  closeButton.id = 'ans-floating-close-btn';
+  closeButton.textContent = '×';
+  closeButton.style.cssText = `
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.7);
+    color: white;
+    border: 2px solid white;
+    font-size: 18px;
+    font-weight: bold;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+    transition: all 0.2s ease;
+    z-index: 1;
   `;
+  
+  // Add hover effect for close button
+  closeButton.addEventListener('mouseenter', () => {
+    closeButton.style.background = 'rgba(220, 38, 38, 0.9)';
+    closeButton.style.transform = 'scale(1.1)';
+  });
+  closeButton.addEventListener('mouseleave', () => {
+    closeButton.style.background = 'rgba(0, 0, 0, 0.7)';
+    closeButton.style.transform = 'scale(1)';
+  });
+  
+  // Handle close button click - disable floating button in settings
+  closeButton.addEventListener('click', (e) => {
+    e.stopPropagation(); // Prevent triggering the main button click
+    // Get current settings and disable floating button
+    chrome.storage.local.get(['atlasSettings'], (result) => {
+      const settings = result.atlasSettings || {};
+      const newSettings = { ...settings, floatingButtonEnabled: false };
+      chrome.storage.local.set({ atlasSettings: newSettings }, () => {
+        // Hide the button
+        hideANSFloatingButton();
+        // Notify settings page if open
+        chrome.runtime.sendMessage({ type: 'SETTINGS_UPDATED', action: 'floating_button_changed' }, () => {
+          if (chrome.runtime.lastError) {
+            console.log('Settings updated');
+          }
+        });
+      });
+    });
+  });
+  
+  // Append close button to the main button (positioned relative to button)
+  button.appendChild(closeButton);
+  ansFloatingButton.appendChild(button);
 
   // Add hover effects (button already created above)
   if (button) {

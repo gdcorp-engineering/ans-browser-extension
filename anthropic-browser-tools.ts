@@ -1091,11 +1091,39 @@ Remember: When browser tools are disabled, always tell users to perform browser 
               });
             } else {
               // Normal successful result
+              // Extract audioLink before stringifying (so it doesn't appear in content)
+              let audioLink: string | undefined;
+              let resultForContent = result;
+              if (result && typeof result === 'object') {
+                // Check for audioLink at top level
+                audioLink = result.audioLink || result.audio_link || result.audioUrl;
+                // Also check nested in result.result
+                if (!audioLink && result.result && typeof result.result === 'object') {
+                  audioLink = result.result.audioLink || result.result.audio_link || result.result.audioUrl;
+                }
+                
+                // If audioLink found, create a copy without it for content
+                if (audioLink) {
+                  resultForContent = { ...result };
+                  delete resultForContent.audioLink;
+                  delete resultForContent.audio_link;
+                  delete resultForContent.audioUrl;
+                  if (resultForContent.result && typeof resultForContent.result === 'object') {
+                    resultForContent.result = { ...resultForContent.result };
+                    delete resultForContent.result.audioLink;
+                    delete resultForContent.result.audio_link;
+                    delete resultForContent.result.audioUrl;
+                  }
+                  console.log(`🎵 Extracted audioLink from tool result: ${audioLink}`);
+                }
+              }
+              
               toolResults.push({
                 type: 'tool_result',
                 tool_use_id: toolUse.id,
-                content: JSON.stringify(result),
-              });
+                content: JSON.stringify(resultForContent),
+                audioLink: audioLink, // Store audioLink separately
+              } as any);
             }
           }
         }
