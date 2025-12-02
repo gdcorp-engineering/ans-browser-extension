@@ -5554,6 +5554,12 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
           // Get matching site instructions for current URL
           const matchedInstructions = getMatchingSiteInstructions(currentTabUrl);
 
+          // Merge browser tools with MCP/A2A tools if available
+          // Browser tools are always included, merge with MCP/A2A tools if they exist
+          const mergedTools = mcpTools && mcpTools.length > 0
+            ? mergeToolDefinitions([], mcpTools) // Browser tools are handled separately in the function
+            : undefined;
+
           await streamAnthropicWithBrowserTools(
               newMessages,
               settings.apiKey,
