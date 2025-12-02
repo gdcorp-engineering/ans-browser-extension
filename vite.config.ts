@@ -58,10 +58,21 @@ export default defineConfig({
           );
 
           iconFiles.forEach((file: string) => {
-            copyFileSync(
-              resolve(iconsDir, file),
-              resolve(distIconsDir, file)
-            );
+            // Security: Validate file name to prevent path traversal
+            if (file.includes('..') || file.includes('/') || file.includes('\\') || file.length > 255) {
+              console.warn(`⚠️  Skipping invalid file name: ${file}`);
+              return;
+            }
+            // Security: Resolve paths and verify they're within expected directories
+            const sourcePath = resolve(iconsDir, file);
+            const destPath = resolve(distIconsDir, file);
+            // Verify resolved paths are within expected directories
+            if (!sourcePath.startsWith(resolve(__dirname, 'icons')) || 
+                !destPath.startsWith(resolve(__dirname, outDir, 'icons'))) {
+              console.warn(`⚠️  Skipping file with path traversal attempt: ${file}`);
+              return;
+            }
+            copyFileSync(sourcePath, destPath);
           });
 
           console.log(`✓ Copied manifest.json and icons to ${outDir}/`);

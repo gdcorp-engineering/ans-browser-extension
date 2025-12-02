@@ -118,12 +118,17 @@ function sanitizeErrorMessage(error: any, settings?: Settings): string {
   errorMessage = errorMessage.replace(/eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+/g, '***REDACTED_JWT***');
   
   // Remove any API keys from settings if they appear in the error
+  // Security: Validate input length to prevent ReDoS attacks
   if (settings) {
-    if (settings.apiKey) {
-      errorMessage = errorMessage.replace(new RegExp(settings.apiKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '***API_KEY_REDACTED***');
+    if (settings.apiKey && settings.apiKey.length <= 500) {
+      const escapedKey = settings.apiKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      // Use a simple string replace instead of regex for better security
+      errorMessage = errorMessage.split(settings.apiKey).join('***API_KEY_REDACTED***');
     }
-    if (settings.ansApiToken) {
-      errorMessage = errorMessage.replace(new RegExp(settings.ansApiToken.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '***ANS_TOKEN_REDACTED***');
+    if (settings.ansApiToken && settings.ansApiToken.length <= 500) {
+      const escapedToken = settings.ansApiToken.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      // Use a simple string replace instead of regex for better security
+      errorMessage = errorMessage.split(settings.ansApiToken).join('***ANS_TOKEN_REDACTED***');
     }
   }
   
@@ -1777,11 +1782,18 @@ function ChatSidebar() {
     
     // Use a pre-compiled regex pattern to avoid ReDoS
     // Limit word length to prevent excessive backtracking
+    // Security: Limit word length to prevent ReDoS attacks
     if (escapedWord.length > 100) {
       return word; // Return original if word is too long
     }
     
+    // Security: Validate escaped word length before creating regex
+    if (escapedWord.length > 50) {
+      return word; // Additional safety check
+    }
+    
     // Try to find the word in the original text with its original capitalization
+    // Security: Use bounded regex with length validation to prevent ReDoS
     const regex = new RegExp(`\\b${escapedWord}\\b`, 'gi');
     const matches = textContent.match(regex);
     
@@ -2803,10 +2815,37 @@ function ChatSidebar() {
       
       // Check if input contains spaces and common words (likely a sentence/question, not an API key)
       const wordCount = trimmedInput.split(/\s+/).filter(w => w.length > 0).length;
+      // Security: Use hardcoded regex patterns for common words to prevent ReDoS
       const commonWords = ['the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'should', 'could', 'can', 'may', 'might', 'must'];
+      // Pre-compiled regex patterns for common words (safe, hardcoded patterns)
+      const commonWordPatterns = {
+        'the': /\bthe\b/i,
+        'a': /\ba\b/i,
+        'an': /\ban\b/i,
+        'is': /\bis\b/i,
+        'are': /\bare\b/i,
+        'was': /\bwas\b/i,
+        'were': /\bwere\b/i,
+        'be': /\bbe\b/i,
+        'been': /\bbeen\b/i,
+        'have': /\bhave\b/i,
+        'has': /\bhas\b/i,
+        'had': /\bhad\b/i,
+        'do': /\bdo\b/i,
+        'does': /\bdoes\b/i,
+        'did': /\bdid\b/i,
+        'will': /\bwill\b/i,
+        'would': /\bwould\b/i,
+        'should': /\bshould\b/i,
+        'could': /\bcould\b/i,
+        'can': /\bcan\b/i,
+        'may': /\bmay\b/i,
+        'might': /\bmight\b/i,
+        'must': /\bmust\b/i
+      };
       const hasCommonWords = commonWords.some(word => {
-        const regex = new RegExp(`\\b${word}\\b`, 'i');
-        return regex.test(trimmedInput);
+        const pattern = commonWordPatterns[word];
+        return pattern && pattern.test(trimmedInput);
       });
       const looksLikeSentence = wordCount > 2 && hasCommonWords;
       

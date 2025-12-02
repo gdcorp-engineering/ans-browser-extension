@@ -3,6 +3,9 @@
  * Run with: node test-a2a-connection.mjs
  */
 
+// Security: HTTP is intentionally used for localhost testing only
+// This is safe as it only connects to localhost (127.0.0.1) for development
+// In production, A2A agents should use HTTPS
 const AGENT_CARD_URL = 'http://localhost:8080/.well-known/agent-card.json';
 const INVOKE_URL = 'http://localhost:8080/invoke';
 

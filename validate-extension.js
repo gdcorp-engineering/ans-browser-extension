@@ -22,6 +22,12 @@ const requiredFiles = [
 let allGood = true;
 
 requiredFiles.forEach(file => {
+  // Security: Validate file name to prevent path traversal
+  if (file.includes('..') || file.includes('/') || file.includes('\\')) {
+    console.error(`❌ Invalid file name: ${file}`);
+    allGood = false;
+    return;
+  }
   const filePath = path.join(artifactsDir, file);
   if (fs.existsSync(filePath)) {
     const stats = fs.statSync(filePath);

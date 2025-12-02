@@ -53,14 +53,28 @@ const latestZipPath = resolve(outputDir, latestZipFileName);
 
 console.log('🔨 Creating ZIP file...');
 
-// Sanitize path to prevent command injection
+// Sanitize path to prevent command injection and path traversal
 const sanitizePath = (path) => {
+  // Security: Validate input is a string and not empty
+  if (typeof path !== 'string' || path.length === 0) {
+    throw new Error('Invalid path: must be a non-empty string');
+  }
+  // Security: Limit path length to prevent buffer overflow
+  if (path.length > 4096) {
+    throw new Error('Invalid path: path too long');
+  }
   // Only allow alphanumeric, dots, dashes, underscores, slashes, and colons (for Windows drives)
   if (!/^[a-zA-Z0-9._/\\: -]+$/.test(path)) {
     throw new Error('Invalid path characters detected');
   }
-  // Resolve to absolute path to prevent directory traversal
-  return resolve(path);
+  // Security: Resolve to absolute path and verify it's within expected directory
+  const resolvedPath = resolve(path);
+  const projectRoot = resolve(__dirname);
+  // Verify resolved path is within project root to prevent directory traversal
+  if (!resolvedPath.startsWith(projectRoot)) {
+    throw new Error('Invalid path: path traversal detected');
+  }
+  return resolvedPath;
 };
 
 const createZip = (targetPath) => {
