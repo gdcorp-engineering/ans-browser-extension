@@ -1363,6 +1363,89 @@ function ChatSidebar() {
     }
   };
 
+  // Memoized badge calculation - only recalculates when URL or settings change
+  const badgeData = useMemo(() => {
+    // Only check mappings when both currentTabUrl and settings are ready
+    if (!currentTabUrl || !settings) {
+      return null;
+    }
+
+    // Skip chrome:// and chrome-extension:// URLs (not regular websites)
+    if (currentTabUrl.startsWith('chrome://') || currentTabUrl.startsWith('chrome-extension://')) {
+      return null;
+    }
+
+    // Ensure serviceMappings exists and is an array
+    const serviceMappings = settings.serviceMappings || [];
+    
+    // Get mapped services for current site
+    const mappedServices = findMatchingMappings(currentTabUrl, serviceMappings);
+    
+    const hasMappedMCPs = mappedServices.mcpServerIds.length > 0;
+    const hasMappedA2A = mappedServices.a2aMapping !== null;
+    const hasServices = hasMappedMCPs || hasMappedA2A;
+
+    const serviceText = (() => {
+      if (hasMappedA2A && hasMappedMCPs) {
+        return `Trusted services: ${mappedServices.a2aMapping!.serviceName} + ${mappedServices.mcpServerIds.length} ANS certified server(s)`;
+      } else if (hasMappedA2A) {
+        return `Trusted agent: ${mappedServices.a2aMapping!.serviceName}`;
+      } else if (hasMappedMCPs) {
+        return `ANS certified: ${mappedServices.mcpServerIds.length} mapped`;
+      } else {
+        return 'No trusted services for this site';
+      }
+    })();
+
+    return {
+      mappedServices,
+      hasMappedMCPs,
+      hasMappedA2A,
+      hasServices,
+      serviceText
+    };
+  }, [currentTabUrl, settings?.serviceMappings]);
+
+  // Memoized tools panel calculation - only recalculates when URL or settings change
+  const toolsPanelData = useMemo(() => {
+    if (!currentTabUrl || !settings) {
+      return null;
+    }
+
+    // Get mapped services for current site (from mappings, not live connections)
+    const mappedServices = findMatchingMappings(currentTabUrl, settings.serviceMappings);
+
+    const hasMappedMCPs = mappedServices.mcpServerIds.length > 0;
+    const hasMappedA2A = mappedServices.a2aMapping !== null;
+    const hasBrowserTools = browserToolsEnabled;
+
+    // Get mapped MCP servers from mappings (not live connections)
+    const mappedMcpServers = mappedServices.mcpServerIds
+      .map(serverId => {
+        // Find service details from settings or mappings
+        const server = settings?.mcpServers?.find((s: any) => s.id === serverId);
+        if (server) {
+          return { id: server.id, name: server.name, url: server.url };
+        }
+        // Fallback: find from mapping
+        const mapping = settings?.serviceMappings?.find((m: ServiceMapping) => m.serviceId === serverId);
+        if (mapping) {
+          return { id: serverId, name: mapping.serviceName, url: mapping.serviceUrl };
+        }
+        return null;
+      })
+      .filter((s): s is { id: string; name: string; url: string } => s !== null);
+
+    return {
+      mappedServices,
+      hasMappedMCPs,
+      hasMappedA2A,
+      hasBrowserTools,
+      mappedMcpServers,
+      willShow: hasMappedMCPs || hasMappedA2A || hasBrowserTools
+    };
+  }, [currentTabUrl, settings?.serviceMappings, settings?.mcpServers, browserToolsEnabled]);
+
   // Comprehensive page analysis based on content, structure, and semantic HTML
   const analyzePageCharacteristics = (context: any) => {
     const title = context.title || '';
@@ -6631,6 +6714,142 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
               {trustedAgentOptIn ? 'Opted In' : 'Opt In'}
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Trusted Services Badge - Show based on mappings (memoized) */}
+      {badgeData && (
+        <div style={{
+          padding: '8px 16px',
+          background: badgeData.hasServices ? '#dcfce7' : '#f3f4f6',
+          borderBottom: badgeData.hasServices ? '1px solid #86efac' : '1px solid #d1d5db',
+          fontSize: '13px',
+          color: badgeData.hasServices ? '#166534' : '#6b7280',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '16px' }}>{badgeData.hasServices ? '✓' : '○'}</span>
+            <span>{String(badgeData.serviceText || '')}</span>
+          </div>
+          {badgeData.hasMappedA2A && (
+            <button
+              onClick={() => {
+                console.log('Opt In button clicked. Current state:', trustedAgentOptIn);
+                const newState = !trustedAgentOptIn;
+                console.log('Setting new state:', newState);
+                setTrustedAgentOptIn(newState);
+              }}
+              style={{
+                padding: '4px 12px',
+                fontSize: '12px',
+                background: trustedAgentOptIn ? '#16a34a' : '#9ca3af',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontWeight: '500',
+              }}
+              title={trustedAgentOptIn ? 'Click to opt out and use Claude/Gemini instead' : 'Click to opt in and use trusted agent'}
+            >
+              {trustedAgentOptIn ? 'Opted In' : 'Opt In'}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Available Tools Panel - Show mapped services for current site (memoized) */}
+      {toolsPanelData && toolsPanelData.willShow && (
+        <div style={{
+          borderBottom: '1px solid #d1d5db',
+          background: '#fafafa',
+        }}>
+          <button
+            onClick={() => setShowToolsPanel(!showToolsPanel)}
+            style={{
+              width: '100%',
+              padding: '8px 16px',
+              background: 'transparent',
+              border: 'none',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              cursor: 'pointer',
+              fontSize: '13px',
+              color: '#4b5563',
+              fontWeight: '500',
+            }}
+          >
+            <span>🔧 Available Tools</span>
+            <span style={{ fontSize: '10px' }}>{showToolsPanel ? '▼' : '▶'}</span>
+          </button>
+
+          {showToolsPanel && (
+            <div
+              style={{
+                padding: '12px 16px',
+                fontSize: '12px',
+                maxHeight: '300px',
+                overflowY: 'auto',
+              }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {/* Browser Tools */}
+                {toolsPanelData.hasBrowserTools && (
+                  <div>
+                    <div style={{ fontWeight: '600', color: '#1f2937', marginBottom: '6px' }}>
+                      🌐 Browser Tools ({browserToolsEnabled ? 'Enabled' : 'Disabled'})
+                    </div>
+                    <div style={{ paddingLeft: '12px', color: '#6b7280', fontSize: '11px' }}>
+                      navigate, click, type, scroll, screenshot, getPageContext, pressKey
+                    </div>
+                  </div>
+                )}
+
+                {/* MCP Servers - Show mapped servers */}
+                {toolsPanelData.mappedMcpServers.length > 0 && (
+                  <div>
+                    <div style={{ fontWeight: '600', color: '#1f2937', marginBottom: '6px' }}>
+                      🔌 MCP Servers ({toolsPanelData.mappedMcpServers.length})
+                    </div>
+                    {toolsPanelData.mappedMcpServers.map((server) => (
+                      <div key={server.id} style={{ marginBottom: '8px' }}>
+                        <div style={{ paddingLeft: '12px', fontSize: '11px', fontWeight: '500', color: '#2563eb' }}>
+                          {server.name}
+                        </div>
+                        <div style={{ paddingLeft: '24px', fontSize: '10px', color: '#6b7280' }}>
+                          {server.url}
+                        </div>
+                        <div style={{ paddingLeft: '24px', fontSize: '10px', color: '#9ca3af', fontStyle: 'italic', marginTop: '2px' }}>
+                          Mapped to this site
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* A2A Agents - Show mapped agent */}
+                {toolsPanelData.mappedServices.a2aMapping && (
+                  <div>
+                    <div style={{ fontWeight: '600', color: '#1f2937', marginBottom: '6px' }}>
+                      🤖 A2A Agents (1)
+                    </div>
+                    <div style={{ marginBottom: '8px' }}>
+                      <div style={{ paddingLeft: '12px', fontSize: '11px', fontWeight: '500', color: '#16a34a' }}>
+                        {toolsPanelData.mappedServices.a2aMapping.serviceName}
+                      </div>
+                      <div style={{ paddingLeft: '24px', fontSize: '10px', color: '#6b7280' }}>
+                        {toolsPanelData.mappedServices.a2aMapping.serviceUrl}
+                      </div>
+                      <div style={{ paddingLeft: '24px', fontSize: '10px', color: '#9ca3af', fontStyle: 'italic', marginTop: '2px' }}>
+                        Mapped to this site
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
