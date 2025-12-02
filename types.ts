@@ -37,6 +37,7 @@ export interface Settings {
   model: string;
   toolMode?: ToolMode;
   composioApiKey?: string;
+  enableScreenshots?: boolean;
   customBaseUrl?: string; // Custom provider URL
   customModelName?: string; // Custom model name when model is 'custom'
   mcpEnabled?: boolean; // Enable custom MCP servers

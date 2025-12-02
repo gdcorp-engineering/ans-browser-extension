@@ -298,7 +298,15 @@ function ChatSidebar() {
       };
       
       if (toolName === 'screenshot') {
-        chrome.runtime.sendMessage({ type: 'TAKE_SCREENSHOT' }, handleResponse);
+        if (!settings?.enableScreenshots) {
+          console.warn('Screenshot tool requested but it is currently disabled via settings.');
+          handleResponse({
+            success: false,
+            error: 'Screenshot capture is disabled in Settings. Enable screenshots to use this tool.'
+          });
+        } else {
+          chrome.runtime.sendMessage({ type: 'TAKE_SCREENSHOT' }, handleResponse);
+        }
       } else if (toolName === 'clickElement') {
         chrome.runtime.sendMessage({
           type: 'EXECUTE_ACTION',
@@ -399,6 +407,46 @@ function ChatSidebar() {
     }
 
     return null;
+  };
+
+  const formatPageContextForPrompt = (
+    context: any,
+    {
+      contentLimit = 600,
+      elementLimit = 10
+    }: { contentLimit?: number; elementLimit?: number } = {}
+  ): string | null => {
+    if (!context) return null;
+
+    const interactiveSummary = Array.isArray(context.interactiveElements)
+      ? context.interactiveElements
+          .slice(0, elementLimit)
+          .map((el: any, idx: number) => {
+            const label = el.text || el.ariaLabel || el.value || el.selector || el.tag;
+            return `${idx + 1}. ${label || 'unnamed element'}`;
+          })
+          .join('\n')
+      : '';
+
+    const condensedText =
+      (context.textContent || '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, contentLimit) || '';
+
+    const viewport =
+      context.viewport && context.viewport.width && context.viewport.height
+        ? `${context.viewport.width}x${context.viewport.height}`
+        : 'unknown';
+
+    return [
+      '[DOM CONTEXT]',
+      `URL: ${context.url || 'unknown'}`,
+      `Title: ${context.title || 'Untitled'}`,
+      `Viewport: ${viewport}`,
+      `Interactive Elements:\n${interactiveSummary || '(none listed)'}`,
+      `Visible Text:\n${condensedText || '(no visible text captured)'}`,
+    ].join('\n');
   };
 
   const scaleCoordinates = async (x: number, y: number, contextOverride?: any) => {
@@ -970,18 +1018,9 @@ function ChatSidebar() {
       };
       setMessages(prev => [...prev, assistantMessage]);
 
-      // Get initial screenshot with retry logic
-      let screenshot = await executeTool('screenshot', {});
-
-      if (!screenshot?.screenshot) {
-        const errorMsg = screenshot?.error || 'Unknown error capturing screenshot';
-        console.error('❌ Screenshot failed. Full response:', JSON.stringify(screenshot, null, 2));
-        throw new Error(`Failed to capture screenshot: ${errorMsg}`);
-      }
-      
       // Prepare conversation history
       const contents: any[] = [];
-      
+
       // Add message history
       for (const msg of messages) {
         if (msg.role === 'user') {
@@ -996,44 +1035,71 @@ function ChatSidebar() {
           });
         }
       }
-      
-      if (screenshot && screenshot.screenshot) {
+
+      const initialContext = await getCachedPageContext(true);
+      const initialContextText = formatPageContextForPrompt(initialContext);
+      const initialContextPart = initialContextText ? { text: initialContextText } : null;
+
+      let initialScreenshotData: string | null = null;
+      if (settings?.enableScreenshots) {
+        const screenshotResp = await executeTool('screenshot', {});
+        if (screenshotResp?.screenshot) {
+          initialScreenshotData = screenshotResp.screenshot;
+        } else {
+          console.warn('Initial screenshot capture failed or returned empty data:', screenshotResp?.error);
+        }
+      }
+
+      if (initialContextPart || (settings?.enableScreenshots && initialScreenshotData)) {
         const lastUserContent = contents[contents.length - 1];
-        if (lastUserContent && lastUserContent.role === 'user') {
-          lastUserContent.parts.push({
+        const targetContent = lastUserContent && lastUserContent.role === 'user'
+          ? lastUserContent
+          : { role: 'user', parts: [] as any[] };
+
+        if (initialContextPart) {
+          targetContent.parts.push(initialContextPart);
+        }
+
+        if (settings?.enableScreenshots && initialScreenshotData) {
+          targetContent.parts.push({
             inline_data: {
               mime_type: 'image/png',
-              data: screenshot.screenshot.split(',')[1]
+              data: initialScreenshotData.split(',')[1]
             }
           });
+        }
+
+        if (targetContent !== lastUserContent) {
+          contents.push(targetContent);
         }
       }
 
       let responseText = '';
       const maxTurns = 30;
 
+      const screenshotInstruction = settings?.enableScreenshots
+        ? `Screenshots are enabled, but you must still read the latest [DOM CONTEXT] summary after each action before deciding what to do next. Only request screenshots when DOM data is insufficient.`
+        : `Screenshots are currently unavailable. Instead, you will be given fresh [DOM CONTEXT] summaries after each action. Always read that context to understand selectors, labels, and element positions before choosing your next action.`;
+
       const systemInstruction = `You are a browser automation assistant with ONLY browser control capabilities.
 
-CRITICAL: You can ONLY use the computer_use tool functions for browser automation. DO NOT attempt to call any other functions like print, execute, or any programming functions.
+CRITICAL:
+- ${screenshotInstruction}
+- You can ONLY use the computer_use tool functions listed below. DO NOT invent other functions.
 
 AVAILABLE ACTIONS (computer_use tool only):
-- click / click_at: Click at coordinates
+- click / click_at: Click at coordinates (only when no selector is available)
 - type_text_at: Type text (optionally with press_enter)
 - scroll / scroll_down / scroll_up: Scroll the page
 - navigate: Navigate to a URL
 - wait / wait_5_seconds: Wait for page load
 
 GUIDELINES:
-1. NAVIGATION: Use 'navigate' function to go to websites
-   Example: navigate({url: "https://www.reddit.com"})
-
-2. INTERACTION: Use coordinates from the screenshot you see
-   - Click at coordinates to interact with elements
-   - Type text at coordinates to fill forms
-
-3. NO HALLUCINATING: Only use the functions listed above. Do NOT invent or call functions like print(), execute(), or any code functions.
-
-4. EFFICIENCY: Complete tasks in fewest steps possible.`;
+1. DOM CONTEXT FIRST: Use the latest [DOM CONTEXT] text to pick selectors, ARIA labels, or coordinates derived from bounding boxes. Only request another action once you've checked this data.
+2. NAVIGATION: Use 'navigate' to change pages (e.g., navigate({url: "https://www.reddit.com"})).
+3. INTERACTION: Prefer selector-based logic inferred from the DOM context. Only fall back to rough coordinates if no selector details exist.
+4. NO HALLUCINATING: Do NOT call functions beyond the list above.
+5. EFFICIENCY: Complete tasks in as few steps as possible while relying on DOM context rather than screenshots.`;
 
       for (let turn = 0; turn < maxTurns; turn++) {
         if (abortControllerRef.current?.signal.aborted) {
@@ -1217,6 +1283,8 @@ GUIDELINES:
 
         // Execute function calls
         const functionResponses: any[] = [];
+        const contextSummaries: Array<string | null> = [];
+        const screenshotAttachments: Array<string | null> = [];
 
         for (const part of parts) {
           if ('text' in part && typeof part.text === 'string') {
@@ -1271,20 +1339,26 @@ GUIDELINES:
 
             // Re-show overlay after action (in case page navigation removed it)
             await showBrowserAutomationOverlay();
-            
-            screenshot = await executeTool('screenshot', {});
-            
-            if (!screenshot || !screenshot.screenshot) {
-              console.warn('Failed to capture screenshot after action');
-              screenshot = { screenshot: '' }; // Continue without screenshot
+
+            // Capture screenshot if enabled
+            let screenshotData: string | null = null;
+            if (settings?.enableScreenshots) {
+              const shotResponse = await executeTool('screenshot', {});
+              if (shotResponse?.screenshot) {
+                screenshotData = shotResponse.screenshot;
+              } else {
+                console.warn('Screenshot capture after action failed or returned empty data:', shotResponse?.error);
+              }
             }
-            
+
             // Get current page URL and viewport dimensions (required by Gemini)
             let currentUrl = '';
             let viewportInfo = '';
+            let latestContext: any = null;
             try {
               const pageInfo = await getCachedPageContext(true);
               if (pageInfo) {
+                latestContext = pageInfo;
                 currentUrl = pageInfo?.url || '';
 
                 // Include viewport dimensions to help Gemini understand coordinate space
@@ -1303,11 +1377,19 @@ GUIDELINES:
                 ...result,
                 url: currentUrl,  // Gemini requires this
                 viewport_info: viewportInfo,
-                success: result.success !== false
+                success: result.success !== false,
+                page_context: latestContext
               }
             };
             
             functionResponses.push(functionResponse);
+
+            const contextSummary = formatPageContextForPrompt(latestContext, {
+              contentLimit: 400,
+              elementLimit: 8
+            });
+            contextSummaries.push(contextSummary || null);
+            screenshotAttachments.push(screenshotData);
             
             // Update UI
             setMessages(prev => {
@@ -1321,21 +1403,28 @@ GUIDELINES:
           }
         }
         
-        // Add function responses back to conversation with new screenshot
+        // Add function responses back to conversation (include refreshed DOM context)
         if (functionResponses.length > 0) {
-          const userParts: any[] = functionResponses.map(fr => ({
-            function_response: fr
-          }));
-          
-          // Add new screenshot
-          if (screenshot && screenshot.screenshot) {
-            userParts.push({
-              inline_data: {
-                mime_type: 'image/png',
-                data: screenshot.screenshot.split(',')[1]
-              }
-            });
-          }
+          const userParts: any[] = [];
+
+          functionResponses.forEach((fr, idx) => {
+            userParts.push({ function_response: fr });
+
+            const summary = contextSummaries[idx];
+            if (summary) {
+              userParts.push({ text: summary });
+            }
+
+            const screenshotData = screenshotAttachments[idx];
+            if (settings?.enableScreenshots && screenshotData) {
+              userParts.push({
+                inline_data: {
+                  mime_type: 'image/png',
+                  data: screenshotData.split(',')[1]
+                }
+              });
+            }
+          });
           
           contents.push({
             role: 'user',
@@ -1500,6 +1589,12 @@ GUIDELINES:
       case 'get_screenshot':
       case 'take_screenshot':
       case 'screenshot':
+        if (!settings?.enableScreenshots) {
+          return {
+            success: false,
+            error: 'Screenshot capture is disabled in Settings. Enable screenshots to use this action.'
+          };
+        }
         return await executeTool('screenshot', {});
       
       case 'get_page_info':
@@ -2399,7 +2494,7 @@ GUIDELINES:
                 } else {
                   // Browser tool requested but browser tools not enabled
                   console.warn(`⚠️  Browser tool "${toolName}" requested but browser tools are not enabled`);
-                  return { error: 'Browser tools not enabled. Please enable browser tools in settings to use navigation, clicking, and screenshot features.' };
+                  return { error: 'Browser tools not enabled. Please enable browser tools in settings to use navigation, clicking, and other automation features.' };
                 }
               },
               undefined, // Don't pass abort signal for now - causes issues
@@ -2697,7 +2792,9 @@ GUIDELINES:
                         🌐 Browser Tools ({browserToolsEnabled ? 'Enabled' : 'Disabled'})
                       </div>
                       <div style={{ paddingLeft: '12px', color: '#6b7280', fontSize: '11px' }}>
-                        navigate, click, type, scroll, screenshot, getPageContext, pressKey
+                        {settings?.enableScreenshots
+                          ? 'navigate, click, type, scroll, screenshot, getPageContext, pressKey'
+                          : 'navigate, click, type, scroll, getPageContext, pressKey'}
                       </div>
                     </div>
                   )}
