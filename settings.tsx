@@ -101,6 +101,9 @@ function SettingsPage() {
   const [updateError, setUpdateError] = useState<string | null>(null);
   const [updateMessage, setUpdateMessage] = useState<string | null>(null);
   const [showSignInModal, setShowSignInModal] = useState(false);
+  const [showQuickMapDialog, setShowQuickMapDialog] = useState(false);
+  const [quickMapService, setQuickMapService] = useState<ANSBusinessService | null>(null);
+  const [quickMapUrlPattern, setQuickMapUrlPattern] = useState<string>('');
 
   const CURRENT_VERSION = '1.5.4'; // This should match manifest.json version
   const GITHUB_REPO = 'gdcorp-im/ans-browser-extension-v1-temp';
@@ -575,18 +578,31 @@ function SettingsPage() {
 
     // Find the service details from either connected services or marketplace
     let service = settings.mcpServers?.find(s => s.id === newMapping.serviceId);
+    let needsConnection = false;
 
     if (!service) {
       // Try marketplace services
       const marketplaceService = trustedBusinesses.find(b => b.id === newMapping.serviceId);
       if (marketplaceService) {
+        // Auto-connect: Add service to mcpServers if not already connected
+        needsConnection = true;
         service = {
           id: marketplaceService.id,
           name: marketplaceService.name,
           url: marketplaceService.url,
-          protocol: marketplaceService.protocol,
-          enabled: true
+          protocol: marketplaceService.protocol || 'mcp',
+          enabled: true,
+          isTrusted: true,
+          isCustom: false,
+          businessInfo: {
+            description: marketplaceService.description,
+            category: marketplaceService.capability,
+            location: marketplaceService.location,
+            website: marketplaceService.website,
+            rating: marketplaceService.rating,
+          },
         };
+        console.log('🔌 Auto-connecting service:', service.name);
       }
     }
 
@@ -608,8 +624,14 @@ function SettingsPage() {
 
     console.log('✅ Adding mapping:', mapping);
 
+    // Update settings: add service to mcpServers if needed, then add mapping
+    const updatedServers = needsConnection && service
+      ? [...(settings.mcpServers || []), service as MCPServerConfig]
+      : settings.mcpServers;
+
     const newSettings = {
       ...settings,
+      mcpServers: updatedServers,
       serviceMappings: [...(settings.serviceMappings || []), mapping],
     };
 
@@ -618,6 +640,9 @@ function SettingsPage() {
     // Save to storage immediately
     chrome.storage.local.set({ atlasSettings: newSettings }, () => {
       console.log('💾 Mapping saved to storage');
+      if (needsConnection) {
+        console.log('💾 Service auto-connected');
+      }
       chrome.runtime.sendMessage({ type: 'SETTINGS_UPDATED', action: 'mapping_changed' }, () => {
         if (chrome.runtime.lastError) {
           console.log('Sidebar not active, but settings saved');
@@ -641,6 +666,90 @@ function SettingsPage() {
         urlPattern: pattern,
       });
     }
+  };
+
+  // Quick Map handlers
+  const handleOpenQuickMap = (business: ANSBusinessService) => {
+    setQuickMapService(business);
+    // Auto-detect current site if available
+    if (selectedTabUrl) {
+      setQuickMapUrlPattern(generateUrlPattern(selectedTabUrl));
+    } else {
+      setQuickMapUrlPattern('');
+    }
+    setShowQuickMapDialog(true);
+  };
+
+  const handleCloseQuickMap = () => {
+    setShowQuickMapDialog(false);
+    setQuickMapService(null);
+    setQuickMapUrlPattern('');
+  };
+
+  const handleCreateQuickMapping = () => {
+    if (!quickMapService || !quickMapUrlPattern) {
+      return;
+    }
+
+    // Use the same logic as handleAddMapping but with quick map data
+    const serviceType = (quickMapService.protocol || 'mcp') as 'mcp' | 'a2a';
+    const isAlreadyConnected = settings.mcpServers?.some(s => s.id === quickMapService.id);
+    
+    // Auto-connect if needed
+    let updatedServers = settings.mcpServers || [];
+    if (!isAlreadyConnected) {
+      const newServer: MCPServerConfig = {
+        id: quickMapService.id,
+        name: quickMapService.name,
+        url: quickMapService.url,
+        protocol: quickMapService.protocol || 'mcp',
+        enabled: true,
+        isTrusted: true,
+        isCustom: false,
+        businessInfo: {
+          description: quickMapService.description,
+          category: quickMapService.capability,
+          location: quickMapService.location,
+          website: quickMapService.website,
+          rating: quickMapService.rating,
+        },
+      };
+      updatedServers = [...updatedServers, newServer];
+      console.log('🔌 Auto-connecting service:', newServer.name);
+    }
+
+    const mapping: ServiceMapping = {
+      id: Date.now().toString(),
+      urlPattern: quickMapUrlPattern,
+      serviceType: serviceType,
+      serviceId: quickMapService.id,
+      serviceName: quickMapService.name,
+      serviceUrl: quickMapService.url,
+      enabled: true,
+      createdAt: Date.now(),
+    };
+
+    const newSettings = {
+      ...settings,
+      mcpServers: updatedServers,
+      serviceMappings: [...(settings.serviceMappings || []), mapping],
+    };
+
+    setSettings(newSettings);
+
+    // Save to storage
+    chrome.storage.local.set({ atlasSettings: newSettings }, () => {
+      console.log('💾 Quick mapping saved to storage');
+      chrome.runtime.sendMessage({ type: 'SETTINGS_UPDATED', action: 'mapping_changed' }, () => {
+        if (chrome.runtime.lastError) {
+          console.log('Sidebar not active, but settings saved');
+        }
+      });
+    });
+
+    // Close dialog and switch to mappings tab to show result
+    handleCloseQuickMap();
+    setActiveTab('mappings');
   };
 
   const handleToggleMapping = (id: string) => {
@@ -1501,9 +1610,22 @@ function SettingsPage() {
                     >
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
                         <div style={{ flex: 1 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', flexWrap: 'wrap' }}>
                             <div style={{ fontWeight: 'bold', fontSize: '16px' }}>{business.name}</div>
                             <span style={{ background: '#28a745', color: 'white', padding: '2px 8px', borderRadius: '12px', fontSize: '11px' }}>✓ Verified</span>
+                            {(() => {
+                              const mappedCount = (settings.serviceMappings || []).filter(
+                                m => m.serviceId === business.id
+                              ).length;
+                              if (mappedCount > 0) {
+                                return (
+                                  <span style={{ background: '#007bff', color: 'white', padding: '2px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: '500' }}>
+                                    🗺️ {mappedCount} mapping{mappedCount > 1 ? 's' : ''}
+                                  </span>
+                                );
+                              }
+                              return null;
+                            })()}
                           </div>
 
                           {business.description && (
@@ -1519,15 +1641,39 @@ function SettingsPage() {
                             {business.connectionCount && ` • ${business.connectionCount} connections`}
                           </div>
 
-                          {/* ANS certified: # mapped */}
+                          {/* Mapped sites list */}
                           {(() => {
-                            const mappedCount = (settings.serviceMappings || []).filter(
-                              m => m.serviceId === business.id
-                            ).length;
-                            if (mappedCount > 0) {
+                            const mappings = (settings.serviceMappings || []).filter(
+                              m => m.serviceId === business.id && m.enabled
+                            );
+                            if (mappings.length > 0) {
                               return (
-                                <div style={{ fontSize: '12px', color: '#28a745', fontWeight: '500', marginBottom: '4px', marginTop: '8px' }}>
-                                  ✓ ANS certified: {mappedCount} mapped
+                                <div style={{ fontSize: '12px', color: '#007bff', marginBottom: '4px', marginTop: '8px' }}>
+                                  <div style={{ fontWeight: '500', marginBottom: '4px' }}>
+                                    🗺️ Mapped to: {mappings.length} site{mappings.length > 1 ? 's' : ''}
+                                  </div>
+                                  <div style={{ fontSize: '11px', color: '#666', display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                                    {mappings.slice(0, 3).map((m, idx) => (
+                                      <span
+                                        key={m.id}
+                                        style={{
+                                          background: '#e7f3ff',
+                                          color: '#007bff',
+                                          padding: '2px 6px',
+                                          borderRadius: '4px',
+                                          fontFamily: 'monospace',
+                                          fontSize: '10px'
+                                        }}
+                                      >
+                                        {m.urlPattern}
+                                      </span>
+                                    ))}
+                                    {mappings.length > 3 && (
+                                      <span style={{ color: '#666', fontSize: '10px' }}>
+                                        +{mappings.length - 3} more
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
                               );
                             }
@@ -1564,20 +1710,40 @@ function SettingsPage() {
                           </div>
                         </div>
 
-                        <button
-                          onClick={() => connected ? handleDisconnectBusiness(business.id) : handleConnectBusiness(business)}
-                          style={{
-                            padding: '8px 16px',
-                            background: connected ? '#dc3545' : '#28a745',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '4px',
-                            cursor: 'pointer',
-                            fontSize: '13px'
-                          }}
-                        >
-                          {connected ? 'Disconnect' : 'Connect'}
-                        </button>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'flex-end' }}>
+                          <button
+                            onClick={() => handleOpenQuickMap(business)}
+                            style={{
+                              padding: '8px 16px',
+                              background: '#007bff',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '4px',
+                              cursor: 'pointer',
+                              fontSize: '13px',
+                              fontWeight: '500',
+                              whiteSpace: 'nowrap'
+                            }}
+                            title="Quickly map this service to a website"
+                          >
+                            🗺️ Map to Site
+                          </button>
+                          <button
+                            onClick={() => connected ? handleDisconnectBusiness(business.id) : handleConnectBusiness(business)}
+                            style={{
+                              padding: '8px 16px',
+                              background: connected ? '#dc3545' : '#28a745',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '4px',
+                              cursor: 'pointer',
+                              fontSize: '13px',
+                              whiteSpace: 'nowrap'
+                            }}
+                          >
+                            {connected ? 'Disconnect' : 'Connect'}
+                          </button>
+                        </div>
                       </div>
                     </div>
                   );
@@ -1808,11 +1974,14 @@ function SettingsPage() {
 
                     return filtered.map(s => (
                       <option key={s.id} value={s.id}>
-                        {s.isConnected ? '✓ ' : ''}{s.name} ({s.url})
+                        {s.isConnected ? '✓ ' : '🔌 '}{s.name} ({s.url}){!s.isConnected ? ' - will auto-connect' : ''}
                       </option>
                     ));
                   })()}
                 </select>
+                <p style={{ fontSize: '11px', color: '#666', marginTop: '4px', fontStyle: 'italic' }}>
+                  💡 Services not yet connected will be automatically connected when you create the mapping
+                </p>
               </div>
 
               <button
@@ -2208,6 +2377,137 @@ function SettingsPage() {
           <p>Your API keys are stored locally in your browser and only sent to the respective AI providers. Never shared with third parties.</p>
         </div>
       </div>
+
+      {/* Quick Map Dialog */}
+      {showQuickMapDialog && quickMapService && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0, 0, 0, 0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 10000,
+          }}
+          onClick={handleCloseQuickMap}
+        >
+          <div
+            style={{
+              background: 'white',
+              borderRadius: '12px',
+              padding: '30px',
+              maxWidth: '500px',
+              width: '90%',
+              boxShadow: '0 10px 40px rgba(0,0,0,0.3)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ marginBottom: '20px' }}>
+              <h2 style={{ marginBottom: '10px', fontSize: '20px', color: '#333' }}>
+                🗺️ Map Service to Site
+              </h2>
+              <p style={{ fontSize: '14px', color: '#666', marginBottom: '15px' }}>
+                Create a site mapping for <strong>{quickMapService.name}</strong>
+              </p>
+            </div>
+
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#333', marginBottom: '8px' }}>
+                Service
+              </label>
+              <div style={{
+                padding: '12px',
+                background: '#f8f9fa',
+                borderRadius: '6px',
+                border: '1px solid #ddd',
+                fontSize: '14px',
+              }}>
+                <div style={{ fontWeight: '600', marginBottom: '4px' }}>{quickMapService.name}</div>
+                <div style={{ fontSize: '12px', color: '#666', fontFamily: 'monospace' }}>
+                  {quickMapService.url}
+                </div>
+                <div style={{ fontSize: '12px', color: '#666', marginTop: '4px' }}>
+                  Type: {quickMapService.protocol === 'a2a' ? '🤖 A2A Agent' : '🔌 MCP Server'}
+                </div>
+              </div>
+            </div>
+
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#333', marginBottom: '8px' }}>
+                URL Pattern
+              </label>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <input
+                  type="text"
+                  value={quickMapUrlPattern}
+                  onChange={(e) => setQuickMapUrlPattern(e.target.value)}
+                  placeholder="e.g., *.godaddy.com or godaddy.com"
+                  className="api-key-input"
+                  style={{ flex: 1, marginBottom: 0 }}
+                />
+                {selectedTabUrl && (
+                  <button
+                    onClick={() => setQuickMapUrlPattern(generateUrlPattern(selectedTabUrl))}
+                    style={{
+                      padding: '8px 16px',
+                      background: '#28a745',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      fontSize: '13px',
+                      whiteSpace: 'nowrap'
+                    }}
+                  >
+                    Use Current Site
+                  </button>
+                )}
+              </div>
+              <p style={{ fontSize: '12px', color: '#666', marginTop: '6px' }}>
+                Use <code>*.domain.com</code> to match all subdomains
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <button
+                onClick={handleCloseQuickMap}
+                style={{
+                  padding: '10px 20px',
+                  background: '#6c757d',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCreateQuickMapping}
+                disabled={!quickMapUrlPattern}
+                style={{
+                  padding: '10px 20px',
+                  background: (!quickMapUrlPattern) ? '#6c757d' : '#007bff',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: (!quickMapUrlPattern) ? 'not-allowed' : 'pointer',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  opacity: (!quickMapUrlPattern) ? 0.5 : 1,
+                }}
+              >
+                Create Mapping
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
