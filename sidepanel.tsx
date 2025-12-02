@@ -1363,6 +1363,55 @@ function ChatSidebar() {
     }
   };
 
+  /**
+   * Find matching service mappings for the current URL
+   * Returns matching A2A agent (first match) and all matching MCP server IDs
+   */
+  const findMatchingMappings = (url: string | null, mappings: ServiceMapping[] | undefined): {
+    a2aMapping: ServiceMapping | null;
+    mcpServerIds: string[];
+  } => {
+    console.log('🔍 findMatchingMappings called with:', { url, mappingsCount: mappings?.length });
+
+    if (!url || !mappings || mappings.length === 0) {
+      console.log('⚠️  No URL or mappings provided');
+      return { a2aMapping: null, mcpServerIds: [] };
+    }
+
+    // Find all enabled mappings that match the current URL
+    console.log('🔍 Checking each mapping for URL:', url);
+    const matchingMappings = mappings
+      .filter(m => {
+        const matches = m.enabled && matchesUrlPattern(url, m.urlPattern);
+        console.log(`   Pattern: "${m.urlPattern}" vs URL: "${url}" → ${matches ? '✓ MATCH' : '✗ no match'}`);
+        if (!matches && m.enabled) {
+          // Debug why it didn't match
+          const normalizedUrl = url
+            .replace(/^https?:\/\//, '')
+            .replace(/^www\./, '')
+            .replace(/\/.*$/, '');
+          const normalizedPattern = m.urlPattern
+            .replace(/^https?:\/\//, '')
+            .replace(/^www\./, '');
+          console.log(`     Debug: normalized URL="${normalizedUrl}", normalized pattern="${normalizedPattern}"`);
+        }
+        return matches;
+      })
+      .sort((a, b) => a.createdAt - b.createdAt); // First created wins
+
+    console.log(`🗺️  Found ${matchingMappings.length} matching mapping(s)`);
+
+    // Find first A2A mapping
+    const a2aMapping = matchingMappings.find(m => m.serviceType === 'a2a') || null;
+
+    // Get all MCP server IDs
+    const mcpServerIds = matchingMappings
+      .filter(m => m.serviceType === 'mcp')
+      .map(m => m.serviceId);
+
+    return { a2aMapping, mcpServerIds };
+  };
+
   // Memoized badge calculation - only recalculates when URL or settings change
   const badgeData = useMemo(() => {
     // Only check mappings when both currentTabUrl and settings are ready
