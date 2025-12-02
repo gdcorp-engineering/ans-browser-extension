@@ -7009,7 +7009,16 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
                 {message.content || (isLoading && message.role === 'assistant') ? (
                   message.role === 'assistant' ? (
                     <>
-                      <MessageParser content={String(message.content)} />
+                      {(() => {
+                        // Remove audioLink URL from message content if it appears there (to avoid duplicate rendering)
+                        let contentToRender = String(message.content);
+                        const audioLink = message.audioLink;
+                        if (audioLink && typeof audioLink === 'string' && contentToRender.includes(audioLink)) {
+                          console.log(`🔧 Removing audioLink URL from message content to avoid duplicate:`, audioLink);
+                          contentToRender = contentToRender.replace(audioLink, '').trim();
+                        }
+                        return <MessageParser content={contentToRender} />;
+                      })()}
                       {/* Show typing indicator while tools are executing (only on last assistant message, and not if audio player is shown) */}
                       {isToolExecuting && isLastAssistantMessage && !message.audioLink && (
                         <div className="typing-indicator" style={{ marginTop: '8px' }}>
@@ -7021,8 +7030,16 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
                       {/* Audio player for generated music/audio */}
                       {(() => {
                         const audioLink = message.audioLink;
+                        console.log(`🔍 Checking audioLink for message ${message.id}:`, {
+                          audioLink,
+                          type: typeof audioLink,
+                          isString: typeof audioLink === 'string',
+                          trimmedLength: typeof audioLink === 'string' ? audioLink.trim().length : 0,
+                          messageKeys: Object.keys(message),
+                          messageContent: message.content?.substring(0, 100)
+                        });
                         if (audioLink && typeof audioLink === 'string' && audioLink.trim().length > 0) {
-                          console.log(`🔍 Rendering audio player for message ${message.id}:`, audioLink);
+                          console.log(`✅ Rendering audio player for message ${message.id}:`, audioLink);
                           return (
                             <div style={{
                               marginTop: '16px',
@@ -7053,6 +7070,8 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
                           );
                         } else if (audioLink) {
                           console.warn(`⚠️ Invalid audioLink format for message ${message.id}:`, typeof audioLink, audioLink);
+                        } else {
+                          console.log(`ℹ️ No audioLink found for message ${message.id}`);
                         }
                         return null;
                       })()}
