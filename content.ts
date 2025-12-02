@@ -2668,6 +2668,26 @@ function hideBrowserAutomationOverlay() {
   }
 }
 
+// Check if current page is an SSO/auth page that should be excluded from extension UI
+function isAuthPage(): boolean {
+  const url = window.location.href.toLowerCase();
+  const hostname = window.location.hostname.toLowerCase();
+  
+  // Exclude common SSO/auth pages
+  const authPatterns = [
+    'okta.com',
+    'sso',
+    '/saml',
+    '/oauth',
+    '/auth',
+    '/login',
+    'authenticatorlocalprod.com',
+    'authenticator',
+  ];
+  
+  return authPatterns.some(pattern => url.includes(pattern) || hostname.includes(pattern));
+}
+
 /**
  * Send page load event to background when DOM is fully ready
  * Waits for DOM to be interactive before sending message to ensure
@@ -2689,7 +2709,10 @@ function sendPageLoadMessage() {
     console.debug('Could not send PAGE_LOADED message:', error);
   });
 
-  console.log('Atlas content script loaded on:', window.location.href);
+  // Only log for non-auth pages to reduce console noise on SSO pages
+  if (!isAuthPage()) {
+    console.log('Atlas content script loaded on:', window.location.href);
+  }
 }
 
 // Wait for DOM to be ready before sending page load message
@@ -2717,6 +2740,14 @@ let sidebarOpen = (window as any).__atlasSidebarOpen;
 
 function showANSFloatingButton() {
   if (sidebarOpen) return;
+  
+  // Don't show floating button on SSO/auth pages to avoid interference
+  if (isAuthPage()) {
+    if (ansFloatingButton) {
+      ansFloatingButton.style.display = 'none';
+    }
+    return;
+  }
   
   // Check if floating button is enabled in settings
   chrome.storage.local.get(['atlasSettings'], (result) => {
