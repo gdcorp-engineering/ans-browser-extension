@@ -214,7 +214,8 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
         }
         // Log unexpected types for debugging
         else if (json.type) {
-          console.debug(`[Anthropic Service] Received unexpected chunk type: ${json.type}`, json);
+          // Security: Use separate arguments instead of template literal to avoid format string issues
+          console.debug('[Anthropic Service] Received unexpected chunk type:', json.type, json);
         }
       } catch (e) {
         // Log parsing errors for debugging

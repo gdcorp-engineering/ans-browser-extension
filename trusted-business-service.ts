@@ -49,7 +49,8 @@ async function setAuthCookie(token: string): Promise<boolean> {
 
   for (const { url, domain } of domains) {
     try {
-      console.log(`🍪 Attempting to set auth_jomax cookie for ${domain}...`);
+      // Security: Use separate arguments instead of template literal to avoid format string issues
+      console.log('🍪 Attempting to set auth_jomax cookie for', domain, '...');
       
       const cookieDetails: chrome.Cookies.SetDetails = {
         url: url,
@@ -89,10 +90,12 @@ async function setAuthCookie(token: string): Promise<boolean> {
           });
           return true;
         } else {
-          console.warn(`⚠️ Cookie set API succeeded but cookie not found when verifying for ${domain}`);
+          // Security: Use separate arguments instead of template literal
+          console.warn('⚠️ Cookie set API succeeded but cookie not found when verifying for', domain);
         }
       } else {
-        console.warn(`⚠️ Cookie set API returned null for ${domain}`);
+        // Security: Use separate arguments instead of template literal
+        console.warn('⚠️ Cookie set API returned null for', domain);
       }
     } catch (error: any) {
       console.error('❌ Failed to set auth_jomax cookie for', domain, ':', error.message || error);
@@ -141,7 +144,8 @@ export async function fetchTrustedBusinesses(authToken?: string): Promise<ANSBus
 
     while (hasMore) {
       const url = `${API_URL}?limit=${DEFAULT_LIMIT}&offset=${offset}`;
-      console.log(`📡 Fetching agents: offset=${offset}, limit=${DEFAULT_LIMIT}`);
+      // Security: Use separate arguments instead of template literal
+      console.log('📡 Fetching agents: offset=', offset, ', limit=', DEFAULT_LIMIT);
 
       const headers: Record<string, string> = {
         'accept': 'application/json',
@@ -170,12 +174,14 @@ export async function fetchTrustedBusinesses(authToken?: string): Promise<ANSBus
         credentials: 'include', // Send cookies with the request (required for cookie auth)
       });
 
-      console.log(`📡 Response status: ${response.status} ${response.statusText}`);
+      // Security: Use separate arguments instead of template literal
+      console.log('📡 Response status:', response.status, response.statusText);
       
       // Log set-cookie headers if present (might give us clues)
       const setCookieHeader = response.headers.get('set-cookie');
       if (setCookieHeader) {
-        console.log(`📡 Set-Cookie header: ${setCookieHeader.substring(0, 100)}...`);
+        // Security: Use separate arguments instead of template literal
+        console.log('📡 Set-Cookie header:', setCookieHeader.substring(0, 100), '...');
       }
 
       if (!response.ok) {
