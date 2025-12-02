@@ -75,7 +75,7 @@ For a complete list of features, see [FEATURES.md](./docs/FEATURES.md).
    - Click the Settings (⚙️) icon in the extension
    - Add the GoCode URL (default: `https://caas-gocode-prod.caas-prod.prod.onkatana.net`)
    - Get your GoCode API key: [https://caas.godaddy.com/gocode/my-api-keys](https://caas.godaddy.com/gocode/my-api-keys)
-   - (Optional) Get your ANS API token: [https://ra.int.dev-godaddy.com/v1/agents](https://ra.int.dev-godaddy.com/v1/agents) - Required only if you want to use ANS Business Services
+   - (Optional) Get your ANS API token: [https://api.ote-godaddy.com/v1/agents](https://api.ote-godaddy.com/v1/agents) - Required only if you want to use ANS Business Services
 
 ### For Developers (Building from Source)
 
@@ -255,7 +255,7 @@ This extension also supports Composio's Tool Router for accessing Gmail, Slack, 
 - [ChatGPT Atlas](https://openai.com/index/introducing-chatgpt-atlas/) - OpenAI's browser automation AI agent
 - [Gemini Computer Use Model](https://blog.google/technology/google-deepmind/gemini-computer-use-model/) - Google's AI model for browser automation
 - [Gemini API Documentation](https://ai.google.dev/gemini-api/docs/computer-use) - Official documentation for Gemini Computer Use
-- [GoDaddy ANS Documentation](https://ra.int.dev-godaddy.com/v1/agents) - ANS agent registration and credentials
+- [GoDaddy ANS Documentation](https://api.ote-godaddy.com/v1/agents) - ANS agent registration and credentials
 
 ---
 

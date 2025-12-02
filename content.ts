@@ -1209,8 +1209,8 @@ function extractPageContext(): PageContext {
 }
 
 // Helper function to dispatch complete, realistic click event sequence
-function dispatchClickSequence(element: HTMLElement, x: number, y: number): void {
-  console.log('🖱️  Dispatching complete click sequence...');
+async function dispatchClickSequence(element: HTMLElement, x: number, y: number): Promise<void> {
+  console.log('🖱️  Starting NATIVE-ONLY click sequence...');
   console.log('🎯 Target element:', {
     tag: element.tagName,
     id: element.id,
@@ -1221,7 +1221,8 @@ function dispatchClickSequence(element: HTMLElement, x: number, y: number): void
     'pointer-events': window.getComputedStyle(element).pointerEvents,
     visibility: window.getComputedStyle(element).visibility,
     display: window.getComputedStyle(element).display,
-    zIndex: window.getComputedStyle(element).zIndex
+    zIndex: window.getComputedStyle(element).zIndex,
+    offsetParent: element.offsetParent?.tagName || 'none'
   });
 
   // Check if element is actually clickable at this position
@@ -1230,7 +1231,12 @@ function dispatchClickSequence(element: HTMLElement, x: number, y: number): void
     console.warn('⚠️  Element at coordinates is different from target!');
     console.warn('   Target:', element.tagName, element.className);
     console.warn('   Actual top element:', topElement?.tagName, (topElement as HTMLElement)?.className);
-    console.warn('   There might be an overlay or the element is not the topmost at these coordinates');
+
+    // Try to click the actual top element if it's different
+    if (topElement && topElement !== element) {
+      console.log('   📍 Will try clicking the actual top element instead');
+      element = topElement as HTMLElement;
+    }
   }
 
   // Check for click event listeners
@@ -1241,76 +1247,96 @@ function dispatchClickSequence(element: HTMLElement, x: number, y: number): void
                            element.hasAttribute('v-on:click');
   console.log('🎧 Has click listeners/handlers:', hasClickListeners ? 'Yes' : 'Unknown (may use addEventListener)');
 
-  // Try NATIVE click first (generates trusted events)
-  console.log('1️⃣ Attempting native element.click()...');
-  try {
-    element.click();
-    console.log('✅ Native click executed');
-  } catch (error) {
-    console.error('❌ Native click failed:', error);
+  // CRITICAL: For Slack and React apps, ONLY native clicks generate trusted events
+  // Synthetic events are marked isTrusted=false and ignored by security-sensitive apps
+
+  console.log('1️⃣ Finding best clickable element...');
+
+  // If it's a clickable parent, find the actual interactive child
+  const interactiveChild = element.querySelector('button, a, input, [role="button"], [role="link"], [onclick], [tabindex]') as HTMLElement;
+  if (interactiveChild && interactiveChild !== element) {
+    console.log('   Found interactive child:', interactiveChild.tagName, interactiveChild.className);
+    element = interactiveChild; // Target the child instead
   }
 
-  // If it's a clickable parent, try clicking the actual interactive child
-  const interactiveChild = element.querySelector('button, a, input, [role="button"], [onclick]') as HTMLElement;
-  if (interactiveChild && interactiveChild !== element) {
-    console.log('2️⃣ Found interactive child, clicking it...');
-    console.log('   Child:', interactiveChild.tagName, interactiveChild.className);
-    try {
-      interactiveChild.click();
-      console.log('✅ Child click executed');
-    } catch (error) {
-      console.error('❌ Child click failed:', error);
+  // Look for parent clickable elements if current element seems non-interactive
+  if (!['A', 'BUTTON', 'INPUT', 'SELECT', 'TEXTAREA'].includes(element.tagName) &&
+      !element.hasAttribute('onclick') &&
+      !element.getAttribute('role')?.includes('button')) {
+    const clickableParent = element.closest('button, a, [role="button"], [role="link"], [onclick]') as HTMLElement;
+    if (clickableParent) {
+      console.log('   Found clickable parent:', clickableParent.tagName, clickableParent.className);
+      element = clickableParent;
     }
   }
 
-  // Dispatch synthetic events as additional attempt
-  console.log('3️⃣ Dispatching synthetic events...');
-  const eventOptions = {
-    bubbles: true,
-    cancelable: true,
-    view: window,
-    clientX: x,
-    clientY: y,
-    screenX: x,
-    screenY: y,
-    button: 0,
-    buttons: 1,
-    detail: 1,
-    composed: true
-  };
+  console.log('2️⃣ Final target element:', element.tagName, element.className);
 
-  const pointerOptions = {
-    ...eventOptions,
-    pointerId: 1,
-    width: 1,
-    height: 1,
-    pressure: 0.5,
-    tangentialPressure: 0,
-    tiltX: 0,
-    tiltY: 0,
-    twist: 0,
-    pointerType: 'mouse',
-    isPrimary: true
-  };
-
+  // Scroll element into view first
   try {
-    // Complete event sequence on the element
-    element.dispatchEvent(new PointerEvent('pointerdown', pointerOptions));
-    element.dispatchEvent(new MouseEvent('mousedown', eventOptions));
+    element.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'center' });
+    console.log('✅ Scrolled into view');
+    await new Promise(resolve => setTimeout(resolve, 100)); // Wait for scroll
+  } catch (error) {
+    console.error('❌ Scroll failed:', error);
+  }
 
-    // Small delay to simulate real mouse timing
-    setTimeout(() => {
-      element.dispatchEvent(new PointerEvent('pointerup', { ...pointerOptions, buttons: 0 }));
-      element.dispatchEvent(new MouseEvent('mouseup', { ...eventOptions, buttons: 0 }));
-      element.dispatchEvent(new PointerEvent('click', { ...pointerOptions, buttons: 0 }));
-      element.dispatchEvent(new MouseEvent('click', { ...eventOptions, buttons: 0 }));
-      console.log('✅ Synthetic events dispatched with delay');
-    }, 50);
+  // Set focus first (required for some elements)
+  try {
+    if (element instanceof HTMLElement && typeof element.focus === 'function') {
+      element.focus();
+      console.log('✅ Focus set');
+      await new Promise(resolve => setTimeout(resolve, 50)); // Wait for focus handlers
+    }
+  } catch (error) {
+    console.error('❌ Focus failed:', error);
+  }
 
-    // Also try dispatching on the top element if different
-    if (topElement && topElement !== element) {
-      console.log('4️⃣ Also trying to click top element at coordinates...');
-      (topElement as HTMLElement).click();
+  // STRATEGY: Use ONLY native clicks (no synthetic events)
+  // Synthetic events with isTrusted=false can confuse React and be blocked
+  try {
+    console.log('3️⃣ NATIVE CLICK ONLY (generates trusted=true events)...');
+
+    // Try multiple times with delays (React event handlers need time to attach)
+    for (let attempt = 1; attempt <= 5; attempt++) {
+      try {
+        console.log(`   Attempt ${attempt}/5...`);
+        element.click();
+        console.log(`   ✅ Native click ${attempt} executed (isTrusted: true)`);
+
+        // Delay between attempts - give React time to process
+        if (attempt < 5) {
+          await new Promise(resolve => setTimeout(resolve, 150));
+        }
+      } catch (error) {
+        console.error(`   ❌ Native click ${attempt} failed:`, error);
+      }
+    }
+
+    // Also try clicking parent/child elements with native click
+    const parent = element.parentElement;
+    if (parent && parent.tagName !== 'BODY' && parent.tagName !== 'HTML') {
+      console.log('5️⃣ Also trying native click on parent element...');
+      try {
+        parent.click();
+        console.log('   ✅ Parent native click executed');
+      } catch (error) {
+        console.error('   ❌ Parent click failed:', error);
+      }
+    }
+
+    // Try clicking all children
+    const clickableChildren = element.querySelectorAll('button, a, [role="button"]');
+    if (clickableChildren.length > 0) {
+      console.log(`6️⃣ Trying native click on ${clickableChildren.length} clickable children...`);
+      clickableChildren.forEach((child, i) => {
+        try {
+          (child as HTMLElement).click();
+          console.log(`   ✅ Child ${i+1} clicked`);
+        } catch (error) {
+          console.error(`   ❌ Child ${i+1} failed:`, error);
+        }
+      });
     }
 
     console.log('✅ All click attempts completed');
@@ -1320,7 +1346,7 @@ function dispatchClickSequence(element: HTMLElement, x: number, y: number): void
 }
 
 // Execute actions on the page
-function executePageAction(
+async function executePageAction(
   action: string,
   target?: string,
   value?: string,
@@ -1331,10 +1357,21 @@ function executePageAction(
   key?: string,
   keys?: string[],
   destination?: { x: number; y: number }
-): any {
+): Promise<any> {
   try {
     switch (action) {
       case 'click':
+        // DEBUG: Log all click parameters
+        console.log('🔧 CLICK ACTION DEBUG:', {
+          selector,
+          target,
+          coordinates,
+          value,
+          hasCoordinates: !!coordinates,
+          hasSelector: !!selector,
+          hasTarget: !!target
+        });
+
         // Support selector, text-based, and coordinate-based clicking
         let element: Element | null = null;
 
@@ -1357,6 +1394,10 @@ function executePageAction(
             'input[type="button"]',
             'input[type="submit"]',
             '[role="button"]',
+            '[role="tab"]',
+            '[role="link"]',
+            'span[onclick]',
+            'div[onclick]',
             '[onclick]'
           ];
 
@@ -1371,6 +1412,8 @@ function executePageAction(
 
             if (element) {
               console.log(`✅ Found element by text in ${sel}: "${target}"`);
+              console.log(`   Element text: "${element.textContent?.trim()}"`);
+              console.log(`   Element bounds:`, element.getBoundingClientRect());
               break;
             }
           }
@@ -1387,6 +1430,38 @@ function executePageAction(
               console.log(`✅ Found element by aria-label: "${target}"`);
             }
           }
+
+          // Last resort: search ALL elements for matching text (slow but comprehensive)
+          if (!element) {
+            console.log(`🔍 Last resort: searching all elements for text "${target}"`);
+            const allElements = Array.from(document.querySelectorAll('*'));
+            element = allElements.find(el => {
+              // Only consider visible elements
+              const rect = el.getBoundingClientRect();
+              if (rect.width === 0 || rect.height === 0) return false;
+
+              const text = el.textContent?.trim().toLowerCase() || '';
+              const targetLower = target.toLowerCase();
+
+              // Match if this element's direct text includes target
+              // (not just descendant text which would match parent containers)
+              if (text.includes(targetLower)) {
+                // Prefer elements with click handlers or cursor pointer
+                const style = window.getComputedStyle(el);
+                const clickable = style.cursor === 'pointer' ||
+                                el.hasAttribute('onclick') ||
+                                el.getAttribute('role') === 'button' ||
+                                el.getAttribute('role') === 'tab';
+                if (clickable) return true;
+              }
+              return false;
+            }) as Element | undefined || null;
+
+            if (element) {
+              console.log(`✅ Found element by text in all elements: "${target}"`);
+              console.log(`   Element: ${element.tagName}.${element.className}`);
+            }
+          }
         }
 
         // 3. If we found an element (by selector or text), click it
@@ -1395,13 +1470,24 @@ function executePageAction(
           const clickX = rect.left + rect.width / 2;
           const clickY = rect.top + rect.height / 2;
 
+          console.log(`🎯 Click position calculated:`);
+          console.log(`   Element: ${element.tagName}.${element.className}`);
+          console.log(`   Element bounds: left=${rect.left}, top=${rect.top}, width=${rect.width}, height=${rect.height}`);
+          console.log(`   Click coordinates: (${Math.round(clickX)}, ${Math.round(clickY)}) - center of element`);
+          console.log(`   Element text: "${element.textContent?.trim().substring(0, 50)}"`);
+
           // Use complete click sequence for better compatibility
-          dispatchClickSequence(element, clickX, clickY);
+          await dispatchClickSequence(element, clickX, clickY);
 
           // Visual feedback
           highlightElement(element, coordinates || { x: clickX, y: clickY });
 
-          return { success: true, message: `Clicked element: ${selector || target}`, element: element.tagName };
+          return {
+            success: true,
+            message: `Clicked element at (${Math.round(clickX)}, ${Math.round(clickY)}): ${selector || target}`,
+            element: element.tagName,
+            clickCoordinates: { x: Math.round(clickX), y: Math.round(clickY) }
+          };
         }
 
         // 4. If element was searched but not found, return error
@@ -1413,7 +1499,8 @@ function executePageAction(
         }
 
         // 5. If no element found but we have coordinates, use coordinate-based clicking
-        if (!element && !selector && !target && coordinates) {
+        // OR if we have coordinates, show debug markers regardless
+        if (coordinates) {
           console.log(`🎯 Click coordinates received: x=${coordinates.x}, y=${coordinates.y}`);
           console.log(`📏 Viewport size: ${window.innerWidth}x${window.innerHeight}`);
           console.log(`📏 Device pixel ratio: ${window.devicePixelRatio}`);
@@ -1421,6 +1508,7 @@ function executePageAction(
           console.log(`🖥️  Window size: ${window.outerWidth}x${window.outerHeight}`);
           console.log(`📱 Screen size: ${screen.width}x${screen.height}`);
 
+          // ALWAYS show debug marker when coordinates are provided (for debugging)
           // Add visual debug marker at click coordinates with crosshairs
           const debugMarker = document.createElement('div');
           debugMarker.style.cssText = `
@@ -1490,7 +1578,23 @@ function executePageAction(
             label.remove();
           }, 5000);
 
-          let element = document.elementFromPoint(coordinates.x, coordinates.y) as HTMLElement;
+          // If element was already found by selector/text but we also have coordinates,
+          // verify the element is actually at those coordinates
+          if (element) {
+            const rect = element.getBoundingClientRect();
+            const isInBounds = coordinates.x >= rect.left && coordinates.x <= rect.right &&
+                              coordinates.y >= rect.top && coordinates.y <= rect.bottom;
+            console.log(`✓ Found element by selector/text, coordinates ${isInBounds ? 'MATCH' : 'MISMATCH'}`);
+            if (!isInBounds) {
+              console.warn(`⚠️  Coordinates (${coordinates.x}, ${coordinates.y}) are NOT within element bounds!`);
+              console.warn(`   Element bounds:`, rect);
+            }
+          }
+
+          // Get element at coordinates (may override selector-found element if mismatch)
+          if (!element) {
+            element = document.elementFromPoint(coordinates.x, coordinates.y) as HTMLElement;
+          }
           console.log(`🎯 Element at coordinates:`, element?.tagName, element?.className);
 
           if (element) {
@@ -1509,72 +1613,11 @@ function executePageAction(
             });
           }
 
-          // If element is an input or near an input, try to find the actual input field
-          // This improves accuracy for search boxes and text inputs
-          if (element) {
-            const tagName = element.tagName;
-
-            // If we clicked near but not on an input, try to find the nearest input
-            if (tagName !== 'INPUT' && tagName !== 'TEXTAREA' && element.getAttribute('contenteditable') !== 'true') {
-              // Check if clicked element contains an input
-              const inputInside = element.querySelector('input, textarea, [contenteditable="true"]') as HTMLElement;
-              if (inputInside) {
-                console.log(`💡 Found input field inside clicked element: ${inputInside.tagName}`);
-                element = inputInside;
-              } else {
-                // Try to find nearby visible input (within 100px)
-                const allInputs = Array.from(document.querySelectorAll('input[type="text"], input[type="search"], textarea')) as HTMLElement[];
-                const nearbyInput = allInputs.find(input => {
-                  const rect = input.getBoundingClientRect();
-                  const dx = Math.abs((rect.left + rect.width / 2) - coordinates.x);
-                  const dy = Math.abs((rect.top + rect.height / 2) - coordinates.y);
-                  const distance = Math.sqrt(dx * dx + dy * dy);
-                  return distance < 100 && rect.width > 0 && rect.height > 0; // Within 100px
-                });
-
-                if (nearbyInput) {
-                  console.log(`💡 Found nearby input field within 100px: ${nearbyInput.tagName}`);
-                  element = nearbyInput;
-                  // Update coordinates to center of input
-                  const rect = nearbyInput.getBoundingClientRect();
-                  coordinates = {
-                    x: rect.left + rect.width / 2,
-                    y: rect.top + rect.height / 2
-                  };
-                } else {
-                  // If still no input found, try to find the largest visible input/textarea on the page
-                  console.log('🔍 Searching for largest visible input field on page...');
-                  const allInputs = Array.from(document.querySelectorAll('input:not([type="hidden"]), textarea, [contenteditable="true"]')) as HTMLElement[];
-                  const visibleInputs = allInputs.filter(input => {
-                    const rect = input.getBoundingClientRect();
-                    return rect.width > 0 && rect.height > 0 &&
-                           rect.top >= 0 && rect.left >= 0 &&
-                           rect.bottom <= window.innerHeight &&
-                           rect.right <= window.innerWidth;
-                  });
-
-                  if (visibleInputs.length > 0) {
-                    // Find the largest input (by area)
-                    const largestInput = visibleInputs.reduce((largest, current) => {
-                      const largestRect = largest.getBoundingClientRect();
-                      const currentRect = current.getBoundingClientRect();
-                      const largestArea = largestRect.width * largestRect.height;
-                      const currentArea = currentRect.width * currentRect.height;
-                      return currentArea > largestArea ? current : largest;
-                    });
-
-                    console.log(`💡 Found largest visible input on page: ${largestInput.tagName}`);
-                    element = largestInput;
-                    const rect = largestInput.getBoundingClientRect();
-                    coordinates = {
-                      x: rect.left + rect.width / 2,
-                      y: rect.top + rect.height / 2
-                    };
-                  }
-                }
-              }
-            }
-          }
+          // DISABLED: Smart input-finding was redirecting clicks to wrong elements
+          // When AI provides explicit coordinates from screenshot, trust them exactly
+          // Previous behavior: searched 100px radius for inputs and redirected clicks
+          // Problem: clicks meant for links/buttons were landing on nearby search boxes
+          console.log('✓ Using exact coordinates from AI - no smart input search');
 
           if (element) {
             // Get element position for logging
@@ -1833,6 +1876,29 @@ function executePageAction(
         // Find the main scrollable element
         // Many SPAs (like Slack) use a custom scrollable container instead of window scroll
         const findScrollableElement = (): Element => {
+          // Special handling for SharePoint/Office Online documents
+          // Look for Office Online's canvas or document container
+          const officeCanvases = [
+            document.querySelector('#WACViewPanel_EditingElement'),  // Word Online
+            document.querySelector('.CanvasElement'),                // Office canvas
+            document.querySelector('[role="document"]'),             // Generic document role
+            document.querySelector('#m_excelWebRenderer_ewaCtl_scrollableContainer'), // Excel Online
+            document.querySelector('.ewaCtl_table')                  // Excel table
+          ].filter(el => el !== null);
+
+          if (officeCanvases.length > 0) {
+            for (const canvas of officeCanvases) {
+              if (canvas && canvas.scrollHeight > canvas.clientHeight) {
+                console.log('   Using Office Online canvas:', {
+                  tag: canvas.tagName,
+                  class: canvas.className,
+                  id: (canvas as HTMLElement).id
+                });
+                return canvas;
+              }
+            }
+          }
+
           // First check if window is scrollable
           if (document.body.scrollHeight > window.innerHeight && window.scrollY >= 0) {
             console.log('   Using window scroll');
@@ -1892,12 +1958,31 @@ function executePageAction(
             return largest;
           }
 
-          console.log('   Fallback to document.documentElement');
+          // Last resort: if nothing scrollable found, check if page is actually scrollable
+          console.log('   ⚠️ No scrollable elements found, checking if page is scrollable...');
+          console.log('   Page dimensions:', {
+            bodyHeight: document.body.scrollHeight,
+            windowHeight: window.innerHeight,
+            scrollY: window.scrollY,
+            isScrollable: document.body.scrollHeight > window.innerHeight
+          });
+
+          // Force window scroll even if it doesn't look scrollable - might be a detection issue
           return document.documentElement;
         };
 
         const scrollableElement = findScrollableElement();
         const isWindow = scrollableElement === document.documentElement;
+
+        console.log('📍 Final scroll target:', {
+          isWindow,
+          element: isWindow ? 'document.documentElement (window)' : scrollableElement.tagName,
+          className: isWindow ? 'n/a' : scrollableElement.className,
+          currentScrollTop: scrollableElement.scrollTop,
+          scrollHeight: scrollableElement.scrollHeight,
+          clientHeight: scrollableElement.clientHeight,
+          remainingScroll: scrollableElement.scrollHeight - scrollableElement.clientHeight - scrollableElement.scrollTop
+        });
 
         if (direction === 'top' || target === 'top') {
           if (isWindow) {
@@ -1919,19 +2004,50 @@ function executePageAction(
         } else if (direction === 'up') {
           const scrollAmount = amount || 500;
           const beforeScroll = scrollableElement.scrollTop;
-          scrollableElement.scrollBy({ top: -scrollAmount, behavior: 'smooth' });
+
+          console.log(`🔼 Attempting to scroll UP by ${scrollAmount}px from position ${beforeScroll}`);
+
+          // Use scrollBy for window, scrollTop for elements (better compatibility)
+          if (isWindow) {
+            window.scrollBy({ top: -scrollAmount, behavior: 'smooth' });
+          } else {
+            // Use scrollTop for better compatibility with all elements
+            const targetScroll = Math.max(0, scrollableElement.scrollTop - scrollAmount);
+            scrollableElement.scrollTop = targetScroll;
+          }
+
           setTimeout(() => {
-            console.log(`   ✓ Scrolled up by ${scrollAmount}px (from ${beforeScroll} to ${scrollableElement.scrollTop})`);
+            const afterScroll = scrollableElement.scrollTop;
+            const actualDelta = beforeScroll - afterScroll;
+            console.log(`   ✓ Scrolled up by ${actualDelta}px (from ${beforeScroll} to ${afterScroll})`);
           }, 100);
-          return { success: true, message: `Scrolled up by ${scrollAmount}px` };
+          return { success: true, message: `Scrolled up by ${scrollAmount}px from position ${beforeScroll}` };
         } else if (direction === 'down') {
           const scrollAmount = amount || 500;
           const beforeScroll = scrollableElement.scrollTop;
-          scrollableElement.scrollBy({ top: scrollAmount, behavior: 'smooth' });
+          const maxScroll = scrollableElement.scrollHeight - scrollableElement.clientHeight;
+
+          console.log(`🔽 Attempting to scroll DOWN by ${scrollAmount}px from position ${beforeScroll} (max: ${maxScroll})`);
+
+          // Use scrollBy for window, scrollTop for elements (better compatibility)
+          if (isWindow) {
+            window.scrollBy({ top: scrollAmount, behavior: 'smooth' });
+          } else {
+            // Use scrollTop for better compatibility with all elements
+            const targetScroll = Math.min(maxScroll, scrollableElement.scrollTop + scrollAmount);
+            console.log(`   Setting scrollTop from ${scrollableElement.scrollTop} to ${targetScroll}`);
+            scrollableElement.scrollTop = targetScroll;
+          }
+
           setTimeout(() => {
-            console.log(`   ✓ Scrolled down by ${scrollAmount}px (from ${beforeScroll} to ${scrollableElement.scrollTop})`);
+            const afterScroll = scrollableElement.scrollTop;
+            const actualDelta = afterScroll - beforeScroll;
+            console.log(`   ✓ Scrolled down by ${actualDelta}px (from ${beforeScroll} to ${afterScroll})`);
+            if (actualDelta === 0 && beforeScroll < maxScroll) {
+              console.warn(`   ⚠️ Scroll didn't move! This might indicate a scrolling issue with this element.`);
+            }
           }, 100);
-          return { success: true, message: `Scrolled down by ${scrollAmount}px` };
+          return { success: true, message: `Scrolled down by ${scrollAmount}px from position ${beforeScroll} to ${Math.min(maxScroll, beforeScroll + scrollAmount)}` };
         } else if (selector || target) {
           const element = document.querySelector(selector || target!);
           if (element) {
@@ -2025,6 +2141,11 @@ function executePageAction(
         }
 
         if (focusedElement) {
+          // Ensure element is focused
+          if (focusedElement instanceof HTMLElement) {
+            focusedElement.focus();
+          }
+
           // Special handling for Enter key - actually submit the form
           if (keyToPress === 'Enter') {
             // First try dispatching keyboard events with all required properties for Chrome
@@ -2033,10 +2154,21 @@ function executePageAction(
               code: 'Enter',
               keyCode: 13,
               which: 13,
+              charCode: 13,
               bubbles: true,
               cancelable: true,
-              composed: true
+              composed: true,
+              view: window
             };
+
+            // Dispatch beforeinput event for React apps
+            const beforeInputEvent = new InputEvent('beforeinput', {
+              bubbles: true,
+              cancelable: true,
+              data: '\n',
+              inputType: 'insertLineBreak'
+            });
+            focusedElement.dispatchEvent(beforeInputEvent);
 
             const keydownEvent = new KeyboardEvent('keydown', keyEventInit);
             const keypressEvent = new KeyboardEvent('keypress', keyEventInit);
@@ -2044,6 +2176,15 @@ function executePageAction(
 
             focusedElement.dispatchEvent(keydownEvent);
             focusedElement.dispatchEvent(keypressEvent);
+
+            // Dispatch input event for React apps
+            focusedElement.dispatchEvent(new InputEvent('input', {
+              bubbles: true,
+              cancelable: true,
+              data: '\n',
+              inputType: 'insertLineBreak'
+            }));
+
             focusedElement.dispatchEvent(keyupEvent);
 
             // If it's an input field, try to submit the parent form
@@ -2077,15 +2218,137 @@ function executePageAction(
           }
 
           // For other keys, dispatch normal keyboard events
+          // Map key names to proper key codes
+          const getKeyCode = (key: string): string => {
+            // Navigation keys
+            if (key === 'ArrowUp') return 'ArrowUp';
+            if (key === 'ArrowDown') return 'ArrowDown';
+            if (key === 'ArrowLeft') return 'ArrowLeft';
+            if (key === 'ArrowRight') return 'ArrowRight';
+            if (key === 'PageUp') return 'PageUp';
+            if (key === 'PageDown') return 'PageDown';
+            if (key === 'Home') return 'Home';
+            if (key === 'End') return 'End';
+
+            // Special keys
+            if (key === 'Tab') return 'Tab';
+            if (key === 'Escape') return 'Escape';
+            if (key === 'Enter') return 'Enter';
+            if (key === 'Backspace') return 'Backspace';
+            if (key === 'Delete') return 'Delete';
+            if (key === 'Space' || key === ' ') return 'Space';
+
+            // Function keys
+            if (key.startsWith('F') && key.length <= 3) return key; // F1-F12
+
+            // Letter keys get Key prefix
+            if (key.length === 1 && key.match(/[A-Za-z]/)) {
+              return `Key${key.toUpperCase()}`;
+            }
+
+            // Digit keys
+            if (key.length === 1 && key.match(/[0-9]/)) {
+              return `Digit${key}`;
+            }
+
+            // Default: return as-is
+            return key;
+          };
+
+          // Get proper keyCode for compatibility with older apps
+          const getKeyCodeValue = (key: string): number => {
+            if (key === 'Enter') return 13;
+            if (key === 'Escape') return 27;
+            if (key === 'Backspace') return 8;
+            if (key === 'Tab') return 9;
+            if (key === 'Space' || key === ' ') return 32;
+            if (key === 'PageUp') return 33;
+            if (key === 'PageDown') return 34;
+            if (key === 'End') return 35;
+            if (key === 'Home') return 36;
+            if (key === 'ArrowLeft') return 37;
+            if (key === 'ArrowUp') return 38;
+            if (key === 'ArrowRight') return 39;
+            if (key === 'ArrowDown') return 40;
+            if (key === 'Delete') return 46;
+
+            // Letter keys
+            if (key.length === 1 && key.match(/[A-Za-z]/)) {
+              return key.toUpperCase().charCodeAt(0);
+            }
+
+            // Digit keys
+            if (key.length === 1 && key.match(/[0-9]/)) {
+              return key.charCodeAt(0);
+            }
+
+            return 0;
+          };
+
+          const keyCode = getKeyCodeValue(keyToPress);
+          const code = getKeyCode(keyToPress);
+
+          console.log(`⌨️  Pressing key: "${keyToPress}" (code: ${code}, keyCode: ${keyCode})`);
+
           const keyEventInit: KeyboardEventInit = {
             key: keyToPress,
-            code: keyToPress === 'Tab' ? 'Tab' : keyToPress === 'Escape' ? 'Escape' : `Key${keyToPress}`,
+            code: code,
+            keyCode: keyCode,
+            which: keyCode,
             bubbles: true,
-            cancelable: true
+            cancelable: true,
+            composed: true,
+            view: window
           };
+
+          // Dispatch beforeinput for printable characters
+          if (keyToPress.length === 1) {
+            focusedElement.dispatchEvent(new InputEvent('beforeinput', {
+              bubbles: true,
+              cancelable: true,
+              data: keyToPress,
+              inputType: 'insertText'
+            }));
+          }
 
           focusedElement.dispatchEvent(new KeyboardEvent('keydown', keyEventInit));
           focusedElement.dispatchEvent(new KeyboardEvent('keypress', keyEventInit));
+
+          // IMPORTANT: Synthetic keyboard events have isTrusted=false and browsers
+          // won't perform default actions (scrolling, navigation, etc.) for security.
+          // We need to manually implement the default behavior for navigation keys.
+
+          // Manually perform default action for navigation keys
+          if (keyToPress === 'PageDown') {
+            console.log('   ↳ Manually scrolling page down (synthetic events cannot trigger default scroll)');
+            window.scrollBy({ top: window.innerHeight, behavior: 'smooth' });
+          } else if (keyToPress === 'PageUp') {
+            console.log('   ↳ Manually scrolling page up (synthetic events cannot trigger default scroll)');
+            window.scrollBy({ top: -window.innerHeight, behavior: 'smooth' });
+          } else if (keyToPress === 'ArrowDown') {
+            console.log('   ↳ Manually scrolling down (synthetic events cannot trigger default scroll)');
+            window.scrollBy({ top: 40, behavior: 'smooth' });
+          } else if (keyToPress === 'ArrowUp') {
+            console.log('   ↳ Manually scrolling up (synthetic events cannot trigger default scroll)');
+            window.scrollBy({ top: -40, behavior: 'smooth' });
+          } else if (keyToPress === 'Home') {
+            console.log('   ↳ Manually scrolling to top (synthetic events cannot trigger default scroll)');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          } else if (keyToPress === 'End') {
+            console.log('   ↳ Manually scrolling to bottom (synthetic events cannot trigger default scroll)');
+            window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+          }
+
+          // Dispatch input for printable characters
+          if (keyToPress.length === 1) {
+            focusedElement.dispatchEvent(new InputEvent('input', {
+              bubbles: true,
+              cancelable: true,
+              data: keyToPress,
+              inputType: 'insertText'
+            }));
+          }
+
           focusedElement.dispatchEvent(new KeyboardEvent('keyup', keyEventInit));
 
           return { success: true, message: `Pressed ${keyToPress} key` };
@@ -2581,68 +2844,95 @@ function showBrowserAutomationOverlay() {
     return;
   }
 
-  console.log('🔵 Showing browser automation overlay');
+  console.log('🔵 Showing browser automation indicator');
 
-  // Create blue border overlay
+  // Create small floating indicator badge (no interference with clicks)
   automationOverlay = document.createElement('div');
-  automationOverlay.id = 'atlas-automation-overlay';
+  automationOverlay.id = 'atlas-automation-indicator';
+  automationOverlay.innerHTML = `
+    <div style="
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: linear-gradient(135deg, rgba(0, 122, 255, 0.95) 0%, rgba(0, 81, 213, 0.95) 100%);
+      backdrop-filter: blur(10px);
+      color: white;
+      padding: 10px 16px;
+      border-radius: 24px;
+      font-size: 13px;
+      font-weight: 600;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      box-shadow: 0 4px 16px rgba(0, 122, 255, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.1);
+      animation: atlasIndicatorSlideIn 0.3s ease-out;
+    ">
+      <div style="
+        width: 8px;
+        height: 8px;
+        background: #00ff88;
+        border-radius: 50%;
+        box-shadow: 0 0 8px #00ff88;
+        animation: atlasIndicatorPulse 2s ease-in-out infinite;
+      "></div>
+      <span>AI Automation Active</span>
+      <button id="atlas-abort-btn" style="
+        background: rgba(255, 255, 255, 0.2);
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        color: white;
+        padding: 4px 12px;
+        border-radius: 12px;
+        font-size: 11px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        pointer-events: auto;
+      " onmouseover="this.style.background='rgba(255, 255, 255, 0.3)';"
+         onmouseout="this.style.background='rgba(255, 255, 255, 0.2)';">
+        Stop
+      </button>
+    </div>
+  `;
   automationOverlay.style.cssText = `
     position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    border: 4px solid #007AFF;
-    pointer-events: none;
-    z-index: 999998;
-    box-shadow: inset 0 0 20px rgba(0, 122, 255, 0.3);
-  `;
-
-  // Create "Take Over Control" button
-  automationButton = document.createElement('div');
-  automationButton.id = 'atlas-takeover-button';
-  automationButton.innerHTML = `
-    <button style="
-      background: linear-gradient(135deg, #007AFF 0%, #0051D5 100%);
-      color: white;
-      border: none;
-      padding: 12px 24px;
-      font-size: 14px;
-      font-weight: 600;
-      border-radius: 24px;
-      cursor: pointer;
-      box-shadow: 0 4px 12px rgba(0, 122, 255, 0.4);
-      transition: all 0.2s ease;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    " onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 16px rgba(0, 122, 255, 0.5)';"
-       onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 12px rgba(0, 122, 255, 0.4)';">
-      🛑 Take Over Control
-    </button>
-  `;
-  automationButton.style.cssText = `
-    position: fixed;
-    bottom: 20px;
-    left: 50%;
-    transform: translateX(-50%);
+    top: 20px;
+    right: 20px;
     z-index: 999999;
-    pointer-events: auto;
+    pointer-events: none;
   `;
 
-  // Handle button click
-  const button = automationButton.querySelector('button');
-  if (button) {
-    button.addEventListener('click', () => {
-      console.log('🛑 Take Over Control button clicked');
-      // Set abort flag to prevent overlay from re-appearing
+  // Add animation styles if not already present
+  if (!document.getElementById('atlas-indicator-animation')) {
+    const style = document.createElement('style');
+    style.id = 'atlas-indicator-animation';
+    style.textContent = `
+      @keyframes atlasIndicatorSlideIn {
+        from {
+          transform: translateX(400px);
+          opacity: 0;
+        }
+        to {
+          transform: translateX(0);
+          opacity: 1;
+        }
+      }
+      @keyframes atlasIndicatorPulse {
+        0%, 100% { opacity: 1; transform: scale(1); }
+        50% { opacity: 0.6; transform: scale(1.2); }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  // Handle stop button click
+  const stopBtn = automationOverlay.querySelector('#atlas-abort-btn');
+  if (stopBtn) {
+    stopBtn.addEventListener('click', () => {
+      console.log('🛑 Stop button clicked');
       isUserAborted = true;
-      // Reset abort flag after 5 seconds to allow future operations
       setTimeout(() => {
         isUserAborted = false;
         console.log('✅ User abort flag cleared - ready for new operations');
       }, 5000);
-      // Immediately hide overlay
       hideBrowserAutomationOverlay();
-      // Send message to sidepanel to abort automation
       chrome.runtime.sendMessage({ type: 'ABORT_BROWSER_AUTOMATION' }, () => {
         if (chrome.runtime.lastError) {
           console.log('Sidepanel not responding (this is OK)');
@@ -2652,12 +2942,9 @@ function showBrowserAutomationOverlay() {
   }
 
   document.body.appendChild(automationOverlay);
-  document.body.appendChild(automationButton);
 }
 
 function hideBrowserAutomationOverlay() {
-  console.log('🔵 Hiding browser automation overlay');
-
   if (automationOverlay && automationOverlay.parentNode) {
     automationOverlay.remove();
     automationOverlay = null;

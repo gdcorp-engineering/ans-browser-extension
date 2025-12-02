@@ -16,15 +16,15 @@ const mockAgent = {
   "links": [
     {
       "rel": "agent-details",
-      "href": "https://ra.int.dev-godaddy.com/v1/agents/a2a/www-godaddy-com.Airo.Godaddy.v1.0.0.ans-testing1.com"
+      "href": "https://api.ote-godaddy.com/v1/agents/a2a/www-godaddy-com.Airo.Godaddy.v1.0.0.ans-testing1.com"
     },
     {
       "rel": "server-certificates",
-      "href": "https://ra.int.dev-godaddy.com/v1/agents/a2a/www-godaddy-com.Airo.Godaddy.v1.0.0.ans-testing1.com/certificates/server"
+      "href": "https://api.ote-godaddy.com/v1/agents/a2a/www-godaddy-com.Airo.Godaddy.v1.0.0.ans-testing1.com/certificates/server"
     },
     {
       "rel": "identity-certificates",
-      "href": "https://ra.int.dev-godaddy.com/v1/agents/a2a/www-godaddy-com.Airo.Godaddy.v1.0.0.ans-testing1.com/certificates/identity"
+      "href": "https://api.ote-godaddy.com/v1/agents/a2a/www-godaddy-com.Airo.Godaddy.v1.0.0.ans-testing1.com/certificates/identity"
     }
   ],
   "ttl": 300,
@@ -51,18 +51,19 @@ let protocol;
 
 try {
   console.log(`🔍 Extracting URL for agent "${mockAgent.agentName}":`);
-  console.log(`   hasMcpRemotes: ${!!mockAgent.protocolExtensions?.mcp?.remotes?.[0]?.url}`);
+  console.log(`   hasMcp1Remotes: ${!!mockAgent.protocolExtensions?.mcp1?.remotes?.[0]?.url}`);
   console.log(`   hasA2aRemotes: ${!!mockAgent.protocolExtensions?.a2a?.remotes?.[0]?.url}`);
   console.log(`   hasA2aUrl: ${!!mockAgent.protocolExtensions?.a2a?.url}`);
+  console.log(`   mcp1RemotesUrl: ${mockAgent.protocolExtensions?.mcp1?.remotes?.[0]?.url}`);
   console.log(`   a2aRemotesUrl: ${mockAgent.protocolExtensions?.a2a?.remotes?.[0]?.url}`);
   console.log(`   a2aUrl: ${mockAgent.protocolExtensions?.a2a?.url}`);
   console.log('');
 
-  // Check for MCP protocol: protocolExtensions.mcp.remotes[0].url
-  if (mockAgent.protocolExtensions?.mcp?.remotes?.[0]?.url) {
-    url = mockAgent.protocolExtensions.mcp.remotes[0].url;
+  // Check for MCP protocol: protocolExtensions.mcp1.remotes[0].url
+  if (mockAgent.protocolExtensions?.mcp1?.remotes?.[0]?.url) {
+    url = mockAgent.protocolExtensions.mcp1.remotes[0].url;
     protocol = 'mcp';
-    console.log(`   ✓ Using MCP remote URL: ${url}`);
+    console.log(`   ✓ Using MCP1 remote URL: ${url}`);
   }
   // Check for A2A protocol: protocolExtensions.a2a.remotes[0].url
   else if (mockAgent.protocolExtensions?.a2a?.remotes?.[0]?.url) {

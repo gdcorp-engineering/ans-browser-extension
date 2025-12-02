@@ -13,7 +13,8 @@
     "scripting",
     "contextMenus",
     "cookies",
-    "offscreen"
+    "offscreen",
+    "downloads"
   ],
   "host_permissions": [
     "<all_urls>"

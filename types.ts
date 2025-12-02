@@ -15,6 +15,15 @@ export interface MCPServerConfig {
   protocol?: ProtocolType; // Protocol type: 'mcp' or 'a2a'
   isTrusted?: boolean; // From ANS marketplace
   isCustom?: boolean; // User-added custom server
+  protocolExtension?: {
+    mcp?: {
+      remotes?: Array<{ url: string }>;
+    };
+    mcp1?: {
+      url?: string;
+      remotes?: Array<{ url: string }>;
+    };
+  };
   businessInfo?: {
     description?: string;
     category?: string;
@@ -22,6 +31,24 @@ export interface MCPServerConfig {
     website?: string;
     rating?: number;
   };
+}
+
+export interface SiteInstruction {
+  id: string;
+  domainPattern: string; // e.g., "*.atlassian.net" or "confluence.company.com"
+  instructions: string; // Custom instructions for this site
+  enabled: boolean;
+}
+
+export interface ServiceMapping {
+  id: string;
+  urlPattern: string;        // e.g., "*.jira.atlassian.net" or "jira.atlassian.net"
+  serviceType: 'mcp' | 'a2a';
+  serviceId: string;         // Server/Agent ID from discovery
+  serviceName: string;       // Display name
+  serviceUrl: string;        // MCP/A2A endpoint URL
+  enabled: boolean;          // Active checkbox
+  createdAt: number;
 }
 
 export interface Settings {
@@ -36,6 +63,15 @@ export interface Settings {
   mcpServers?: MCPServerConfig[]; // List of MCP servers to connect to
   ansApiToken?: string; // ANS API authentication token (optional)
   floatingButtonEnabled?: boolean; // Enable/disable floating button on web pages (default: true)
+  siteInstructions?: SiteInstruction[]; // Site-specific custom instructions
+  autoSaveScreenshots?: boolean; // Automatically save screenshots to Downloads folder
+  serviceMappings?: ServiceMapping[]; // Site-specific service mappings (MCP/A2A)
+
+  // Conversation History Settings
+  conversationHistoryLength?: number; // Number of messages to keep in initial history (default: 10)
+  conversationLoopHistoryLength?: number; // Max messages during tool execution loops (default: 15)
+  enableConversationPersistence?: boolean; // Save conversations to chrome.storage (default: true)
+  enableSmartSummarization?: boolean; // Automatically summarize old messages (default: true)
 }
 
 export interface ComposioSession {
@@ -66,6 +102,7 @@ export interface Message {
   images?: Array<{ data: string; mime_type: string }>;
   // Special mode for GoCaaS integration
   mode?: 'create_image' | 'thinking' | 'deep_research' | 'study_and_learn' | 'web_search' | 'canvas' | 'browser_memory';
+  audioLink?: string; // URL to audio file (e.g., MP3 from music generation)
 }
 
 export interface ChatHistory {
@@ -193,6 +230,7 @@ export interface MCPConnection {
   client: MCPClient;
   tools: Record<string, any>;
   connected: boolean;
+  connecting?: boolean; // True when connection is in progress (before client.tools() completes)
   error?: string;
 }
 
@@ -202,6 +240,7 @@ export interface MCPConnection {
 export interface MCPToolWithOrigin {
   serverId: string;
   serverName: string;
+  serverUrl: string;
   toolDefinition: any;
 }
 

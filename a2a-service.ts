@@ -18,6 +18,33 @@ export class A2AService {
   private sdkClients: Map<string, A2AClient> = new Map(); // SDK clients for conversational mode
 
   /**
+   * Extract URL from server config, checking protocolExtension.mcp1 first
+   */
+  private getServerUrl(server: MCPServerConfig): string {
+    // Check protocolExtension.mcp1.remotes[0].url first (highest priority)
+    if (server.protocolExtension?.mcp1?.remotes?.[0]?.url) {
+      console.log(`   ✓ Using URL from protocolExtension.mcp1.remotes[0]: ${server.protocolExtension.mcp1.remotes[0].url}`);
+      return server.protocolExtension.mcp1.remotes[0].url;
+    }
+
+    // Fallback to protocolExtension.mcp1.url
+    if (server.protocolExtension?.mcp1?.url) {
+      console.log(`   ✓ Using URL from protocolExtension.mcp1.url: ${server.protocolExtension.mcp1.url}`);
+      return server.protocolExtension.mcp1.url;
+    }
+
+    // Fallback to protocolExtension.mcp.remotes[0].url
+    if (server.protocolExtension?.mcp?.remotes?.[0]?.url) {
+      console.log(`   ✓ Using URL from protocolExtension.mcp.remotes[0]: ${server.protocolExtension.mcp.remotes[0].url}`);
+      return server.protocolExtension.mcp.remotes[0].url;
+    }
+
+    // Final fallback to main url field
+    console.log(`   ✓ Using main URL field: ${server.url}`);
+    return server.url;
+  }
+
+  /**
    * Register all enabled A2A servers
    * Note: A2A uses simple HTTP POST - no persistent connection needed
    */
@@ -27,19 +54,20 @@ export class A2AService {
     console.log(`🔌 Registering ${enabledA2AServers.length} A2A agent(s)...`);
 
     enabledA2AServers.forEach((server) => {
+      const resolvedUrl = this.getServerUrl(server);
+
       console.log(`📝 Registering A2A agent "${server.name}":`);
       console.log(`   - ID: ${server.id}`);
-      console.log(`   - URL: ${server.url}`);
-      console.log(`   - URL type: ${typeof server.url}`);
+      console.log(`   - Resolved URL: ${resolvedUrl}`);
       console.log(`   - Protocol: ${server.protocol}`);
 
       this.connections.set(server.id, {
         serverId: server.id,
         serverName: server.name,
-        url: server.url,
+        url: resolvedUrl,
         enabled: true,
       });
-      console.log(`✅ Registered A2A agent "${server.name}" at ${server.url}`);
+      console.log(`✅ Registered A2A agent "${server.name}" at ${resolvedUrl}`);
     });
 
     console.log(`✅ Registered ${this.connections.size} A2A agent(s)`);
@@ -194,8 +222,9 @@ export class A2AService {
   /**
    * Send a conversational message to an A2A agent
    * Uses direct HTTP POST to /invoke endpoint
+   * Returns response text and optional audioLink
    */
-  async sendMessage(serverId: string, messageText: string): Promise<string> {
+  async sendMessage(serverId: string, messageText: string): Promise<{ text: string; audioLink?: string }> {
     const connection = this.connections.get(serverId);
 
     if (!connection || !connection.enabled) {
@@ -262,19 +291,37 @@ export class A2AService {
           .map((part: { kind: string; text?: string }) => part.text)
           .join('\n');
       }
+      // Check for lyrics field (music generation MCP)
+      else if (responseData.lyrics) {
+        responseText = responseData.lyrics;
+        console.log(`🎵 Found lyrics field in response`);
+      }
       // Check if response has simple text format
       else if (responseData.response) {
         responseText = String(responseData.response);
       }
+      // Check if response has text field
+      else if (responseData.text) {
+        responseText = responseData.text;
+      }
       // Fallback to JSON string
       else {
-        responseText = JSON.stringify(responseData);
+        responseText = JSON.stringify(responseData, null, 2);
       }
 
-      console.log(`✅ Extracted response text: ${responseText}`);
+      console.log(`✅ Extracted response text: ${responseText.substring(0, 200)}...`);
 
-      return responseText;
-    } catch (error) {
+      // Extract audioLink if present (check multiple possible field names)
+      const audioLink = responseData.audioLink || responseData.audio_link || responseData.audioUrl || responseData.audio_url;
+      if (audioLink) {
+        console.log(`🎵 Audio link found: ${audioLink}`);
+      } else {
+        console.log(`⚠️ No audio link found in response`);
+        console.log(`📊 Response fields:`, Object.keys(responseData));
+      }
+
+      return { text: responseText, audioLink };
+    } catch (error: any) {
       console.error(`❌ Error sending message to A2A agent:`, error);
       if (error instanceof Error) {
         console.error(`   Error type:`, error.constructor.name);
