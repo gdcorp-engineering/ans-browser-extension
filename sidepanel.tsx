@@ -1436,14 +1436,12 @@ function ChatSidebar() {
 
     const serviceText = (() => {
       const totalCount = (hasMappedA2A ? 1 : 0) + mappedServices.mcpServerIds.length;
-      if (hasMappedA2A && hasMappedMCPs) {
-        return `${totalCount} Verified Agents Connected`;
-      } else if (hasMappedA2A) {
-        return `${totalCount} Verified Agents Connected`;
-      } else if (hasMappedMCPs) {
-        return `${totalCount} Verified Agents Connected`;
-      } else {
+      if (totalCount === 0) {
         return 'No trusted services for this site';
+      } else if (totalCount === 1) {
+        return '1 Verified Agent Connected';
+      } else {
+        return `${totalCount} Verified Agents Connected`;
       }
     })();
 
