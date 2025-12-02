@@ -6241,6 +6241,8 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
     };
   }, []);
 
+  // Show onboarding welcome screen if no settings
+  if (!settings) {
     return (
       <div className="chat-container">
         <div className="welcome-message" style={{ padding: '40px 20px' }}>
@@ -6270,7 +6272,16 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
           </div>
           <p style={{ marginBottom: '8px', fontSize: '16px', fontWeight: 500 }}>Let's get your new companion tailored for you.</p>
           <button
-            onClick={startOnboarding}
+            onClick={() => {
+              const startOnboarding = () => {
+                setOnboardingState({
+                  active: true,
+                  step: 'provider',
+                  tempSettings: {}
+                });
+              };
+              startOnboarding();
+            }}
             style={{ 
               width: 'auto', 
               padding: '12px 24px',
@@ -6598,6 +6609,8 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
         </div>
       )}
 
+      {currentSiteAgent && (
+        <div style={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
@@ -6624,7 +6637,7 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
             >
               {trustedAgentOptIn ? 'Opted In' : 'Opt In'}
             </button>
-          )}
+          </div>
         </div>
       )}
 
@@ -6644,13 +6657,7 @@ Include this link and instruction in Step 3 when asking for the GoCode Key.`;
               <div className="message-content">
                 {message.content || (isLoading && message.role === 'assistant') ? (
                   message.role === 'assistant' ? (
-                    <>
-                          <span></span>
-                          <span></span>
-                          <span></span>
-                        </div>
-                      )}
-                    </>
+                    <MessageParser content={String(message.content)} />
                   ) : (
                     <UserMessageParser content={String(message.content)} />
                   )
