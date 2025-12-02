@@ -100,6 +100,7 @@ function SettingsPage() {
   const [updateAvailable, setUpdateAvailable] = useState<{ version: string; downloadUrl: string; releaseNotes?: string; artifactName?: string } | null>(null);
   const [updateError, setUpdateError] = useState<string | null>(null);
   const [updateMessage, setUpdateMessage] = useState<string | null>(null);
+  const [showSignInModal, setShowSignInModal] = useState(false);
 
   const CURRENT_VERSION = '1.5.4'; // This should match manifest.json version
   const GITHUB_REPO = 'gdcorp-im/ans-browser-extension-v1-temp';
@@ -1008,7 +1009,7 @@ function SettingsPage() {
               checked={settings.mcpEnabled || false}
               onChange={(e) => setSettings({ ...settings, mcpEnabled: e.target.checked })}
             />
-            Enable Business Services
+            Enable Business Services powered by GoDaddy ANS
           </label>
           <p className="help-text">
             🌐 Access 115 Million verified GoDaddy customer services through AI chat. Book appointments, place orders, and interact with businesses naturally.
@@ -1150,7 +1151,7 @@ function SettingsPage() {
                 </div>
                 <button
                   onClick={() => {
-                    window.open('https://ra.int.ote-godaddy.com/', '_blank');
+                    setShowSignInModal(true);
                   }}
                   style={{
                     padding: '12px 20px',
@@ -1170,6 +1171,118 @@ function SettingsPage() {
                 <p style={{ fontSize: '12px', color: '#666', margin: 0, fontStyle: 'italic' }}>
                   ⚠️ Required first step. The extension uses your browser cookies to access the ANS API.
                 </p>
+                
+                {/* Sign In Modal */}
+                {showSignInModal && (
+                  <div style={{
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    background: 'rgba(0, 0, 0, 0.5)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 10000,
+                    padding: '20px'
+                  }}
+                  onClick={(e) => {
+                    if (e.target === e.currentTarget) {
+                      setShowSignInModal(false);
+                    }
+                  }}
+                  >
+                    <div style={{
+                      background: 'white',
+                      borderRadius: '12px',
+                      padding: '30px',
+                      maxWidth: '500px',
+                      width: '100%',
+                      boxShadow: '0 10px 40px rgba(0, 0, 0, 0.2)'
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                    >
+                      <h2 style={{
+                        fontSize: '20px',
+                        fontWeight: 'bold',
+                        marginBottom: '16px',
+                        color: '#333'
+                      }}>
+                        🔐 Sign In to ANS
+                      </h2>
+                      
+                      <div style={{
+                        background: '#f0f7ff',
+                        border: '2px solid #007bff',
+                        borderRadius: '8px',
+                        padding: '16px',
+                        marginBottom: '20px'
+                      }}>
+                        <p style={{
+                          fontSize: '14px',
+                          color: '#333',
+                          marginBottom: '12px',
+                          lineHeight: '1.6'
+                        }}>
+                          <strong>What will happen:</strong>
+                        </p>
+                        <ol style={{
+                          fontSize: '14px',
+                          color: '#333',
+                          paddingLeft: '20px',
+                          marginBottom: 0,
+                          lineHeight: '1.8'
+                        }}>
+                          <li>A new tab will open to <strong>ra.int.ote-godaddy.com</strong></li>
+                          <li>Complete the sign-in process in that tab</li>
+                          <li><strong>After signing in, close that tab</strong> and return here</li>
+                          <li>The extension will automatically use your browser cookies for ANS API access</li>
+                        </ol>
+                      </div>
+                      
+                      <div style={{
+                        display: 'flex',
+                        gap: '12px',
+                        justifyContent: 'flex-end'
+                      }}>
+                        <button
+                          onClick={() => setShowSignInModal(false)}
+                          style={{
+                            padding: '10px 20px',
+                            background: '#f3f4f6',
+                            color: '#333',
+                            border: '1px solid #d1d5db',
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            fontSize: '14px',
+                            fontWeight: '500'
+                          }}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={() => {
+                            setShowSignInModal(false);
+                            window.open('https://ra.int.ote-godaddy.com/', '_blank');
+                          }}
+                          style={{
+                            padding: '10px 20px',
+                            background: '#007bff',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            fontSize: '14px',
+                            fontWeight: '500'
+                          }}
+                        >
+                          Open Sign-In Page
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Visual Connector */}
