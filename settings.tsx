@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
-import type { Settings, MCPServerConfig, SiteInstruction, ServiceMapping } from './types';
+import type { Settings, MCPServerConfig, SiteInstruction, ServiceMapping, Provider } from './types';
 import { DEFAULT_SITE_INSTRUCTIONS } from './default-site-instructions';
 import {
   fetchTrustedBusinesses,
@@ -13,12 +13,17 @@ import {
 } from './trusted-business-service';
 import { generateUrlPattern, extractDomain } from './utils';
 
-const PROVIDER_MODELS = {
+const PROVIDER_MODELS: Record<Provider, Array<{ id: string; name: string; description: string }>> = {
   anthropic: [
     { id: 'claude-sonnet-4-5-20250929', name: 'Claude Sonnet 4.5', description: 'Latest and most capable' },
     { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', description: 'Most intelligent model' },
     { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku', description: 'Fastest model' },
     { id: 'claude-3-opus-20240229', name: 'Claude 3 Opus', description: 'Previous generation' },
+  ],
+  google: [
+    { id: 'gemini-2.5-computer-use-preview-10-2025', name: 'Gemini 2.5 Computer Use Preview', description: 'Browser automation model' },
+    { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', description: 'General reasoning' },
+    { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', description: 'Fast responses' },
   ],
 };
 
@@ -29,6 +34,7 @@ function SettingsPage() {
     model: 'claude-sonnet-4-5-20250929',
     toolMode: 'tool-router',
     composioApiKey: '',
+    enableScreenshots: false,
     mcpEnabled: false,
     mcpServers: [],
     siteInstructions: [],
@@ -169,6 +175,7 @@ function SettingsPage() {
 
         setSettings({
           ...loadedSettings,
+          enableScreenshots: loadedSettings.enableScreenshots ?? false,
           siteInstructions: mergedInstructions
         });
       } else {
@@ -179,6 +186,7 @@ function SettingsPage() {
           model: 'claude-sonnet-4-5-20250929',
           toolMode: 'tool-router',
           composioApiKey: '',
+          enableScreenshots: false,
           mcpEnabled: false,
           mcpServers: [],
           siteInstructions: DEFAULT_SITE_INSTRUCTIONS,
@@ -927,7 +935,22 @@ function SettingsPage() {
           <label style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <input
               type="checkbox"
+              checked={settings.enableScreenshots || false}
+              onChange={(e) => setSettings({ ...settings, enableScreenshots: e.target.checked })}
+            />
+            Enable Screenshots (Browser Tools)
+          </label>
+          <p className="help-text">
+            📷 Allow Browser Tools to capture screenshots for visual reasoning. Turn off to rely solely on DOM context for higher accuracy or improved privacy.
+          </p>
+        </div>
+
+        <div className="setting-group">
+          <label style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <input
+              type="checkbox"
               checked={settings.autoSaveScreenshots || false}
+              disabled={!settings.enableScreenshots}
               onChange={(e) => setSettings({ ...settings, autoSaveScreenshots: e.target.checked })}
             />
             Auto-save Screenshots

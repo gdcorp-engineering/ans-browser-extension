@@ -2,7 +2,7 @@
 import { z } from 'zod';
 
 export type ToolMode = 'tool-router';
-export type Provider = 'anthropic';
+export type Provider = 'anthropic' | 'google';
 
 export type ProtocolType = 'mcp' | 'a2a';
 
@@ -57,6 +57,7 @@ export interface Settings {
   model: string;
   toolMode?: ToolMode;
   composioApiKey?: string;
+  enableScreenshots?: boolean;
   customBaseUrl?: string; // Custom provider URL
   customModelName?: string; // Custom model name when model is 'custom'
   mcpEnabled?: boolean; // Enable custom MCP servers

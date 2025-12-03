@@ -9,7 +9,7 @@ import { streamAnthropic } from './anthropic-service';
 import { streamAnthropicWithBrowserTools } from './anthropic-browser-tools';
 import { getMCPService, resetMCPService, MCPService } from './mcp-service';
 import { getA2AService, resetA2AService, A2AService } from './a2a-service';
-import { getToolDescription, mergeToolDefinitions } from './mcp-tool-router';
+import { getToolDescription } from './mcp-tool-router';
 import { findAgentForCurrentSite, agentNameToDomain } from './site-detector';
 import { DEFAULT_SITE_INSTRUCTIONS } from './default-site-instructions';
 import { matchesUrlPattern } from './utils';
@@ -253,6 +253,15 @@ function ChatSidebar() {
   const currentTabIdRef = useRef<number | null>(null);
   const messagesRef = useRef<Message[]>([]);
   const lastTypedSelectorRef = useRef<string | null>(null); // Store last typed selector for Enter key
+  const pageContextRef = useRef<any | null>(null);
+  const pageContextTimestampRef = useRef<number>(0);
+
+  const cachePageContext = (context: any) => {
+    if (context && typeof context === 'object') {
+      pageContextRef.current = context;
+      pageContextTimestampRef.current = Date.now();
+    }
+  };
 
   // Helper functions to get/set tab-specific resources for concurrent conversations
   const getCurrentTabId = () => currentTabIdRef.current;
@@ -471,13 +480,24 @@ function ChatSidebar() {
             }
           }, RETRY_DELAY);
         } else {
+          if (toolName === 'getPageContext' && response && !response?.error) {
+            cachePageContext(response);
+          }
           // Return response as-is (could be success or error)
           resolve(response);
         }
       };
       
       if (toolName === 'screenshot') {
-        chrome.runtime.sendMessage({ type: 'TAKE_SCREENSHOT' }, handleResponse);
+        if (!settings?.enableScreenshots) {
+          console.warn('Screenshot tool requested but it is currently disabled via settings.');
+          handleResponse({
+            success: false,
+            error: 'Screenshot capture is disabled in Settings. Enable screenshots to use this tool.'
+          });
+        } else {
+          chrome.runtime.sendMessage({ type: 'TAKE_SCREENSHOT' }, handleResponse);
+        }
       } else if (toolName === 'clickElement') {
         chrome.runtime.sendMessage({
           type: 'EXECUTE_ACTION',
@@ -556,6 +576,181 @@ function ChatSidebar() {
         reject(new Error(`Unknown tool: ${toolName}`));
       }
     });
+  };
+
+  const getCachedPageContext = async (forceRefresh = false): Promise<any | null> => {
+    if (
+      !forceRefresh &&
+      pageContextRef.current &&
+      Date.now() - pageContextTimestampRef.current < 4000
+    ) {
+      return pageContextRef.current;
+    }
+
+    try {
+      const context = await executeTool('getPageContext', {});
+      if (context && !context?.error) {
+        cachePageContext(context);
+        return context;
+      }
+    } catch (error) {
+      console.warn('Failed to refresh page context:', error);
+    }
+
+    return null;
+  };
+
+  const formatPageContextForPrompt = (
+    context: any,
+    {
+      contentLimit = 600,
+      elementLimit = 10
+    }: { contentLimit?: number; elementLimit?: number } = {}
+  ): string | null => {
+    if (!context) return null;
+
+    const interactiveSummary = Array.isArray(context.interactiveElements)
+      ? context.interactiveElements
+          .slice(0, elementLimit)
+          .map((el: any, idx: number) => {
+            const label = el.text || el.ariaLabel || el.value || el.selector || el.tag;
+            return `${idx + 1}. ${label || 'unnamed element'}`;
+          })
+          .join('\n')
+      : '';
+
+    const condensedText =
+      (context.textContent || '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, contentLimit) || '';
+
+    const viewport =
+      context.viewport && context.viewport.width && context.viewport.height
+        ? `${context.viewport.width}x${context.viewport.height}`
+        : 'unknown';
+
+    return [
+      '[DOM CONTEXT]',
+      `URL: ${context.url || 'unknown'}`,
+      `Title: ${context.title || 'Untitled'}`,
+      `Viewport: ${viewport}`,
+      `Interactive Elements:\n${interactiveSummary || '(none listed)'}`,
+      `Visible Text:\n${condensedText || '(no visible text captured)'}`,
+    ].join('\n');
+  };
+
+  const scaleCoordinates = async (x: number, y: number, contextOverride?: any) => {
+    const numericX = typeof x === 'number' ? x : 0;
+    const numericY = typeof y === 'number' ? y : 0;
+
+    const needsScaling = numericX <= 1100 && numericY <= 1100;
+    if (!needsScaling) {
+      return { x: numericX, y: numericY };
+    }
+
+    const pageInfo = contextOverride || (await getCachedPageContext());
+    const viewportWidth = pageInfo?.viewport?.width || 1440;
+    const viewportHeight = pageInfo?.viewport?.height || 900;
+
+    return {
+      x: Math.round((numericX / 1000) * viewportWidth),
+      y: Math.round((numericY / 1000) * viewportHeight)
+    };
+  };
+
+  type ClickTargetResolution = {
+    selector?: string;
+    text?: string;
+    coordinates?: { x: number; y: number };
+  };
+
+  const normalizeMatchText = (value?: string | null) =>
+    typeof value === 'string' ? value.trim().toLowerCase() : '';
+
+  const resolveClickTarget = async (args: any): Promise<ClickTargetResolution | null> => {
+    if (args?.selector && typeof args.selector === 'string') {
+      return { selector: args.selector };
+    }
+
+    const context = await getCachedPageContext();
+    if (!context || !Array.isArray(context?.interactiveElements)) {
+      return null;
+    }
+
+    const interactiveElements = context.interactiveElements;
+    const candidateTexts = [
+      args?.text,
+      args?.label,
+      args?.name,
+      args?.description,
+      args?.ariaLabel,
+      args?.elementText,
+      args?.target
+    ];
+
+    for (const candidate of candidateTexts) {
+      const normalizedCandidate = normalizeMatchText(candidate);
+      if (!normalizedCandidate) continue;
+
+      const match = interactiveElements.find((el: any) => {
+        const haystacks = [
+          normalizeMatchText(el.text),
+          normalizeMatchText(el.ariaLabel),
+          normalizeMatchText(el.value)
+        ].filter(Boolean);
+
+        return haystacks.some(
+          (haystack) =>
+            haystack === normalizedCandidate ||
+            haystack.includes(normalizedCandidate) ||
+            normalizedCandidate.includes(haystack)
+        );
+      });
+
+      if (match) {
+        return {
+          selector: match.selector,
+          text: match.text || match.ariaLabel
+        };
+      }
+    }
+
+    const hasCoordinates =
+      (typeof args?.x === 'number' && typeof args?.y === 'number') ||
+      (typeof args?.coordinate?.x === 'number' && typeof args?.coordinate?.y === 'number');
+
+    if (!hasCoordinates) {
+      return null;
+    }
+
+    const rawCoords =
+      typeof args?.x === 'number' && typeof args?.y === 'number'
+        ? { x: args.x, y: args.y }
+        : { x: args.coordinate.x, y: args.coordinate.y };
+
+    const scaledCoords = await scaleCoordinates(rawCoords.x, rawCoords.y, context);
+
+    const matchByCoords = interactiveElements.find((el: any) => {
+      if (!el.boundingRect) return false;
+      const rect = el.boundingRect;
+      return (
+        scaledCoords.x >= rect.left &&
+        scaledCoords.x <= rect.right &&
+        scaledCoords.y >= rect.top &&
+        scaledCoords.y <= rect.bottom
+      );
+    });
+
+    if (matchByCoords) {
+      return {
+        selector: matchByCoords.selector,
+        text: matchByCoords.text || matchByCoords.ariaLabel,
+        coordinates: scaledCoords
+      };
+    }
+
+    return { coordinates: scaledCoords };
   };
 
   const loadSettings = async (forceRefresh = false) => {
@@ -955,7 +1150,7 @@ function ChatSidebar() {
     chrome.tabs.onActivated.addListener(handleTabChange);
 
     // Listen for URL changes within the current tab (e.g., navigation via browser tools)
-    const handleTabUpdate = (tabId: number, changeInfo: chrome.tabs.TabChangeInfo, tab: chrome.tabs.Tab) => {
+    const handleTabUpdate = (tabId: number, changeInfo: chrome.tabs.TabChangeInfo) => {
       // Only react to URL changes on the current tab
       if (changeInfo.url && tabId === currentTabIdRef.current) {
         console.log('📍 Tab URL changed to:', changeInfo.url);
@@ -1271,18 +1466,9 @@ function ChatSidebar() {
       };
       setMessages(prev => [...prev, assistantMessage]);
 
-      // Get initial screenshot with retry logic
-      let screenshot = await executeTool('screenshot', {});
-
-      if (!screenshot?.screenshot) {
-        const errorMsg = screenshot?.error || 'Unknown error capturing screenshot';
-        console.error('❌ Screenshot failed. Full response:', JSON.stringify(screenshot, null, 2));
-        throw new Error(`Failed to capture screenshot: ${errorMsg}`);
-      }
-      
       // Prepare conversation history
       const contents: any[] = [];
-      
+
       // Add message history
       for (const msg of messages) {
         if (msg.role === 'user') {
@@ -1297,44 +1483,71 @@ function ChatSidebar() {
           });
         }
       }
-      
-      if (screenshot && screenshot.screenshot) {
+
+      const initialContext = await getCachedPageContext(true);
+      const initialContextText = formatPageContextForPrompt(initialContext);
+      const initialContextPart = initialContextText ? { text: initialContextText } : null;
+
+      let initialScreenshotData: string | null = null;
+      if (settings?.enableScreenshots) {
+        const screenshotResp = await executeTool('screenshot', {});
+        if (screenshotResp?.screenshot) {
+          initialScreenshotData = screenshotResp.screenshot;
+        } else {
+          console.warn('Initial screenshot capture failed or returned empty data:', screenshotResp?.error);
+        }
+      }
+
+      if (initialContextPart || (settings?.enableScreenshots && initialScreenshotData)) {
         const lastUserContent = contents[contents.length - 1];
-        if (lastUserContent && lastUserContent.role === 'user') {
-          lastUserContent.parts.push({
+        const targetContent = lastUserContent && lastUserContent.role === 'user'
+          ? lastUserContent
+          : { role: 'user', parts: [] as any[] };
+
+        if (initialContextPart) {
+          targetContent.parts.push(initialContextPart);
+        }
+
+        if (settings?.enableScreenshots && initialScreenshotData) {
+          targetContent.parts.push({
             inline_data: {
               mime_type: 'image/png',
-              data: screenshot.screenshot.split(',')[1]
+              data: initialScreenshotData.split(',')[1]
             }
           });
+        }
+
+        if (targetContent !== lastUserContent) {
+          contents.push(targetContent);
         }
       }
 
       let responseText = '';
       const maxTurns = 30;
 
+      const screenshotInstruction = settings?.enableScreenshots
+        ? `Screenshots are enabled, but you must still read the latest [DOM CONTEXT] summary after each action before deciding what to do next. Only request screenshots when DOM data is insufficient.`
+        : `Screenshots are currently unavailable. Instead, you will be given fresh [DOM CONTEXT] summaries after each action. Always read that context to understand selectors, labels, and element positions before choosing your next action.`;
+
       const systemInstruction = `You are a browser automation assistant with ONLY browser control capabilities.
 
-CRITICAL: You can ONLY use the computer_use tool functions for browser automation. DO NOT attempt to call any other functions like print, execute, or any programming functions.
+CRITICAL:
+- ${screenshotInstruction}
+- You can ONLY use the computer_use tool functions listed below. DO NOT invent other functions.
 
 AVAILABLE ACTIONS (computer_use tool only):
-- click / click_at: Click at coordinates
+- click / click_at: Click at coordinates (only when no selector is available)
 - type_text_at: Type text (optionally with press_enter)
 - scroll / scroll_down / scroll_up: Scroll the page
 - navigate: Navigate to a URL
 - wait / wait_5_seconds: Wait for page load
 
 GUIDELINES:
-1. NAVIGATION: Use 'navigate' function to go to websites
-   Example: navigate({url: "https://www.reddit.com"})
-
-2. INTERACTION: Use coordinates from the screenshot you see
-   - Click at coordinates to interact with elements
-   - Type text at coordinates to fill forms
-
-3. NO HALLUCINATING: Only use the functions listed above. Do NOT invent or call functions like print(), execute(), or any code functions.
-
-4. EFFICIENCY: Complete tasks in fewest steps possible.`;
+1. DOM CONTEXT FIRST: Use the latest [DOM CONTEXT] text to pick selectors, ARIA labels, or coordinates derived from bounding boxes. Only request another action once you've checked this data.
+2. NAVIGATION: Use 'navigate' to change pages (e.g., navigate({url: "https://www.reddit.com"})).
+3. INTERACTION: Prefer selector-based logic inferred from the DOM context. Only fall back to rough coordinates if no selector details exist.
+4. NO HALLUCINATING: Do NOT call functions beyond the list above.
+5. EFFICIENCY: Complete tasks in as few steps as possible while relying on DOM context rather than screenshots.`;
 
       for (let turn = 0; turn < maxTurns; turn++) {
         if (abortControllerRef.current?.signal.aborted) {
@@ -1518,6 +1731,8 @@ GUIDELINES:
 
         // Execute function calls
         const functionResponses: any[] = [];
+        const contextSummaries: Array<string | null> = [];
+        const screenshotAttachments: Array<string | null> = [];
 
         for (const part of parts) {
           if ('text' in part && typeof part.text === 'string') {
@@ -1572,24 +1787,32 @@ GUIDELINES:
 
             // Re-show overlay after action (in case page navigation removed it)
             await showBrowserAutomationOverlay();
-            
-            screenshot = await executeTool('screenshot', {});
-            
-            if (!screenshot || !screenshot.screenshot) {
-              console.warn('Failed to capture screenshot after action');
-              screenshot = { screenshot: '' }; // Continue without screenshot
+
+            // Capture screenshot if enabled
+            let screenshotData: string | null = null;
+            if (settings?.enableScreenshots) {
+              const shotResponse = await executeTool('screenshot', {});
+              if (shotResponse?.screenshot) {
+                screenshotData = shotResponse.screenshot;
+              } else {
+                console.warn('Screenshot capture after action failed or returned empty data:', shotResponse?.error);
+              }
             }
-            
+
             // Get current page URL and viewport dimensions (required by Gemini)
             let currentUrl = '';
             let viewportInfo = '';
+            let latestContext: any = null;
             try {
-              const pageInfo = await executeTool('getPageContext', {});
-              currentUrl = pageInfo?.url || '';
+              const pageInfo = await getCachedPageContext(true);
+              if (pageInfo) {
+                latestContext = pageInfo;
+                currentUrl = pageInfo?.url || '';
 
-              // Include viewport dimensions to help Gemini understand coordinate space
-              if (pageInfo?.viewport) {
-                viewportInfo = ` Viewport: ${pageInfo.viewport.width}x${pageInfo.viewport.height}`;
+                // Include viewport dimensions to help Gemini understand coordinate space
+                if (pageInfo?.viewport) {
+                  viewportInfo = ` Viewport: ${pageInfo.viewport.width}x${pageInfo.viewport.height}`;
+                }
               }
             } catch (error) {
               console.warn('Failed to get page URL:', error);
@@ -1602,11 +1825,19 @@ GUIDELINES:
                 ...result,
                 url: currentUrl,  // Gemini requires this
                 viewport_info: viewportInfo,
-                success: result.success !== false
+                success: result.success !== false,
+                page_context: latestContext
               }
             };
             
             functionResponses.push(functionResponse);
+
+            const contextSummary = formatPageContextForPrompt(latestContext, {
+              contentLimit: 400,
+              elementLimit: 8
+            });
+            contextSummaries.push(contextSummary || null);
+            screenshotAttachments.push(screenshotData);
             
             // Update UI
             setMessages(prev => {
@@ -1620,21 +1851,28 @@ GUIDELINES:
           }
         }
         
-        // Add function responses back to conversation with new screenshot
+        // Add function responses back to conversation (include refreshed DOM context)
         if (functionResponses.length > 0) {
-          const userParts: any[] = functionResponses.map(fr => ({
-            function_response: fr
-          }));
-          
-          // Add new screenshot
-          if (screenshot && screenshot.screenshot) {
-            userParts.push({
-              inline_data: {
-                mime_type: 'image/png',
-                data: screenshot.screenshot.split(',')[1]
-              }
-            });
-          }
+          const userParts: any[] = [];
+
+          functionResponses.forEach((fr, idx) => {
+            userParts.push({ function_response: fr });
+
+            const summary = contextSummaries[idx];
+            if (summary) {
+              userParts.push({ text: summary });
+            }
+
+            const screenshotData = screenshotAttachments[idx];
+            if (settings?.enableScreenshots && screenshotData) {
+              userParts.push({
+                inline_data: {
+                  mime_type: 'image/png',
+                  data: screenshotData.split(',')[1]
+                }
+              });
+            }
+          });
           
           contents.push({
             role: 'user',
@@ -1663,29 +1901,13 @@ GUIDELINES:
     }
   };
 
-  // Scale coordinates from Gemini's 1000x1000 grid to actual viewport
-  const scaleCoordinates = async (x: number, y: number) => {
-    try {
-      // Get actual viewport dimensions
-      const pageInfo = await executeTool('getPageContext', {});
-      const viewportWidth = pageInfo?.viewport?.width || 1440;
-      const viewportHeight = pageInfo?.viewport?.height || 900;
-
-      // Gemini uses 1000x1000 normalized coordinates
-      const scaledX = Math.round((x / 1000) * viewportWidth);
-      const scaledY = Math.round((y / 1000) * viewportHeight);
-      return { x: scaledX, y: scaledY };
-    } catch (error) {
-      console.error('Failed to scale coordinates:', error);
-      // Fallback to original coordinates if scaling fails
-      return { x, y };
-    }
-  };
-
   const requiresUserConfirmation = async (functionName: string, args: any): Promise<boolean> => {
     let pageContext: any = {};
     try {
-      pageContext = await executeTool('getPageContext', {});
+      const context = await getCachedPageContext();
+      if (context) {
+        pageContext = context;
+      }
     } catch (e) {
       console.warn('Could not get page context');
     }
@@ -1751,13 +1973,31 @@ GUIDELINES:
 
       case 'click':
       case 'click_at':
-      case 'mouse_click':
-        // Scale coordinates from Gemini's 1000x1000 grid to actual viewport
-        const clickCoords = await scaleCoordinates(
-          args.x || args.coordinate?.x || 0,
-          args.y || args.coordinate?.y || 0
-        );
-        return await executeTool('click', clickCoords);
+      case 'mouse_click': {
+        const resolvedTarget = await resolveClickTarget(args);
+
+        if (resolvedTarget?.selector) {
+          const clickElementResult = await executeTool('clickElement', {
+            selector: resolvedTarget.selector,
+            text: resolvedTarget.text
+          });
+
+          if (clickElementResult?.success !== false) {
+            return clickElementResult;
+          }
+
+          console.warn('clickElement failed, falling back to coordinate click:', clickElementResult?.error);
+        }
+
+        const fallbackCoords =
+          resolvedTarget?.coordinates ||
+          (await scaleCoordinates(
+            args.x ?? args.coordinate?.x ?? 0,
+            args.y ?? args.coordinate?.y ?? 0
+          ));
+
+        return await executeTool('click', fallbackCoords);
+      }
       
       case 'type':
       case 'type_text':
@@ -1797,12 +2037,18 @@ GUIDELINES:
       case 'get_screenshot':
       case 'take_screenshot':
       case 'screenshot':
+        if (!settings?.enableScreenshots) {
+          return {
+            success: false,
+            error: 'Screenshot capture is disabled in Settings. Enable screenshots to use this action.'
+          };
+        }
         return await executeTool('screenshot', {});
       
       case 'get_page_info':
       case 'get_url':
       case 'get_page_content':
-        return await executeTool('getPageContext', {});
+        return await getCachedPageContext(true);
       
       case 'wait':
       case 'sleep':
@@ -2273,7 +2519,7 @@ GUIDELINES:
     // Get page context to include with the message
     let pageContext = '';
     try {
-      const context: any = await executeTool('getPageContext', {});
+      const context: any = await getCachedPageContext(true);
       if (context && context.url && context.title) {
         // Reduce page context size in browser tools mode to avoid hitting context limits
         const maxContentLength = browserToolsEnabled ? 300 : 3000; // Further reduced from 500 to 300
@@ -2510,14 +2756,15 @@ GUIDELINES:
             : settings.model;
 
           // Initialize custom MCP and A2A if not already initialized
-          if (!customMCPToolsRef.current && settings.mcpServers && settings.mcpServers.length > 0) {
+          const mcpServers = settings.mcpServers ?? [];
+          if (!customMCPToolsRef.current && mcpServers.length > 0) {
             console.log(`🚀 MCP initialization check - customMCPToolsRef.current: ${!!customMCPToolsRef.current}, customMCPInitPromiseRef.current: ${!!customMCPInitPromiseRef.current}`);
             console.log('🚀 Initializing custom MCP/A2A for browser tools...');
             // Only use MCPs if they're explicitly mapped to the current site
-            let enabledServers: typeof settings.mcpServers = [];
+            let enabledServers: typeof mcpServers = [];
             if (mcpServerIds.length > 0) {
               console.log(`🗺️  Using mapped MCP servers: ${mcpServerIds.join(', ')}`);
-              enabledServers = settings.mcpServers.filter(s => s.enabled && mcpServerIds.includes(s.id));
+              enabledServers = mcpServers.filter(s => s.enabled && mcpServerIds.includes(s.id));
             } else {
               console.log('🗺️  No MCP mappings for current site - MCPs disabled');
             }
@@ -3030,8 +3277,9 @@ GUIDELINES:
         }
       } else {
         // Initialize custom MCP and A2A servers if enabled
-        if (settings.mcpEnabled && settings.mcpServers && settings.mcpServers.length > 0) {
-          console.log(`🔍 [Second Init Path] MCP/A2A enabled with ${settings.mcpServers.length} configured server(s)`);
+        const configuredMcpServers = settings.mcpServers ?? [];
+        if (settings.mcpEnabled && configuredMcpServers.length > 0) {
+          console.log(`🔍 [Second Init Path] MCP/A2A enabled with ${configuredMcpServers.length} configured server(s)`);
           console.log(`🔍 [Second Init Path] customMCPInitPromiseRef.current exists: ${!!customMCPInitPromiseRef.current}`);
           console.log(`🔍 [Second Init Path] customMCPToolsRef.current exists: ${!!customMCPToolsRef.current}`);
           console.log(`🔍 [Second Init Path] This is the SECOND initialization path (else block)`);
@@ -3041,15 +3289,19 @@ GUIDELINES:
             customMCPInitPromiseRef.current = (async () => {
               try {
                 console.log('🔌 Initializing custom MCP/A2A servers...');
+                console.log('📋 Servers to connect:', configuredMcpServers.map(s => `${s.name} (${s.enabled ? 'enabled' : 'disabled'}, ${s.protocol || 'mcp'})`));
 
                 // Only use MCPs if they're explicitly mapped to the current site
-                let serversToConnect: typeof settings.mcpServers = [];
+                let serversToConnect: typeof configuredMcpServers = [];
                 if (mcpServerIds.length > 0) {
                   console.log(`🗺️  Using mapped MCP servers: ${mcpServerIds.join(', ')}`);
                   console.log(`🔍 DEBUG - mcpServerIds array:`, mcpServerIds);
-                  console.log(`🔍 DEBUG - settings.mcpServers:`, settings.mcpServers.map(s => ({ id: s.id, name: s.name, enabled: s.enabled })));
+                  console.log(
+                    `🔍 DEBUG - settings.mcpServers:`,
+                    configuredMcpServers.map(s => ({ id: s.id, name: s.name, enabled: s.enabled }))
+                  );
 
-                  serversToConnect = settings.mcpServers.filter(s => {
+                  serversToConnect = configuredMcpServers.filter(s => {
                     const isEnabled = s.enabled;
                     const isInMappedIds = mcpServerIds.includes(s.id);
                     console.log(`🔍 Checking server "${s.name}" (id: "${s.id}"): enabled=${isEnabled}, inMappedIds=${isInMappedIds}`);
@@ -3110,7 +3362,7 @@ GUIDELINES:
         } else {
           console.log('ℹ️  MCP not enabled or no servers configured');
           console.log(`  - mcpEnabled: ${settings.mcpEnabled}`);
-          console.log(`  - mcpServers count: ${settings.mcpServers?.length || 0}`);
+          console.log(`  - mcpServers count: ${configuredMcpServers.length}`);
         }
 
         // Route to appropriate provider
@@ -3352,7 +3604,7 @@ GUIDELINES:
                 } else {
                   // Browser tool requested but browser tools not enabled
                   console.warn(`⚠️  Browser tool "${toolName}" requested but browser tools are not enabled`);
-                  return { error: 'Browser tools not enabled. Please enable browser tools in settings to use navigation, clicking, and screenshot features.' };
+                  return { error: 'Browser tools not enabled. Please enable browser tools in settings to use navigation, clicking, and other automation features.' };
                 }
               },
               undefined, // Don't pass abort signal for now - causes issues
@@ -3874,7 +4126,9 @@ GUIDELINES:
                       🌐 Browser Tools ({browserToolsEnabled ? 'Enabled' : 'Disabled'})
                     </div>
                     <div style={{ paddingLeft: '12px', color: '#6b7280', fontSize: '11px' }}>
-                      navigate, click, type, scroll, screenshot, getPageContext, pressKey
+                      {settings?.enableScreenshots
+                        ? 'navigate, click, type, scroll, screenshot, getPageContext, pressKey'
+                        : 'navigate, click, type, scroll, getPageContext, pressKey'}
                     </div>
                   </div>
                 )}
@@ -3925,6 +4179,7 @@ GUIDELINES:
           )}
         </div>
       )}
+
 
       <div className="messages-container" ref={messagesContainerRef}>
         {messages.length === 0 ? (
