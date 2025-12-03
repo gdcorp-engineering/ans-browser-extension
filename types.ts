@@ -72,6 +72,9 @@ export interface Settings {
   conversationLoopHistoryLength?: number; // Max messages during tool execution loops (default: 15)
   enableConversationPersistence?: boolean; // Save conversations to chrome.storage (default: true)
   enableSmartSummarization?: boolean; // Automatically summarize old messages (default: true)
+
+  // Browser Automation Settings
+  maxToolExecutionTurns?: number; // Max turns for tool execution loops to prevent infinite loops (default: 10)
 }
 
 export interface ComposioSession {

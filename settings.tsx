@@ -1025,8 +1025,29 @@ function SettingsPage() {
             />
             Smart Summarization
           </label>
-          <p className="help-text">
+          <p className="help-text" style={{ marginBottom: '15px' }}>
             🤖 Automatically summarize old messages when approaching context limits. Preserves conversation flow while reducing token usage.
+          </p>
+
+          <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500' }}>
+            Max Tool Execution Turns (default: 10)
+          </label>
+          <input
+            type="number"
+            min="3"
+            max="30"
+            value={settings.maxToolExecutionTurns || 10}
+            onChange={(e) => setSettings({ ...settings, maxToolExecutionTurns: parseInt(e.target.value) || 10 })}
+            style={{
+              width: '100%',
+              padding: '8px',
+              marginBottom: '5px',
+              border: '1px solid #ddd',
+              borderRadius: '4px'
+            }}
+          />
+          <p className="help-text">
+            🛑 Maximum number of tool execution turns before stopping. Prevents infinite loops. Lower values stop sooner but may not complete complex tasks.
           </p>
         </div>
 
@@ -1758,7 +1779,7 @@ function SettingsPage() {
               {(settings.siteInstructions || []).map((instruction) => {
                 const isExpanded = expandedInstructions.has(instruction.id);
                 const isEditing = editingInstruction === instruction.id;
-                
+
                 return (
                   <div
                     key={instruction.id}
@@ -1888,9 +1909,9 @@ function SettingsPage() {
                           </div>
                         ) : (
                           <div style={{ marginTop: '12px' }}>
-                            <div style={{ 
-                              fontSize: '13px', 
-                              color: '#666', 
+                            <div style={{
+                              fontSize: '13px',
+                              color: '#666',
                               whiteSpace: 'pre-wrap',
                               fontFamily: 'monospace',
                               lineHeight: '1.6',
