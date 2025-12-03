@@ -275,6 +275,9 @@ export async function streamAnthropicWithBrowserTools(
     );
   }
 
+  // Track viewport info from screenshots for coordinate scaling
+  let lastViewport: { width: number; height: number; devicePixelRatio: number } | null = null;
+
   let fullResponseText = '';
 
   // Merge browser tools with additional tools (MCP)
@@ -950,8 +953,59 @@ Remember: When browser tools are disabled, always tell users to perform browser 
       }
 
       try {
-        console.log('🔧 Calling executeTool with:', toolUse.name, toolUse.input);
-        const result = await executeTool(toolUse.name, toolUse.input);
+        // Scale coordinates for click/hover actions if we have viewport info
+        let scaledInput = toolUse.input;
+        if ((toolUse.name === 'click' || toolUse.name === 'hover') && 
+            toolUse.input?.x !== undefined && 
+            toolUse.input?.y !== undefined) {
+          
+          const viewportWidth = lastViewport?.width || 1440;
+          const viewportHeight = lastViewport?.height || 900;
+          const dpr = lastViewport?.devicePixelRatio || 1;
+          
+          let x = toolUse.input.x;
+          let y = toolUse.input.y;
+          
+          // ALWAYS log for debugging
+          console.log(`🎯 COORDINATE CLICK DEBUG:`);
+          console.log(`   Claude's coordinates: (${x}, ${y})`);
+          console.log(`   Viewport: ${viewportWidth}x${viewportHeight}`);
+          console.log(`   DPR: ${dpr}`);
+          console.log(`   lastViewport saved: ${lastViewport ? 'YES' : 'NO'}`);
+          
+          // Claude perceives image dimensions ~5% larger than actual
+          // Also account for DPR scaling (screenshot is DPR times larger than viewport)
+          const horizontalScale = 1.05;  // Claude's perception factor
+          const verticalScale = 1.05;
+          
+          // Check if coordinates seem to be in screenshot space (larger than viewport)
+          if (x > viewportWidth || y > viewportHeight) {
+            // Coordinates are in screenshot space, need full scaling
+            const originalX = x;
+            const originalY = y;
+            x = Math.round(x / horizontalScale / dpr);
+            y = Math.round(y / verticalScale / dpr);
+            console.log(`📐 SCALING APPLIED (full DPR + perception):`);
+            console.log(`   Original: (${originalX}, ${originalY})`);
+            console.log(`   Scaled to: (${x}, ${y})`);
+          } else if (dpr > 1) {
+            // Coordinates might still need perception adjustment
+            const originalX = x;
+            const originalY = y;
+            x = Math.round(x / horizontalScale);
+            y = Math.round(y / verticalScale);
+            console.log(`📐 SCALING APPLIED (perception only):`);
+            console.log(`   Original: (${originalX}, ${originalY})`);
+            console.log(`   Adjusted to: (${x}, ${y})`);
+          } else {
+            console.log(`⚠️ NO SCALING APPLIED - coordinates within viewport and DPR=1`);
+          }
+          
+          scaledInput = { ...toolUse.input, x, y };
+        }
+
+        console.log('🔧 Calling executeTool with:', toolUse.name, scaledInput);
+        const result = await executeTool(toolUse.name, scaledInput);
         console.log('✅ Tool result:', result);
 
         // Handle screenshot results differently - include image data
@@ -959,6 +1013,11 @@ Remember: When browser tools are disabled, always tell users to perform browser 
           // Extract base64 data from data URL
           const base64Data = result.screenshot.split(',')[1];
           const viewport = result.viewport || { width: 1280, height: 800, devicePixelRatio: 1 };
+          
+          // Save viewport info for coordinate scaling
+          lastViewport = viewport;
+          console.log(`📏 Saved viewport info: ${viewport.width}x${viewport.height}, DPR=${viewport.devicePixelRatio}`);
+          
           const dpr = viewport.devicePixelRatio || 1;
           const coordinateInstructions = dpr > 1
             ? `IMPORTANT: This is a high-DPI display (devicePixelRatio=${dpr}). When measuring coordinates from this screenshot, DIVIDE by ${dpr} to get viewport coordinates. Example: if you measure (940, 882) in the image, use click({x: ${Math.round(940/dpr)}, y: ${Math.round(882/dpr)}}).`
