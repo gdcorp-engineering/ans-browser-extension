@@ -1000,7 +1000,7 @@ Example calculation:
 If image_max_x = 1920, image_max_y = 1080, and the element is at image_x = 100, image_y = 50:
 viewport_x = (100 * ${viewport.width}) ÷ 1920 = ${viewport_x}
 viewport_y = (50 * ${viewport.height}) ÷ 1080 = ${viewport_y}
-Final coordinates: (91.67, 74.17)`;
+Final coordinates: (${viewport_x}, ${viewport_y})`;
           toolResults.push({
             type: 'tool_result',
             tool_use_id: toolUse.id,
