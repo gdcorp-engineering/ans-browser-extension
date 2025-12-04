@@ -951,6 +951,26 @@ Remember: When browser tools are disabled, always tell users to perform browser 
 
       try {
         console.log('🔧 Calling executeTool with:', toolUse.name, toolUse.input);
+        
+        // Extract context for screenshot to understand what AI is looking for
+        if (toolUse.name === 'screenshot') {
+          const lastUserMsg = conversationMessages
+            .filter(m => m.role === 'user')
+            .slice(-1)[0];
+          const userIntent = typeof lastUserMsg?.content === 'string' 
+            ? lastUserMsg.content 
+            : JSON.stringify(lastUserMsg?.content);
+          
+          const aiExplanation = fullResponseText || textContent?.text || '';
+          
+          console.log('📸 Screenshot Intent:', {
+            userRequest: userIntent,
+            aiExplanation: aiExplanation,
+            currentUrl: currentUrl,
+            lookingFor: aiExplanation || 'Unknown'
+          });
+        }
+        
         const result = await executeTool(toolUse.name, toolUse.input);
         console.log('✅ Tool result:', result);
 
@@ -960,16 +980,34 @@ Remember: When browser tools are disabled, always tell users to perform browser 
           const base64Data = result.screenshot.split(',')[1];
           const viewport = result.viewport || { width: 1280, height: 800, devicePixelRatio: 1 };
           const dpr = viewport.devicePixelRatio || 1;
-          const coordinateInstructions = dpr > 1
-            ? `IMPORTANT: This is a high-DPI display (devicePixelRatio=${dpr}). When measuring coordinates from this screenshot, DIVIDE by ${dpr} to get viewport coordinates. Example: if you measure (940, 882) in the image, use click({x: ${Math.round(940/dpr)}, y: ${Math.round(882/dpr)}}).`
-            : '';
+          const usingDefaults = !result.viewport;
+          console.log('📐 Viewport Info:', {
+            width: viewport.width,
+            height: viewport.height,
+            dpr: dpr,
+            usingDefaults: usingDefaults
+          });
+          const viewport_x = 100 * viewport.width / 1920;
+          const viewport_y = 100 * viewport.height / 1000;
+          const coordinateInstructions = `Click Task Procedure:
+Step 1. Measure the attached image dimensions in pixels to obtain: image_width and image_height.
+Step 2. Locate the center point of the element in the screenshot and record its pixel coordinates as: screenshot_x and screenshot_y
+Step 3. Apply the following conversion formulas to calculate viewport coordinates:
+   * viewport_x = (screenshot_x * ${viewport.width}) / (image_width )
+   * viewport_y = (screenshot_y * ${viewport.height}) / (image_height)
+Step 4. Output the final click coordinates as: (viewport_x, viewport_y).
+Example calculation:
+If image_max_x = 1920, image_max_y = 1080, and the element is at image_x = 100, image_y = 50:
+viewport_x = (100 * ${viewport.width}) ÷ 1920 = ${viewport_x}
+viewport_y = (50 * ${viewport.height}) ÷ 1080 = ${viewport_y}
+Final coordinates: (91.67, 74.17)`;
           toolResults.push({
             type: 'tool_result',
             tool_use_id: toolUse.id,
             content: [
               {
                 type: 'text',
-                text: `Screenshot: ${viewport.width}×${viewport.height}px viewport (image is ${viewport.width * dpr}×${viewport.height * dpr}px). Top-left=(0,0), Bottom-right=(${viewport.width},${viewport.height}). ${coordinateInstructions}`,
+                text: coordinateInstructions,
               },
               {
                 type: 'image',
