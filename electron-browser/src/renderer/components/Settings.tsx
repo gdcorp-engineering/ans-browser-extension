@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { initializeMcpClient } from '../services/tool-router-service';
 import type { Settings as SettingsType } from '../types';
 
@@ -17,14 +17,24 @@ const PROVIDER_MODELS = {
 };
 
 const Settings = ({ settings, onSave, onClose }: SettingsProps) => {
-  const [provider, setProvider] = useState<'anthropic'>(
-    (settings?.provider as 'anthropic') || 'anthropic'
-  );
-  const [apiKey, setApiKey] = useState(settings?.googleApiKey || '');
-  const [model, setModel] = useState(settings?.model || 'claude-sonnet-4-5-20250929');
-  const [customBaseUrl, setCustomBaseUrl] = useState(settings?.customBaseUrl || '');
-  const [composioApiKey, setComposioApiKey] = useState(settings?.composioApiKey || '');
+  const [provider, setProvider] = useState<'anthropic'>('anthropic');
+  const [apiKey, setApiKey] = useState('');
+  const [model, setModel] = useState('claude-sonnet-4-5-20250929');
+  const [customBaseUrl, setCustomBaseUrl] = useState('');
+  const [composioApiKey, setComposioApiKey] = useState('');
   const [showApiKey, setShowApiKey] = useState(false);
+
+  // Initialize state from settings when component mounts or settings change
+  useEffect(() => {
+    console.log('[Settings] Component mounted, settings:', settings);
+    if (settings) {
+      setProvider((settings.provider as 'anthropic') || 'anthropic');
+      setApiKey(settings.googleApiKey || '');
+      setModel(settings.model || 'claude-sonnet-4-5-20250929');
+      setCustomBaseUrl(settings.customBaseUrl || '');
+      setComposioApiKey(settings.composioApiKey || '');
+    }
+  }, [settings]);
 
   const handleSave = async () => {
     // Initialize MCP if Composio key is provided
@@ -47,17 +57,28 @@ const Settings = ({ settings, onSave, onClose }: SettingsProps) => {
     });
   };
 
+  console.log('[Settings] Rendering component, provider:', provider, 'hasSettings:', !!settings);
+
+  // Early return test to see if component is rendering at all
+  if (!settings && !apiKey) {
+    console.log('[Settings] No settings loaded yet, showing loading state');
+  }
+
   return (
     <div
       style={{
         display: 'flex',
         flexDirection: 'column',
+        width: '100%',
         height: '100vh',
+        minHeight: '100vh',
         backgroundColor: '#ffffff',
         color: '#1a1a1a',
+        position: 'relative',
+        zIndex: 1,
       }}
     >
-      {/* Header */}
+      {/* Test: Always visible header to verify rendering */}
       <div
         style={{
           display: 'flex',
@@ -65,9 +86,12 @@ const Settings = ({ settings, onSave, onClose }: SettingsProps) => {
           justifyContent: 'space-between',
           padding: '16px 20px',
           borderBottom: '1px solid #e5e5e5',
+          backgroundColor: '#ffffff',
+          position: 'relative',
+          zIndex: 100,
         }}
       >
-        <h1 style={{ fontSize: '18px', fontWeight: 600, margin: 0 }}>Settings</h1>
+        <h1 style={{ fontSize: '18px', fontWeight: 600, margin: 0, color: '#1a1a1a' }}>Settings</h1>
         <button
           onClick={onClose}
           style={{

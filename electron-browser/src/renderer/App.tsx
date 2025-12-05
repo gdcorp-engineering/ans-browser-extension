@@ -219,11 +219,21 @@ function App() {
   };
 
   const handleOpenSettings = async () => {
+    console.log('[App] Opening settings, current state:', { showBrowserSidebar, currentMode });
     // Close browser sidebar if it's open
     if (showBrowserSidebar) {
       setShowBrowserSidebar(false);
-      await window.electronAPI.hideBrowserView();
     }
+    // Always hide browser view when opening settings (works for both chat and web mode)
+    try {
+      await window.electronAPI.hideBrowserView();
+      console.log('[App] Browser view hidden successfully');
+      // Small delay to ensure browser view is fully removed
+      await new Promise(resolve => setTimeout(resolve, 100));
+    } catch (error) {
+      console.error('[App] Error hiding browser view:', error);
+    }
+    console.log('[App] Setting showSettings to true, current settings:', settings);
     setShowSettings(true);
   };
 
@@ -254,12 +264,29 @@ function App() {
   };
 
   if (showSettings) {
+    console.log('[App] Rendering Settings page, showSettings:', showSettings, 'settings:', settings);
     return (
-      <div style={{ width: '100vw', height: '100vh' }}>
+      <div 
+        style={{ 
+          width: '100vw', 
+          height: '100vh',
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          zIndex: 99999,
+          backgroundColor: '#ffffff',
+          overflow: 'auto',
+        }}
+      >
         <Settings
           settings={settings}
           onSave={saveSettings}
-          onClose={() => setShowSettings(false)}
+          onClose={() => {
+            console.log('[App] Closing settings');
+            setShowSettings(false);
+          }}
         />
       </div>
     );
