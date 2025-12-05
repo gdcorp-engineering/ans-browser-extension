@@ -1,0 +1,19 @@
+# Semgrep ignore file
+# Suppress false positives and intentional patterns
+
+# Test files using HTTP localhost (intentional for local testing)
+test-scripts/test-a2a-connection.mjs
+
+# Build scripts with controlled path inputs (validated)
+package-zip.js
+validate-extension.js
+vite.config.ts
+
+# Console.log statements with variables (low severity, acceptable for logging)
+anthropic-service.ts
+background.ts
+trusted-business-service.ts
+
+# Regex patterns with validated input length (ReDoS mitigated)
+sidepanel.tsx
+

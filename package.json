@@ -9,16 +9,29 @@
     "preview": "vite preview",
     "build:electron": "cd electron-browser && npm install && npm run build",
     "electron": "cd electron-browser && npm start",
-    "electron:dev": "cd electron-browser && npm run dev"
+    "electron:dev": "cd electron-browser && npm run dev",
+    "package:crx": "node package-crx.js",
+    "package:crx:dev": "BUILD_ENV=dev npm run package:crx",
+    "package:crx:test": "BUILD_ENV=test npm run package:crx",
+    "package:crx:prod": "BUILD_ENV=prod npm run package:crx",
+    "package:zip": "node package-zip.js",
+    "package:zip:dev": "BUILD_ENV=dev npm run package:zip",
+    "package:zip:test": "BUILD_ENV=test npm run package:zip",
+    "package:zip:prod": "BUILD_ENV=prod npm run package:zip",
+    "get-extension-id": "node get-extension-id.js",
+    "test:prompts": "node test-prompt-runner.mjs",
+    "test:agent-mode": "node test-agent-mode.mjs",
+    "test:dropdown": "playwright test test-dropdown-positioning.spec.ts"
   },
   "dependencies": {
     "@a2a-js/sdk": "^0.3.5",
-    "@ai-sdk/anthropic": "^2.0.35",
-    "@ai-sdk/google": "^2.0.23",
-    "@ai-sdk/openai": "^2.0.53",
-    "@ai-sdk/react": "^1.0.10",
-    "@modelcontextprotocol/sdk": "^1.0.4",
-    "ai": "^5.0.76",
+    "@ai-sdk/anthropic": "^2.0.53",
+    "@ai-sdk/google": "^2.0.44",
+    "@ai-sdk/mcp": "^0.0.11",
+    "@ai-sdk/openai": "^2.0.76",
+    "@ai-sdk/react": "^1.2.12",
+    "@modelcontextprotocol/sdk": "^1.24.1",
+    "ai": "^5.0.106",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-markdown": "^10.1.0",
@@ -26,12 +39,15 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@playwright/test": "^1.57.0",
     "@types/chrome": "^0.0.275",
-    "@types/node": "^24.9.1",
-    "@types/react": "^18.3.12",
-    "@types/react-dom": "^18.3.1",
+    "@types/node": "^24.10.1",
+    "@types/react": "^18.3.27",
+    "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react": "^4.3.3",
+    "crx": "^5.0.1",
+    "playwright": "^1.57.0",
     "typescript": "^5.6.3",
-    "vite": "^5.4.10"
+    "vite": "^7.2.6"
   }
 }
