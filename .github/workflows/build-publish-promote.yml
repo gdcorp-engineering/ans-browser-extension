@@ -1,0 +1,94 @@
+name: Build-Publish-Promote
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish_to_katana:
+        description: 'Publish artifact to Katana'
+        required: true
+        type: boolean
+        default: false
+      promote_to_katana:
+        description: 'Promote artifact to dev-private environment'
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  id-token: write # Required for GitHub to issue OIDC tokens for JFrog
+  contents: read
+
+jobs:
+  build_publish_promote:
+    runs-on:
+      - self-hosted
+      # Specify your runner group name. Use the runner group you provisioned in PCP.
+      - 8664-ansmarketplacea3
+    steps:
+      # Check out code from GitHub
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # Retrieve Katana application info with the katana-get-app GitHub Action
+      - id: katana-app
+        name: Get Katana App Info
+        uses: gdcorp-actions/katana-get-app@v1
+
+      # Print Katana app info for debugging
+      - name: Print Katana App Info
+        run: |
+          echo "Namespace: ${{ steps.katana-app.outputs.namespace }}"
+          echo "App: ${{ steps.katana-app.outputs.app }}"
+          echo "All outputs: ${{ toJson(steps.katana-app.outputs) }}"
+
+      # Sets up authentication with Amazon ECR in the chosen region. Note that the URL can be obtained from GoDaddy's Golden Containers Registry at `https://gcr.katana.int.gdcorp.tools/`.
+      - name: Golden Container Registry Login
+        run: |
+          aws ecr get-login-password --region us-west-2 | docker login 764525110978.dkr.ecr.us-west-2.amazonaws.com -u AWS --password-stdin
+
+      # Clean up Docker state to prevent progressive slowdown
+      - name: Docker System Cleanup
+        run: |
+          echo "=== Docker cleanup to prevent build degradation ==="
+          docker system df
+          docker system prune -af --volumes || true
+          docker builder prune -af || true
+          echo "=== Cleanup complete ==="
+          docker system df
+
+      # Build Docker image that builds extension and serves it
+      - name: Build Container
+        run: |
+          IMAGE_TAG="${{ steps.katana-app.outputs.app }}:${{ github.sha }}"
+          docker build --platform linux/amd64 -f Dockerfile.simple -t ${IMAGE_TAG} .
+          echo "IMAGE_TAG=${IMAGE_TAG}" >> $GITHUB_ENV
+
+      # Publish the built container image to Katana with the katana-publish-artifact GitHub Action
+      - id: katana-publish
+        name: Publish Katana Artifact
+        if: ${{ inputs.publish_to_katana }}
+        uses: gdcorp-actions/katana-publish-artifact@v1
+        with:
+          namespace: ${{ steps.katana-app.outputs.namespace }}
+          app: ${{ steps.katana-app.outputs.app }}
+          image_name: ${{ env.IMAGE_TAG }}
+          artifact_kind: ecs
+          artifact_options_json: |
+            {
+              "ports": [8443],
+              "healthcheckPath": "/health",
+              "healthcheckGracePeriod": 180,
+              "protocol": "https"
+            }
+
+      # Promote the published artifact to the `dev-private` environment with the katana-promote-artifact GitHub Action
+      # Note: Promotion requires publish to run first, as it depends on the artifact_id
+      - name: Promote to dev-private Environment
+        if: ${{ inputs.promote_to_katana && inputs.publish_to_katana && steps.katana-publish.outcome == 'success' }}
+        uses: gdcorp-actions/katana-promote-artifact@v1
+        with:
+          namespace: ${{ steps.katana-app.outputs.namespace }}
+          app: ${{ steps.katana-app.outputs.app }}
+          environment: dev-private
+          artifact_id: ${{ steps.katana-publish.outputs.artifact_id }}
+
