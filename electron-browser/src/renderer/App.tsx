@@ -263,6 +263,18 @@ function App() {
     document.addEventListener('mouseup', handleMouseUp);
   };
 
+  const chatWidthPercent = showBrowserSidebar && currentMode === 'chat' ? chatWidth : (currentMode === 'web' ? 40 : 100);
+
+  // Update browser view bounds when chat width or mode changes
+  // IMPORTANT: This hook must be called before any early returns to avoid React hooks errors
+  useEffect(() => {
+    if ((showBrowserSidebar && currentMode === 'chat') || currentMode === 'web') {
+      window.electronAPI.resizeBrowserView(chatWidthPercent).catch(error => {
+        console.error('Failed to resize browser view:', error);
+      });
+    }
+  }, [chatWidthPercent, showBrowserSidebar, currentMode]);
+
   if (showSettings) {
     console.log('[App] Rendering Settings page, showSettings:', showSettings, 'settings:', settings);
     return (
@@ -291,17 +303,6 @@ function App() {
       </div>
     );
   }
-
-  const chatWidthPercent = showBrowserSidebar && currentMode === 'chat' ? chatWidth : (currentMode === 'web' ? 40 : 100);
-
-  // Update browser view bounds when chat width or mode changes
-  useEffect(() => {
-    if ((showBrowserSidebar && currentMode === 'chat') || currentMode === 'web') {
-      window.electronAPI.resizeBrowserView(chatWidthPercent).catch(error => {
-        console.error('Failed to resize browser view:', error);
-      });
-    }
-  }, [chatWidthPercent, showBrowserSidebar, currentMode]);
 
   return (
     <div
