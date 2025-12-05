@@ -293,13 +293,13 @@ export async function streamAnthropicWithBrowserTools(
     .map((tool: any) => tool.name);
   const mcpToolNameSet = new Set(mcpToolNames);
   const a2aToolNameSet = new Set(a2aToolNames);
-  
+
   // Build dynamic list of available MCP tools with descriptions
   const mcpToolsList = hasAdditionalTools ? (additionalTools || [])
     .filter((tool: any) => tool?.name && !tool.name.startsWith('a2a_'))
     .map((tool: any) => `  - ${tool.name}: ${tool.description || 'No description available'}`)
     .join('\n') : '';
-  
+
   const allTools = hasAdditionalTools
     ? [...additionalTools, ...browserToolsToInclude] // Surface MCP/A2A tools first
     : browserToolsToInclude;
@@ -362,7 +362,7 @@ EXAMPLES:
 - "Create a rap version of GoDaddy.com" → navigate + screenshot + generate_song (WRONG - just use generate_song)
 - "Generate a song about Amazon" → navigate + screenshot + generate_song (WRONG - just use generate_song)
 
-IMPORTANT: 
+IMPORTANT:
 - MCP tools are specialized - they only handle specific tasks described in their tool descriptions
 - When an MCP tool matches the task, use it DIRECTLY - no browser automation needed
 - Browser tools handle navigation, clicking, typing, scrolling, screenshots - use these only when MCP tools don't match
@@ -765,12 +765,12 @@ Remember: When browser tools are disabled, always tell users to perform browser 
       const timeoutPromise = new Promise<never>((_, reject) => {
         setTimeout(() => reject(new Error('API request timed out after 3 minutes')), timeoutMs);
       });
-      
+
       console.log(`🌐 Making API call to ${baseUrl}/v1/messages`);
       console.log(`🌐 Request body size: ${JSON.stringify(requestBody).length} bytes`);
       console.log(`🌐 Tools count: ${allTools.length}`);
       console.log(`🌐 Messages count: ${validMessages.length}`);
-      
+
       const fetchStartTime = Date.now();
       response = await Promise.race([
         fetch(`${baseUrl}/v1/messages`, fetchOptions),
@@ -837,13 +837,13 @@ Remember: When browser tools are disabled, always tell users to perform browser 
 
     // Check if response includes text
     const textContent = data.content?.find((c: any) => c.type === 'text');
-    
+
     // If response has no content at all, this is an error
     if (data.content.length === 0) {
       console.error('❌ Response has no content items');
       throw new Error('API returned empty response - no content items');
     }
-    
+
     if (textContent?.text) {
       // Filter out XML-like syntax that shouldn't appear in text responses
       let filteredText = textContent.text;
@@ -853,7 +853,7 @@ Remember: When browser tools are disabled, always tell users to perform browser 
       filteredText = filteredText.replace(/<parameter\s+name="[^"]*">[^<]*<\/parameter>/gi, '');
       filteredText = filteredText.replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, '');
       filteredText = filteredText.replace(/<function>[\s\S]*?<\/function>/gi, '');
-      
+
       // When browser tools are disabled, remove any "[Executing: ...]" text that the AI might generate
       if (!browserToolsEnabled) {
         filteredText = filteredText.replace(/\[Executing:\s*[^\]]+\]/gi, '');
@@ -862,7 +862,7 @@ Remember: When browser tools are disabled, always tell users to perform browser 
         filteredText = filteredText.replace(/Let me take a screenshot[^.]*\./gi, '');
         filteredText = filteredText.replace(/Let me verify[^.]*\./gi, '');
       }
-      
+
       // Only output if there's actual content after filtering
       if (filteredText.trim().length > 0) {
         fullResponseText += filteredText;
@@ -880,7 +880,7 @@ Remember: When browser tools are disabled, always tell users to perform browser 
       console.log(`✅ Total response text length: ${fullResponseText.length}`);
       console.log(`✅ Turn count: ${turnCount}/${MAX_TURNS}`);
       console.log(`✅ Conversation messages: ${conversationMessages.length}`);
-      
+
       // If we have no text content and no tools, something might be wrong
       if (fullResponseText.trim().length === 0 && !textContent?.text) {
         console.warn(`⚠️ No text content and no tools - response might be empty`);
@@ -888,7 +888,7 @@ Remember: When browser tools are disabled, always tell users to perform browser 
         // This shouldn't happen, but if it does, we should still break to avoid infinite loop
         // The user will see no response, which indicates an issue
       }
-      
+
       // If we have text content, make sure it was output
       if (textContent?.text && fullResponseText.trim().length === 0) {
         console.warn(`⚠️ Text content exists but wasn't output - outputting now`);
@@ -897,7 +897,7 @@ Remember: When browser tools are disabled, always tell users to perform browser 
           .replace(/<parameter\s+name="[^"]*">[^<]*<\/parameter>/gi, '')
           .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, '')
           .replace(/<function>[\s\S]*?<\/function>/gi, '');
-        
+
         // When browser tools are disabled, remove any "[Executing: ...]" text that the AI might generate
         if (!browserToolsEnabled) {
           filteredText = filteredText.replace(/\[Executing:\s*[^\]]+\]/gi, '');
@@ -906,13 +906,13 @@ Remember: When browser tools are disabled, always tell users to perform browser 
           filteredText = filteredText.replace(/Let me take a screenshot[^.]*\./gi, '');
           filteredText = filteredText.replace(/Let me verify[^.]*\./gi, '');
         }
-        
+
         if (filteredText.trim().length > 0) {
           fullResponseText += filteredText;
           onTextChunk(filteredText);
         }
       }
-      
+
       break;
     }
 
@@ -951,18 +951,18 @@ Remember: When browser tools are disabled, always tell users to perform browser 
 
       try {
         console.log('🔧 Calling executeTool with:', toolUse.name, toolUse.input);
-        
+
         // Extract context for screenshot to understand what AI is looking for
         if (toolUse.name === 'screenshot') {
           const lastUserMsg = conversationMessages
             .filter(m => m.role === 'user')
             .slice(-1)[0];
-          const userIntent = typeof lastUserMsg?.content === 'string' 
-            ? lastUserMsg.content 
+          const userIntent = typeof lastUserMsg?.content === 'string'
+            ? lastUserMsg.content
             : JSON.stringify(lastUserMsg?.content);
-          
+
           const aiExplanation = fullResponseText || textContent?.text || '';
-          
+
           console.log('📸 Screenshot Intent:', {
             userRequest: userIntent,
             aiExplanation: aiExplanation,
@@ -970,7 +970,7 @@ Remember: When browser tools are disabled, always tell users to perform browser 
             lookingFor: aiExplanation || 'Unknown'
           });
         }
-        
+
         const result = await executeTool(toolUse.name, toolUse.input);
         console.log('✅ Tool result:', result);
 
@@ -988,12 +988,12 @@ Remember: When browser tools are disabled, always tell users to perform browser 
             usingDefaults: usingDefaults
           });
           const viewport_x = 100 * viewport.width / 1920;
-          const viewport_y = 100 * viewport.height / 1000;
+          const viewport_y = 50 * viewport.height / 1080;
           const coordinateInstructions = `Click Task Procedure:
 Step 1. Measure the attached image dimensions in pixels to obtain: image_width and image_height.
-Step 2. Locate the center point of the element in the screenshot and record its pixel coordinates as: screenshot_x and screenshot_y
+Step 2. Locate the center point of the element you want to click in the screenshot and record its pixel coordinates as: screenshot_x and screenshot_y
 Step 3. Apply the following conversion formulas to calculate viewport coordinates:
-   * viewport_x = (screenshot_x * ${viewport.width}) / (image_width )
+   * viewport_x = (screenshot_x * ${viewport.width}) / (image_width)
    * viewport_y = (screenshot_y * ${viewport.height}) / (image_height)
 Step 4. Output the final click coordinates as: (viewport_x, viewport_y).
 Example calculation:
@@ -1030,8 +1030,8 @@ Final coordinates: (${viewport_x}, ${viewport_y})`;
                 toolResults.push({
                   type: 'tool_result',
                   tool_use_id: toolUse.id,
-                  content: JSON.stringify({ 
-                    success: false, 
+                  content: JSON.stringify({
+                    success: false,
                     error: `Navigation failed: ${errorMsg}. The page did not change. Please verify the URL is correct and try again.`,
                     attemptedUrl: result.url || toolUse.input?.url
                   }),
@@ -1042,8 +1042,8 @@ Final coordinates: (${viewport_x}, ${viewport_y})`;
                 toolResults.push({
                   type: 'tool_result',
                   tool_use_id: toolUse.id,
-                  content: JSON.stringify({ 
-                    success: true, 
+                  content: JSON.stringify({
+                    success: true,
                     url: result.url,
                     message: 'Navigation command executed. IMPORTANT: You must verify navigation succeeded by taking a screenshot to confirm the page actually changed.'
                   }),
@@ -1071,16 +1071,16 @@ Final coordinates: (${viewport_x}, ${viewport_y})`;
               // Tool returned an error - mark it as an error so AI can respond
               const errorMessage = result.error || 'Tool execution failed';
               const isTimeout = result.timeout === true || errorMessage.includes('timed out') || errorMessage.includes('took too long');
-              
+
               console.error(`❌ Tool "${toolUse.name}" returned an error:`, errorMessage);
               console.error(`   Timeout: ${isTimeout}`);
-              
+
               toolResults.push({
                 type: 'tool_result',
                 tool_use_id: toolUse.id,
-                content: JSON.stringify({ 
+                content: JSON.stringify({
                   error: errorMessage,
-                  timeout: isTimeout 
+                  timeout: isTimeout
                 }),
                 is_error: true,
               });
@@ -1101,18 +1101,18 @@ Final coordinates: (${viewport_x}, ${viewport_y})`;
         console.error('❌ Tool execution error:', error);
         const errorMessage = error.message || 'Tool execution failed';
         const isTimeout = errorMessage.includes('timed out') || errorMessage.includes('took too long');
-        
+
         // Provide user-friendly error message for timeouts
         const friendlyError = isTimeout
           ? 'The request took too long and timed out. Please try again later or try a different approach.'
           : errorMessage;
-        
+
         toolResults.push({
           type: 'tool_result',
           tool_use_id: toolUse.id,
-          content: JSON.stringify({ 
+          content: JSON.stringify({
             error: friendlyError,
-            timeout: isTimeout 
+            timeout: isTimeout
           }),
           is_error: true,
         });
@@ -1175,11 +1175,11 @@ Final coordinates: (${viewport_x}, ${viewport_y})`;
     // - The AI will process them and respond with text
     // - If that response has no tool uses, the loop will break at line 750-752
     // - If that response has stop_reason 'end_turn', we'll handle it then
-    
+
     console.log(`🔄 Continuing loop to process tool results. Stop reason: ${data.stop_reason}, Tool results added: ${toolResults.length}`);
     console.log(`📝 Conversation messages count: ${conversationMessages.length}`);
     console.log(`📝 Last message role: ${conversationMessages[conversationMessages.length - 1]?.role}`);
-    
+
     // Continue the loop - we just added tool results that need to be processed by the AI
     // The next iteration will send these results back and get the AI's response
     // IMPORTANT: The loop will continue to the next iteration where:
@@ -1188,7 +1188,7 @@ Final coordinates: (${viewport_x}, ${viewport_y})`;
     // 3. If the response has text, it will be output
     // 4. If the response has no tool uses, the loop will break
     }
-    
+
     // Check if we exited due to MAX_TURNS limit
     if (turnCount >= MAX_TURNS) {
       console.warn(`⚠️ Loop exited due to MAX_TURNS limit (${turnCount}/${MAX_TURNS})`);
@@ -1200,12 +1200,12 @@ Final coordinates: (${viewport_x}, ${viewport_y})`;
     console.error('❌ Error in tool execution loop:', error);
     console.error('   Turn count when error occurred:', turnCount);
     console.error('   Conversation messages count:', conversationMessages.length);
-    
+
     // If we have partial response text, output it before error
     if (fullResponseText.trim().length > 0) {
       console.log(`📝 Outputting partial response before error: ${fullResponseText.length} chars`);
     }
-    
+
     // Ensure we still call onComplete to clear states even on error
     // The error will be handled by the caller's try-catch
     // Re-throw the error so the caller can handle it
@@ -1216,6 +1216,6 @@ Final coordinates: (${viewport_x}, ${viewport_y})`;
   console.log(`🏁 Total turns: ${turnCount}/${MAX_TURNS}`);
   console.log(`🏁 Final conversation messages: ${conversationMessages.length}`);
   console.log(`🏁 Total response text length: ${fullResponseText.length} chars`);
-  
+
   onComplete();
 }
