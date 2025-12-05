@@ -8,7 +8,7 @@
  * - Connection lifecycle management
  */
 
-import { experimental_createMCPClient } from 'ai';
+import { experimental_createMCPClient } from '@ai-sdk/mcp';
 import type { MCPServerConfig, MCPConnection, MCPToolWithOrigin } from './types';
 
 /**
@@ -749,8 +749,20 @@ export class MCPService {
           console.log(`🎯 FINAL RESULT OBJECT TO RETURN:`, JSON.stringify(resultObj, null, 2));
           return resultObj;
         }
-        console.log(`🎯 FINAL RESULT (no content array):`, JSON.stringify({ result: response.result }, null, 2));
-        return { result: response.result };
+        // No content array - check for audioLink in response.result
+        const resultObj: any = { result: response.result };
+        if (response.result.audioLink) {
+          resultObj.audioLink = response.result.audioLink;
+          console.log(`🎵 Found audioLink in response.result (no content array): ${response.result.audioLink}`);
+        } else if (response.result.audio_link) {
+          resultObj.audioLink = response.result.audio_link;
+          console.log(`🎵 Found audio_link in response.result (no content array): ${response.result.audio_link}`);
+        } else if (response.result.audioUrl) {
+          resultObj.audioLink = response.result.audioUrl;
+          console.log(`🎵 Found audioUrl in response.result (no content array): ${response.result.audioUrl}`);
+        }
+        console.log(`🎯 FINAL RESULT (no content array):`, JSON.stringify(resultObj, null, 2));
+        return resultObj;
       }
 
       if (response.error) {

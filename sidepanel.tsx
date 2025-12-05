@@ -4209,11 +4209,11 @@ GUIDELINES:
                           <span></span>
                         </div>
                       )}
-                      {/* Audio player for generated music/audio */}
+                      {/* Audio player and link for generated music/audio - shows below message content */}
                       {(() => {
                         const audioLink = message.audioLink;
                         if (audioLink && typeof audioLink === 'string' && audioLink.trim().length > 0) {
-                          console.log(`🔍 Rendering audio player for message ${message.id}:`, audioLink);
+                          console.log(`✅ Rendering audio player for message ${message.id}:`, audioLink);
                           return (
                             <div style={{
                               marginTop: '16px',
@@ -4222,6 +4222,31 @@ GUIDELINES:
                               borderRadius: '12px',
                               border: '1px solid #e0e0e0'
                             }}>
+                              {/* Audio link */}
+                              <div style={{
+                                marginBottom: '12px',
+                                fontSize: '14px',
+                                color: '#666'
+                              }}>
+                                <span style={{ marginRight: '8px' }}>🎧</span>
+                                <span>Listen to it here: </span>
+                                <a
+                                  href={audioLink}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  style={{
+                                    color: '#0066cc',
+                                    textDecoration: 'underline',
+                                    wordBreak: 'break-all'
+                                  }}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                  }}
+                                >
+                                  {audioLink}
+                                </a>
+                              </div>
+                              {/* Embedded audio player */}
                               <audio
                                 controls
                                 style={{
