@@ -177,39 +177,25 @@ interface PageContext {
     type?: string;
     ariaLabel?: string;
     visible: boolean;
-    boundingRect?: {
-      top: number;
-      left: number;
-      right: number;
-      bottom: number;
-      width: number;
-      height: number;
-      centerX: number;
-      centerY: number;
-    };
-  }>;
-  searchInputs?: Array<{
-    selector: string;
-    type: string;
-    id: string;
-    name: string;
-    placeholder: string;
-    'aria-label': string | null;
-    'data-automation-id': string | null;
-    role: string | null;
-    className: string;
-    visible: boolean;
-    dimensions: {
-      width: number;
-      height: number;
-      top: number;
-      left: number;
-    };
+    priority?: number; // Higher priority = more likely to be clicked
+    bounds?: { x: number; y: number; width: number; height: number };
+    inModal?: boolean; // Whether element is inside a modal
   }>;
   metadata: {
     description?: string;
     keywords?: string;
     author?: string;
+    ogType?: string;
+  };
+  structure?: {
+    headings: Array<{ level: string; text: string }>;
+    hasArticleStructure: boolean;
+    hasMainStructure: boolean;
+    hasNavigation: boolean;
+    sectionCount: number;
+    paragraphCount: number;
+    mainContentLength: number;
+    mainContentRatio: number;
   };
   viewport: {
     width: number;
@@ -218,19 +204,749 @@ interface PageContext {
     scrollY: number;
     devicePixelRatio: number;
   };
+  authentication?: {
+    isLoginPage: boolean;
+    isAuthenticated: boolean;
+    loginIndicators: string[];
+    requiresLogin: boolean;
+  };
+  modals?: Array<{
+    element: Element;
+    selector: string;
+    isVisible: boolean;
+    hasBackdrop: boolean;
+    closeButton?: {
+      selector: string;
+      text: string;
+    };
+    interactiveElements: number;
+    zIndex: number;
+  }>;
+  hasActiveModals?: boolean; // Flag indicating modals are present (use DOM, not screenshots)
 }
 
-// Extract comprehensive page context
-function extractPageContext(): PageContext {
-  const links = Array.from(document.querySelectorAll('a')).slice(0, 50).map(a => ({
-    text: a.textContent?.trim() || '',
-    href: a.href
-  }));
+// Cache for DOM queries to improve performance
+// Use window property to avoid duplicate declaration errors if script is injected multiple times
+interface DomCache {
+  interactiveElements?: Array<any>;
+  timestamp?: number;
+  url?: string;
+}
 
-  const images = Array.from(document.querySelectorAll('img')).slice(0, 20).map(img => ({
-    alt: img.alt,
-    src: img.src
-  }));
+// Use window property to store function to avoid duplicate declaration errors
+// Don't use const/let/var - just assign to window directly
+if (typeof (window as any).__atlasGetDomCache === 'undefined') {
+  (window as any).__atlasGetDomCache = (): DomCache => {
+    if (!(window as any).__atlasDomCache) {
+      (window as any).__atlasDomCache = {};
+    }
+    return (window as any).__atlasDomCache;
+  };
+}
+
+// Access via window property, don't declare as const
+function getDomCache(): DomCache {
+  return (window as any).__atlasGetDomCache();
+}
+
+// Use window property to avoid duplicate declaration errors
+if (typeof (window as any).__atlasCacheDuration === 'undefined') {
+  (window as any).__atlasCacheDuration = 2000; // 2 seconds cache
+}
+// Use window property to store function to avoid duplicate declaration errors
+if (typeof (window as any).__atlasGetCacheDuration === 'undefined') {
+  (window as any).__atlasGetCacheDuration = (): number => {
+    return (window as any).__atlasCacheDuration || 2000;
+  };
+}
+// Access via window property, don't declare as const/function
+function getCacheDuration(): number {
+  return (window as any).__atlasGetCacheDuration();
+}
+
+// Check if element is truly visible (not just in viewport)
+function isElementVisible(el: Element): boolean {
+  const rect = el.getBoundingClientRect();
+  const style = window.getComputedStyle(el);
+  
+  // Basic visibility checks
+  if (rect.width === 0 || rect.height === 0) return false;
+  if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+  if (el.hasAttribute('hidden') || el.getAttribute('aria-hidden') === 'true') return false;
+  
+  // Check if element is in viewport (with some padding for partially visible elements)
+  const padding = 10;
+  return (
+    rect.top < window.innerHeight + padding &&
+    rect.bottom > -padding &&
+    rect.left < window.innerWidth + padding &&
+    rect.right > -padding
+  );
+}
+
+// Detect if an element is inside a modal/dialog (enhanced for React/Jira)
+function isElementInModal(el: Element): Element | null {
+  let current: Element | null = el;
+  
+  while (current && current !== document.body) {
+    const tag = current.tagName.toLowerCase();
+    const role = current.getAttribute('role');
+    const className = current.className?.toLowerCase() || '';
+    const id = current.id?.toLowerCase() || '';
+    const dataTestId = current.getAttribute('data-testid')?.toLowerCase() || '';
+    
+    // Check for common modal indicators (framework-agnostic)
+    if (
+      tag === 'dialog' ||
+      role === 'dialog' ||
+      role === 'alertdialog' ||
+      // Common class patterns (all frameworks)
+      className.includes('modal') ||
+      className.includes('dialog') ||
+      className.includes('popup') ||
+      className.includes('overlay') ||
+      className.includes('drawer') ||
+      className.includes('layer') ||
+      className.includes('portal') ||
+      className.includes('sheet') || // Bottom sheet modals
+      className.includes('panel') || // Side panel modals
+      className.includes('lightbox') || // Image/lightbox modals
+      className.includes('popover') || // Popover modals
+      // ID patterns
+      id.includes('modal') ||
+      id.includes('dialog') ||
+      id.includes('popup') ||
+      id.includes('drawer') ||
+      // Data attribute patterns (React, Vue, Angular, etc.)
+      dataTestId.includes('modal') ||
+      dataTestId.includes('dialog') ||
+      dataTestId.includes('drawer') ||
+      dataTestId.includes('popup') ||
+      dataTestId.includes('sheet') ||
+      // Standard ARIA attributes
+      current.hasAttribute('aria-modal') ||
+      current.hasAttribute('data-modal') ||
+      current.hasAttribute('data-dialog') ||
+      current.hasAttribute('data-popup') ||
+      // Framework-specific patterns
+      // React (including styled-components, emotion, etc.)
+      (className.includes('sc-') || className.includes('css-') || className.includes('emotion-')) && 
+        (className.includes('modal') || className.includes('dialog') || className.includes('drawer')) ||
+      // Vue.js patterns
+      className.includes('v-modal') ||
+      className.includes('vue-modal') ||
+      dataTestId.includes('vue-modal') ||
+      // Angular Material
+      className.includes('mat-dialog') ||
+      className.includes('cdk-overlay') ||
+      // Bootstrap
+      className.includes('modal') && className.includes('show') ||
+      className.includes('modal-backdrop') ||
+      // Material-UI / MUI
+      className.includes('MuiModal') ||
+      className.includes('MuiDialog') ||
+      className.includes('MuiDrawer') ||
+      // Ant Design
+      className.includes('ant-modal') ||
+      className.includes('ant-drawer') ||
+      // Chakra UI
+      className.includes('chakra-modal') ||
+      className.includes('chakra-drawer') ||
+      // Semantic UI
+      className.includes('ui modal') ||
+      className.includes('ui dialog') ||
+      // Foundation
+      className.includes('reveal') ||
+      className.includes('foundation-modal') ||
+      // Bulma
+      className.includes('modal') && className.includes('is-active') ||
+      // Tailwind-based modals (common patterns)
+      (className.includes('fixed') && className.includes('inset-0') && zIndex > 500) ||
+      // Generic portal patterns
+      current.getAttribute('data-portal') !== null ||
+      current.getAttribute('data-overlay') !== null
+    ) {
+      return current;
+    }
+    
+    // Check for high z-index elements that might be modals (lowered threshold for React modals)
+    const style = window.getComputedStyle(current);
+    const zIndex = parseInt(style.zIndex, 10);
+    // Lower threshold to catch more modals (Jira often uses 500-1000 range)
+    if (zIndex > 500 && style.position !== 'static' && (style.position === 'fixed' || style.position === 'absolute')) {
+      // Check if it covers a significant portion of the viewport
+      const rect = current.getBoundingClientRect();
+      const viewportArea = window.innerWidth * window.innerHeight;
+      const elementArea = rect.width * rect.height;
+      // Lower threshold to 20% to catch smaller modals like Jira create modal
+      if (elementArea > viewportArea * 0.2) {
+        // Additional check: if it's centered or positioned like a modal
+        const isCentered = (
+          Math.abs(rect.left + rect.width / 2 - window.innerWidth / 2) < window.innerWidth * 0.1 &&
+          Math.abs(rect.top + rect.height / 2 - window.innerHeight / 2) < window.innerHeight * 0.1
+        );
+        // Or if it has many interactive elements (likely a form modal)
+        const interactiveCount = current.querySelectorAll(
+          'button, input, select, textarea, [role="button"], [contenteditable="true"]'
+        ).length;
+        if (isCentered || interactiveCount > 3) {
+          return current;
+        }
+      }
+    }
+    
+    // Check shadow DOM
+    if (current.shadowRoot) {
+      const shadowModal = current.shadowRoot.querySelector('[role="dialog"], [aria-modal="true"], .modal, .dialog');
+      if (shadowModal) {
+        return current;
+      }
+    }
+    
+    current = current.parentElement;
+  }
+  
+  // Check if element is in a React portal (rendered outside body but still visible)
+  // Portals often have specific markers
+  if (el.getRootNode() && el.getRootNode() !== document) {
+    const root = el.getRootNode() as ShadowRoot | Document;
+    if (root instanceof ShadowRoot || (root !== document && root.body)) {
+      // Element is in a portal or shadow DOM
+      const portalContainer = root instanceof ShadowRoot ? root.host : root.body;
+      if (portalContainer) {
+        const portalStyle = window.getComputedStyle(portalContainer);
+        const portalZIndex = parseInt(portalStyle.zIndex, 10);
+        if (portalZIndex > 500) {
+          return portalContainer as Element;
+        }
+      }
+    }
+  }
+  
+  return null;
+}
+
+// Detect all visible modals on the page
+function detectModals(): Array<{
+  element: Element;
+  selector: string;
+  isVisible: boolean;
+  hasBackdrop: boolean;
+  closeButton?: {
+    selector: string;
+    text: string;
+  };
+  interactiveElements: number;
+  zIndex: number;
+}> {
+  const modals: Array<{
+    element: Element;
+    selector: string;
+    isVisible: boolean;
+    hasBackdrop: boolean;
+    closeButton?: {
+      selector: string;
+      text: string;
+    };
+    interactiveElements: number;
+    zIndex: number;
+  }> = [];
+  
+  // Common modal selectors (framework-agnostic, covers all major frameworks)
+  const modalSelectors = [
+    // Standard HTML5
+    'dialog[open]',
+    '[role="dialog"]',
+    '[role="alertdialog"]',
+    '[aria-modal="true"]',
+    // Generic class patterns
+    '.modal',
+    '.dialog',
+    '.popup',
+    '.overlay',
+    '.drawer',
+    '.layer',
+    '.sheet',
+    '.panel',
+    '.lightbox',
+    '.popover',
+    // Data attributes (React, Vue, Angular, etc.)
+    '[data-modal]',
+    '[data-dialog]',
+    '[data-popup]',
+    '[data-drawer]',
+    '[data-portal]',
+    '[data-overlay]',
+    // Test ID patterns (common in all frameworks)
+    '[data-testid*="modal" i]',
+    '[data-testid*="dialog" i]',
+    '[data-testid*="drawer" i]',
+    '[data-testid*="popup" i]',
+    '[data-testid*="sheet" i]',
+    // React patterns (including styled-components, emotion)
+    '[class*="Modal"]',
+    '[class*="Dialog"]',
+    '[class*="Drawer"]',
+    '[class*="Portal"]',
+    '[class*="sc-"][class*="modal" i]',
+    '[class*="css-"][class*="modal" i]',
+    '[class*="emotion-"][class*="modal" i]',
+    // Vue.js patterns
+    '.v-modal',
+    '.vue-modal',
+    '[class*="v-modal"]',
+    '[data-vue-modal]',
+    // Angular Material
+    '.mat-dialog-container',
+    '.mat-dialog',
+    '.cdk-overlay-container',
+    '.cdk-overlay-pane',
+    '[class*="mat-dialog"]',
+    '[class*="cdk-overlay"]',
+    // Bootstrap
+    '.modal.show',
+    '.modal-backdrop',
+    '[class*="modal"][class*="show"]',
+    // Material-UI / MUI
+    '[class*="MuiModal"]',
+    '[class*="MuiDialog"]',
+    '[class*="MuiDrawer"]',
+    '[class*="MuiPopover"]',
+    // Ant Design
+    '[class*="ant-modal"]',
+    '[class*="ant-drawer"]',
+    '[class*="ant-popover"]',
+    // Chakra UI
+    '[class*="chakra-modal"]',
+    '[class*="chakra-drawer"]',
+    // Semantic UI
+    '.ui.modal',
+    '.ui.dialog',
+    // Foundation
+    '.reveal',
+    '[class*="foundation-modal"]',
+    // Bulma
+    '.modal.is-active',
+    // Tailwind patterns (common modal structure)
+    '[class*="fixed"][class*="inset-0"][class*="z-"]',
+    // Generic portal/overlay patterns
+    '[class*="portal"]',
+    '[class*="overlay"]',
+    '[class*="backdrop"]'
+  ];
+  
+  const foundModals = new Set<Element>();
+  
+  // Find modals by selector
+  modalSelectors.forEach(selector => {
+    try {
+      const elements = document.querySelectorAll(selector);
+      elements.forEach(el => {
+        if (!foundModals.has(el) && isElementVisible(el)) {
+          foundModals.add(el);
+        }
+      });
+    } catch (e) {
+      // Invalid selector, skip
+    }
+  });
+  
+  // Also check for high z-index elements that might be modals (enhanced for React/Jira)
+  // Use a more efficient approach - check only fixed/absolute positioned elements
+  const allElements = document.querySelectorAll('*');
+  allElements.forEach(el => {
+    if (foundModals.has(el)) return;
+    
+    const style = window.getComputedStyle(el);
+    const zIndex = parseInt(style.zIndex, 10);
+    const position = style.position;
+    
+    // Lower threshold to catch React modals (Jira uses 500-1000 range)
+    // Only check fixed/absolute positioned elements
+    if (zIndex > 500 && (position === 'fixed' || position === 'absolute')) {
+      const rect = el.getBoundingClientRect();
+      const viewportArea = window.innerWidth * window.innerHeight;
+      const elementArea = rect.width * rect.height;
+      
+      // Lower threshold to 20% to catch smaller modals like Jira create modal
+      if (elementArea > viewportArea * 0.2 && isElementVisible(el)) {
+        // Additional heuristics for React modals
+        const interactiveCount = el.querySelectorAll(
+          'button, input, select, textarea, [role="button"], [contenteditable="true"]'
+        ).length;
+        
+        // Check if centered (typical modal pattern)
+        const isCentered = (
+          Math.abs(rect.left + rect.width / 2 - window.innerWidth / 2) < window.innerWidth * 0.15 &&
+          Math.abs(rect.top + rect.height / 2 - window.innerHeight / 2) < window.innerHeight * 0.15
+        );
+        
+        // Check for form-like structure (common in create modals)
+        const hasForm = el.querySelector('form, [role="form"]') !== null;
+        const hasMultipleInputs = el.querySelectorAll('input, textarea, select').length >= 2;
+        
+        // If it looks like a modal (centered, has form, or has many interactive elements)
+        if (isCentered || hasForm || hasMultipleInputs || interactiveCount > 3) {
+          foundModals.add(el);
+        }
+      }
+    }
+  });
+  
+  // Check React portals (elements rendered outside normal DOM)
+  // Portals are often in divs with high z-index at root level
+  const rootLevelElements = Array.from(document.body.children);
+  rootLevelElements.forEach(el => {
+    if (foundModals.has(el)) return;
+    
+    const style = window.getComputedStyle(el);
+    const zIndex = parseInt(style.zIndex, 10);
+    if (zIndex > 500 && (style.position === 'fixed' || style.position === 'absolute')) {
+      const rect = el.getBoundingClientRect();
+      const viewportArea = window.innerWidth * window.innerHeight;
+      const elementArea = rect.width * rect.height;
+      
+      if (elementArea > viewportArea * 0.2 && isElementVisible(el)) {
+        // Check if it has modal-like content
+        const hasDialogRole = el.querySelector('[role="dialog"]') !== null;
+        const hasModalAria = el.hasAttribute('aria-modal') || el.querySelector('[aria-modal="true"]') !== null;
+        const interactiveCount = el.querySelectorAll('button, input, select, textarea').length;
+        
+        if (hasDialogRole || hasModalAria || interactiveCount > 2) {
+          foundModals.add(el);
+        }
+      }
+    }
+  });
+  
+  // Process found modals
+  foundModals.forEach(modalEl => {
+    const rect = modalEl.getBoundingClientRect();
+    const style = window.getComputedStyle(modalEl);
+    const zIndex = parseInt(style.zIndex, 10) || 0;
+    
+    // Generate selector for the modal (enhanced for React/Jira)
+    const getElementSelector = (el: Element): string => {
+      // Prefer data-testid (common in React/Jira)
+      const dataTestId = el.getAttribute('data-testid');
+      if (dataTestId) return `[data-testid="${dataTestId}"]`;
+      
+      // Prefer ID
+      if (el.id) return `#${el.id}`;
+      
+      // Prefer name attribute
+      const name = el.getAttribute('name');
+      if (name) return `${el.tagName.toLowerCase()}[name="${name}"]`;
+      
+      // Prefer data attributes
+      const dataId = el.getAttribute('data-id');
+      if (dataId) return `[data-id="${dataId}"]`;
+      
+      // For React components, look for stable class patterns
+      if (el.className) {
+        const classes = el.className.split(' ').filter(c => c.trim() && !c.match(/^(sc-|css-)[a-z0-9]+$/i));
+        // Prefer semantic class names over generated ones
+        const semanticClass = classes.find(c => 
+          c.includes('modal') || c.includes('dialog') || c.includes('drawer') || 
+          c.includes('Modal') || c.includes('Dialog') || c.includes('Drawer')
+        );
+        if (semanticClass) {
+          return `${el.tagName.toLowerCase()}.${semanticClass}`;
+        }
+        if (classes.length > 0) {
+          return `${el.tagName.toLowerCase()}.${classes[0]}`;
+        }
+      }
+      
+      // Fallback to tag with role
+      const role = el.getAttribute('role');
+      if (role) return `${el.tagName.toLowerCase()}[role="${role}"]`;
+      
+      return el.tagName.toLowerCase();
+    };
+    
+    const selector = getElementSelector(modalEl);
+    
+    // Check for backdrop (sibling or parent element with overlay/backdrop class)
+    let hasBackdrop = false;
+    const parent = modalEl.parentElement;
+    if (parent) {
+      const siblings = Array.from(parent.children);
+      hasBackdrop = siblings.some(sibling => {
+        const className = sibling.className?.toLowerCase() || '';
+        const id = sibling.id?.toLowerCase() || '';
+        return (
+          className.includes('backdrop') ||
+          className.includes('overlay') ||
+          className.includes('mask') ||
+          id.includes('backdrop') ||
+          id.includes('overlay')
+        );
+      });
+    }
+    
+    // Find close button (framework-agnostic, covers all major frameworks and languages)
+    const closeButtonSelectors = [
+      // Standard ARIA patterns
+      'button[aria-label*="close" i]',
+      'button[aria-label*="dismiss" i]',
+      'button[aria-label*="cancel" i]',
+      'button[title*="close" i]',
+      // Generic class patterns
+      'button.close',
+      'button[class*="close"]',
+      '.close-button',
+      '[class*="close-button"]',
+      '[class*="close-btn"]',
+      // Data attributes (all frameworks)
+      '[data-dismiss]',
+      '[data-close]',
+      '[data-testid*="close" i]',
+      '[data-testid*="dismiss" i]',
+      '[data-testid*="cancel" i]',
+      // International patterns (common close text in various languages)
+      'button[aria-label*="Cancel" i]',
+      'button[aria-label*="キャンセル" i]', // Japanese
+      'button[aria-label*="取消" i]', // Chinese
+      'button[aria-label*="취소" i]', // Korean
+      'button[aria-label*="Annuler" i]', // French
+      'button[aria-label*="Abbrechen" i]', // German
+      'button[aria-label*="Cancelar" i]', // Spanish/Portuguese
+      'button[aria-label*="Закрыть" i]', // Russian
+      // Icon patterns (SVG close icons)
+      'button:has(svg):has(path[d*="M"])', // SVG with path (often close icons)
+      'button:has(svg[class*="close"])',
+      'button:has(.close-icon)',
+      '[class*="close-icon"]',
+      // Framework-specific patterns
+      // React component patterns
+      'button[class*="Close"]',
+      'button[class*="Dismiss"]',
+      // Material-UI / MUI
+      '[class*="MuiIconButton"][aria-label*="close" i]',
+      '[class*="MuiDialogClose"]',
+      // Ant Design
+      '[class*="ant-modal-close"]',
+      '[class*="ant-drawer-close"]',
+      // Bootstrap
+      '.modal-header .close',
+      '.modal-header button[data-dismiss]',
+      // Angular Material
+      '[class*="mat-dialog-close"]',
+      '[class*="mat-icon-button"][aria-label*="close" i]',
+      // Chakra UI
+      '[class*="chakra-modal__close-btn"]',
+      // Semantic UI
+      '.ui.modal .close',
+      // Generic icon button patterns
+      'button[type="button"][aria-label*="close" i]',
+      'button[type="button"][aria-label*="dismiss" i]',
+      // Jira/Atlassian specific
+      'button[aria-label*="Cancel" i]',
+      '[data-testid*="cancel" i]',
+      // Look for icon buttons with close symbols
+      'button:has(svg):has(path[d*="M"])', // SVG with path (often close icons)
+      // React component patterns
+      'button[class*="Close"]',
+      'button[class*="Dismiss"]'
+    ];
+    
+    let closeButton: { selector: string; text: string } | undefined;
+    for (const closeSelector of closeButtonSelectors) {
+      try {
+        const closeBtn = modalEl.querySelector(closeSelector);
+        if (closeBtn && isElementVisible(closeBtn)) {
+          const btnText = closeBtn.textContent?.trim() || closeBtn.getAttribute('aria-label') || '';
+          closeButton = {
+            selector: getElementSelector(closeBtn),
+            text: btnText
+          };
+          break;
+        }
+      } catch (e) {
+        // Invalid selector, continue
+      }
+    }
+    
+    // If no close button found, look for X or close text (international patterns)
+    if (!closeButton) {
+      const allButtons = modalEl.querySelectorAll('button, [role="button"]');
+      const closeTextPatterns = [
+        '×', '✕', 'x', 'close', 'dismiss', 'cancel',
+        'キャンセル', '取消', '취소', // Japanese, Chinese, Korean
+        'annuler', 'abbrechen', 'cancelar', 'закрыть' // French, German, Spanish, Russian
+      ];
+      
+      for (const btn of allButtons) {
+        const text = btn.textContent?.trim().toLowerCase() || '';
+        const ariaLabel = btn.getAttribute('aria-label')?.toLowerCase() || '';
+        const title = btn.getAttribute('title')?.toLowerCase() || '';
+        const combined = `${text} ${ariaLabel} ${title}`;
+        
+        if (closeTextPatterns.some(pattern => combined.includes(pattern))) {
+          closeButton = {
+            selector: getElementSelector(btn),
+            text: btn.textContent?.trim() || btn.getAttribute('aria-label') || ''
+          };
+          break;
+        }
+      }
+    }
+    
+    // Count interactive elements in modal
+    const interactiveInModal = modalEl.querySelectorAll(
+      'button, input, select, textarea, a[href], [role="button"], [role="link"], [contenteditable="true"]'
+    ).length;
+    
+    modals.push({
+      element: modalEl,
+      selector,
+      isVisible: isElementVisible(modalEl),
+      hasBackdrop,
+      closeButton,
+      interactiveElements: interactiveInModal,
+      zIndex
+    });
+  });
+  
+  // Sort by z-index (highest first) and visibility
+  modals.sort((a, b) => {
+    if (a.isVisible && !b.isVisible) return -1;
+    if (!a.isVisible && b.isVisible) return 1;
+    return b.zIndex - a.zIndex;
+  });
+  
+  return modals;
+}
+
+// Calculate element priority for better action selection
+function calculateElementPriority(el: Element, rect: DOMRect, inModal: boolean = false): number {
+  let priority = 0;
+  
+  // Prioritize elements with IDs (more stable selectors)
+  if (el.id) priority += 10;
+  
+  // Prioritize elements with specific roles
+  const role = el.getAttribute('role');
+  if (role === 'button' || role === 'link') priority += 5;
+  
+  // HEAVILY prioritize elements in modals (they're usually the focus)
+  if (inModal) priority += 20;
+  
+  // Prioritize larger, more prominent elements
+  const area = rect.width * rect.height;
+  if (area > 2000) priority += 3;
+  if (area > 5000) priority += 2;
+  
+  // Prioritize elements in viewport center
+  const centerY = window.innerHeight / 2;
+  const centerX = window.innerWidth / 2;
+  const elCenterY = rect.top + rect.height / 2;
+  const elCenterX = rect.left + rect.width / 2;
+  const distanceFromCenter = Math.sqrt(
+    Math.pow(elCenterX - centerX, 2) + Math.pow(elCenterY - centerY, 2)
+  );
+  if (distanceFromCenter < 200) priority += 5;
+  
+  // Prioritize elements with text content
+  const text = el.textContent?.trim() || '';
+  if (text.length > 0 && text.length < 50) priority += 3;
+  
+  // Prioritize common interactive patterns
+  const tag = el.tagName.toLowerCase();
+  if (tag === 'button') priority += 5;
+  if (tag === 'a' && (el as HTMLAnchorElement).href) priority += 4;
+  if (tag === 'input' && ['submit', 'button'].includes((el as HTMLInputElement).type)) priority += 4;
+  
+  return priority;
+}
+
+// Detect authentication state
+function detectAuthentication(): {
+  isLoginPage: boolean;
+  isAuthenticated: boolean;
+  loginIndicators: string[];
+  requiresLogin: boolean;
+} {
+  const url = window.location.href.toLowerCase();
+  const title = document.title.toLowerCase();
+  const bodyText = document.body.innerText.toLowerCase();
+  
+  const loginPageIndicators = [
+    'login', 'sign in', 'signin', 'log in', 'sign up', 'signup', 'register',
+    'authentication', 'auth', 'credentials', 'password', 'username', 'email'
+  ];
+  
+  const authenticatedIndicators = [
+    'logout', 'sign out', 'signout', 'log out', 'profile', 'dashboard',
+    'account', 'settings', 'my account', 'welcome back'
+  ];
+  
+  const urlMatches = loginPageIndicators.some(indicator => url.includes(indicator));
+  const titleMatches = loginPageIndicators.some(indicator => title.includes(indicator));
+  const bodyMatches = loginPageIndicators.some(indicator => bodyText.includes(indicator));
+  
+  const isLoginPage = urlMatches || titleMatches || bodyMatches;
+  
+  // Check for login forms
+  const hasLoginForm = document.querySelector('input[type="password"], input[name*="password" i], input[id*="password" i]') !== null;
+  const hasLoginButton = Array.from(document.querySelectorAll('button, input[type="submit"]')).some(
+    el => {
+      const text = el.textContent?.toLowerCase() || '';
+      return loginPageIndicators.some(indicator => text.includes(indicator));
+    }
+  );
+  
+  const isAuthenticated = authenticatedIndicators.some(indicator => 
+    url.includes(indicator) || title.includes(indicator) || bodyText.includes(indicator)
+  ) || document.querySelector('[data-testid*="logout" i], [aria-label*="logout" i], [aria-label*="sign out" i]') !== null;
+  
+  const loginIndicators: string[] = [];
+  if (hasLoginForm) loginIndicators.push('login_form');
+  if (hasLoginButton) loginIndicators.push('login_button');
+  if (urlMatches) loginIndicators.push('url');
+  if (titleMatches) loginIndicators.push('title');
+  if (bodyMatches) loginIndicators.push('body_text');
+  
+  const requiresLogin = (isLoginPage || hasLoginForm) && !isAuthenticated;
+  
+  return {
+    isLoginPage: isLoginPage || hasLoginForm,
+    isAuthenticated,
+    loginIndicators,
+    requiresLogin
+  };
+}
+
+// Extract comprehensive page context with optimizations
+function extractPageContext(): PageContext {
+  const currentUrl = window.location.href;
+  const now = Date.now();
+  
+  // Use cache if available and still valid
+  const cache = getDomCache();
+  if (cache.interactiveElements && cache.url === currentUrl && 
+      cache.timestamp && (now - cache.timestamp) < getCacheDuration()) {
+    console.log('📦 Using cached DOM data');
+  } else {
+    Object.assign(cache, { url: currentUrl, timestamp: now });
+  }
+  
+  // Use more efficient selectors - prioritize common patterns
+  const linkSelector = 'a[href]:not([href^="#"]):not([href^="javascript:"])';
+  const links = Array.from(document.querySelectorAll(linkSelector))
+    .slice(0, 50)
+    .map(a => ({
+      text: a.textContent?.trim() || '',
+      href: a.href
+    }));
+
+  const images = Array.from(document.querySelectorAll('img[src]:not([src=""]), img[data-src]'))
+    .slice(0, 20)
+    .map(img => ({
+      alt: img.alt,
+      src: img.src || img.getAttribute('data-src') || ''
+    }));
 
   const forms = Array.from(document.querySelectorAll('form')).map(form => ({
     id: form.id,
@@ -241,25 +957,117 @@ function extractPageContext(): PageContext {
     }))
   }));
 
-  // Extract interactive elements with their selectors for easy DOM-based clicking
+  // Improved element selector generation (enhanced for React/Jira)
   const getElementSelector = (el: Element): string => {
+    // Prefer data-testid (very common in React/Jira, most stable)
+    const dataTestId = el.getAttribute('data-testid');
+    if (dataTestId) return `[data-testid="${dataTestId}"]`;
+    
+    // Prefer ID (most stable)
     if (el.id) return `#${el.id}`;
-    if (el.className) {
-      const classes = el.className.split(' ').filter(c => c.trim());
-      if (classes.length > 0) return `${el.tagName.toLowerCase()}.${classes[0]}`;
-    }
+    
+    // Prefer name attribute for form elements
     const name = el.getAttribute('name');
     if (name) return `${el.tagName.toLowerCase()}[name="${name}"]`;
+    
+    // Use data attributes if available
+    const dataId = el.getAttribute('data-id');
+    if (dataId) return `[data-id="${dataId}"]`;
+    
+    // For all frameworks, prefer semantic class names over generated ones
+    if (el.className) {
+      const classes = el.className.split(' ').filter(c => {
+        const trimmed = c.trim();
+        // Filter out generated class names from various frameworks
+        // React: sc-xxx, css-xxx, emotion-xxx
+        // Vue: v-xxx, vue-xxx
+        // Angular: ng-xxx, _ng-xxx
+        // Styled-components, emotion, etc.
+        return trimmed && !trimmed.match(/^(sc-|css-|chakra-|mui-|v-|vue-|ng-|_ng-|emotion-|styled-)[a-z0-9-]+$/i);
+      });
+      
+      if (classes.length > 0) {
+        // Prefer semantic class names (containing meaningful words)
+        const semanticClass = classes.find(c => {
+          const trimmed = c.trim();
+          return trimmed.length > 3 && 
+                 !trimmed.match(/^[a-z0-9]{1,3}$/i) && 
+                 (trimmed.includes('-') || trimmed.match(/[A-Z]/)) && // Has structure
+                 !trimmed.match(/^[a-f0-9]{6,}$/i); // Not a hex color
+        });
+        if (semanticClass) {
+          // Check if this class is relatively unique (appears < 10 times)
+          const sameClass = document.querySelectorAll(`.${semanticClass}`);
+          if (sameClass.length < 10) {
+            return `${el.tagName.toLowerCase()}.${semanticClass}`;
+          }
+        }
+        
+        // Fallback to first class if unique enough
+        const firstClass = classes[0];
+        const sameClass = document.querySelectorAll(`.${firstClass}`);
+        if (sameClass.length < 5) {
+          return `${el.tagName.toLowerCase()}.${firstClass}`;
+        }
+      }
+    }
+    
+    // Use aria-label as selector if available
+    const ariaLabel = el.getAttribute('aria-label');
+    if (ariaLabel) {
+      return `${el.tagName.toLowerCase()}[aria-label="${ariaLabel}"]`;
+    }
+    
+    // Fallback to tag name with nth-child if needed
     return el.tagName.toLowerCase();
   };
 
-  // Find all interactive/clickable elements
-  const interactiveElements = Array.from(
-    document.querySelectorAll('button, input[type="button"], input[type="submit"], a[href], [role="button"], [onclick]')
-  )
-    .slice(0, 30)
+  // Detect modals first (needed for priority calculation)
+  const modals = detectModals();
+  
+  // Log modal detection for debugging (especially useful for Jira)
+  if (modals.length > 0) {
+    console.log('🎯 Detected', modals.length, 'modal(s):', modals.map(m => ({
+      selector: m.selector,
+      zIndex: m.zIndex,
+      interactiveElements: m.interactiveElements,
+      hasCloseButton: !!m.closeButton
+    })));
+  }
+  
+  // Optimized interactive element extraction with priority scoring
+  const interactiveSelectors = [
+    'button:not([disabled])',
+    'input[type="button"]:not([disabled])',
+    'input[type="submit"]:not([disabled])',
+    'a[href]:not([href^="#"]):not([href^="javascript:"])',
+    '[role="button"]:not([disabled])',
+    '[role="link"]',
+    '[role="tab"]',
+    '[role="menuitem"]',
+    'select:not([disabled])',
+    '[contenteditable="true"]',
+    '[onclick]',
+    'label[for]'
+  ];
+  
+  // Use a single query with multiple selectors for better performance
+  const allInteractive = Array.from(document.querySelectorAll(interactiveSelectors.join(', ')));
+  
+  // Process and prioritize elements
+  const interactiveElements = allInteractive
     .map(el => {
       const rect = el.getBoundingClientRect();
+      const visible = isElementVisible(el);
+      
+      if (!visible) return null;
+      
+      // Check if element is in a modal
+      const modalParent = isElementInModal(el);
+      const inModal = modalParent !== null;
+      
+      const priority = calculateElementPriority(el, rect, inModal);
+      
       return {
         tag: el.tagName.toLowerCase(),
         text: el.textContent?.trim().slice(0, 50) || '',
@@ -267,27 +1075,78 @@ function extractPageContext(): PageContext {
         selector: getElementSelector(el),
         type: (el as HTMLInputElement).type || undefined,
         ariaLabel: el.getAttribute('aria-label') || undefined,
-        visible: rect.width > 0 && rect.height > 0 && rect.top >= 0 && rect.bottom <= window.innerHeight,
-        boundingRect: {
-          top: rect.top,
-          left: rect.left,
-          right: rect.right,
-          bottom: rect.bottom,
-          width: rect.width,
-          height: rect.height,
-          centerX: rect.left + rect.width / 2,
-          centerY: rect.top + rect.height / 2
+        visible: true,
+        priority,
+        inModal,
+        bounds: {
+          x: Math.round(rect.left),
+          y: Math.round(rect.top),
+          width: Math.round(rect.width),
+          height: Math.round(rect.height)
         }
       };
     })
-    .filter(el => el.visible); // Only return visible elements
+    .filter((el): el is NonNullable<typeof el> => el !== null)
+    .sort((a, b) => {
+      // First sort by modal status (elements in modals first)
+      if (a.inModal && !b.inModal) return -1;
+      if (!a.inModal && b.inModal) return 1;
+      // Then by priority
+      return (b.priority || 0) - (a.priority || 0);
+    })
+    .slice(0, 50); // Increased limit but sorted by priority
+  
+  // Cache the results (reuse existing cache variable from top of function)
+  cache.interactiveElements = interactiveElements;
 
   const getMetaContent = (name: string): string | undefined => {
     const meta = document.querySelector(`meta[name="${name}"], meta[property="${name}"]`);
     return meta?.getAttribute('content') || undefined;
   };
 
-  // Find all search-related inputs for debugging
+  // Extract structural information for better page type detection
+  const headings = Array.from(document.querySelectorAll('h1, h2, h3')).slice(0, 10).map(h => ({
+    level: h.tagName.toLowerCase(),
+    text: h.textContent?.trim() || ''
+  }));
+
+  // Detect main content area (article, main, or largest content container)
+  const mainContent = document.querySelector('article, main, [role="main"]') || 
+                     Array.from(document.querySelectorAll('div')).reduce((largest, div) => {
+                       const text = div.textContent || '';
+                       return text.length > (largest?.textContent?.length || 0) ? div : largest;
+                     }, null as Element | null);
+
+  const mainContentText = mainContent?.textContent?.slice(0, 5000) || '';
+  const mainContentLength = mainContentText.length;
+  const totalTextLength = document.body.innerText.length;
+
+  // Analyze content structure
+  const hasArticleStructure = !!document.querySelector('article, [role="article"]');
+  const hasMainStructure = !!document.querySelector('main, [role="main"]');
+  const hasNavigation = !!document.querySelector('nav, [role="navigation"]');
+  
+  // Count semantic elements
+  const sectionCount = document.querySelectorAll('section, article').length;
+  const paragraphCount = document.querySelectorAll('p').length;
+
+  // Detect authentication state
+  const authentication = detectAuthentication();
+
+  // Prepare modal data (without circular references)
+  const modalData = modals.map(modal => ({
+    selector: modal.selector,
+    isVisible: modal.isVisible,
+    hasBackdrop: modal.hasBackdrop,
+    closeButton: modal.closeButton,
+    interactiveElements: modal.interactiveElements,
+    zIndex: modal.zIndex
+  }));
+  
+  // Add flag to page context indicating modals are present (prevents screenshot fallback)
+  const hasActiveModals = modals.some(m => m.isVisible && m.interactiveElements > 0);
+
+  // Find all search-related inputs for debugging (from PR #7)
   const searchInputs = Array.from(
     document.querySelectorAll('input[type="search"], input[type="text"]')
   )
@@ -318,12 +1177,23 @@ function extractPageContext(): PageContext {
     links,
     images,
     forms,
-    interactiveElements, // NEW: List of clickable elements with selectors
-    searchInputs, // NEW: List of all visible search/text inputs for debugging
+    interactiveElements,
+    searchInputs, // NEW: List of all visible search/text inputs for debugging (from PR #7)
     metadata: {
       description: getMetaContent('description') || getMetaContent('og:description'),
       keywords: getMetaContent('keywords'),
-      author: getMetaContent('author')
+      author: getMetaContent('author'),
+      ogType: getMetaContent('og:type')
+    },
+    structure: {
+      headings,
+      hasArticleStructure,
+      hasMainStructure,
+      hasNavigation,
+      sectionCount,
+      paragraphCount,
+      mainContentLength,
+      mainContentRatio: mainContentLength / Math.max(totalTextLength, 1) // Ratio of main content to total
     },
     viewport: {
       width: window.innerWidth,
@@ -331,7 +1201,10 @@ function extractPageContext(): PageContext {
       scrollX: window.scrollX,
       scrollY: window.scrollY,
       devicePixelRatio: window.devicePixelRatio
-    }
+    },
+    authentication,
+    modals: modalData,
+    hasActiveModals // Flag to prevent screenshot fallback when modals are present
   };
 }
 
@@ -593,7 +1466,7 @@ async function executePageAction(
 
         // 3. If we found an element (by selector or text), click it
         if (element) {
-          const rect = (element as HTMLElement).getBoundingClientRect();
+          const rect = element.getBoundingClientRect();
           const clickX = rect.left + rect.width / 2;
           const clickY = rect.top + rect.height / 2;
 
@@ -604,7 +1477,7 @@ async function executePageAction(
           console.log(`   Element text: "${element.textContent?.trim().substring(0, 50)}"`);
 
           // Use complete click sequence for better compatibility
-          await dispatchClickSequence(element as HTMLElement, clickX, clickY);
+          await dispatchClickSequence(element, clickX, clickY);
 
           // Visual feedback
           highlightElement(element, coordinates || { x: clickX, y: clickY });
@@ -708,7 +1581,7 @@ async function executePageAction(
           // If element was already found by selector/text but we also have coordinates,
           // verify the element is actually at those coordinates
           if (element) {
-            const rect = (element as HTMLElement).getBoundingClientRect();
+            const rect = element.getBoundingClientRect();
             const isInBounds = coordinates.x >= rect.left && coordinates.x <= rect.right &&
                               coordinates.y >= rect.top && coordinates.y <= rect.bottom;
             console.log(`✓ Found element by selector/text, coordinates ${isInBounds ? 'MATCH' : 'MISMATCH'}`);
@@ -725,7 +1598,7 @@ async function executePageAction(
           console.log(`🎯 Element at coordinates:`, element?.tagName, element?.className);
 
           if (element) {
-            const rect = (element as HTMLElement).getBoundingClientRect();
+            const rect = element.getBoundingClientRect();
             console.log(`📦 Element bounds:`, {
               left: rect.left,
               top: rect.top,
@@ -751,7 +1624,7 @@ async function executePageAction(
             const rect = element.getBoundingClientRect();
 
             // Use complete click sequence for better compatibility
-            await dispatchClickSequence(element as HTMLElement, coordinates.x, coordinates.y);
+            dispatchClickSequence(element, coordinates.x, coordinates.y);
 
             // Visual feedback
             highlightElement(element, coordinates);
@@ -1706,6 +2579,66 @@ async function executePageAction(
   }
 }
 
+// Store original page title to restore it later
+// Use window property to avoid duplicate declaration errors
+if (typeof (window as any).__atlasOriginalPageTitle === 'undefined') {
+  (window as any).__atlasOriginalPageTitle = null;
+}
+// Access via getter function to avoid const declaration issues
+function getOriginalPageTitle(): string | null {
+  return (window as any).__atlasOriginalPageTitle;
+}
+function setOriginalPageTitle(value: string | null): void {
+  (window as any).__atlasOriginalPageTitle = value;
+}
+
+// Update page title to show agent mode status
+function updatePageTitle(isActive: boolean) {
+  try {
+    console.log('📝 updatePageTitle called with isActive:', isActive, 'current title:', document.title);
+    (window as any).__atlasIsAgentModeActive = isActive;
+    
+    if (isActive) {
+      // Store original title if not already stored
+      if (getOriginalPageTitle() === null) {
+        // Remove any existing indicator before storing original
+        const currentTitle = document.title;
+        if (currentTitle.startsWith('◉ [AI] ')) {
+          setOriginalPageTitle(currentTitle.replace('◉ [AI] ', ''));
+        } else {
+          setOriginalPageTitle(currentTitle);
+        }
+        console.log('📝 Stored original title:', getOriginalPageTitle());
+      }
+      // Always update title to ensure it has the indicator
+      const indicator = '◉ [AI]';
+      const newTitle = `${indicator} ${getOriginalPageTitle() || document.title.replace('◉ [AI] ', '')}`;
+      document.title = newTitle;
+      console.log('📝 Set title to:', document.title);
+      // Start observing title changes to preserve indicator
+      startTitleObserver();
+    } else {
+      // Stop observing title changes
+      stopTitleObserver();
+      // Restore original title
+      if (getOriginalPageTitle() !== null) {
+        document.title = getOriginalPageTitle()!;
+        console.log('📝 Restored title to:', document.title);
+        setOriginalPageTitle(null);
+      } else {
+        // Try to remove indicator if we don't have original
+        const currentTitle = document.title;
+        if (currentTitle.startsWith('◉ [AI] ')) {
+          document.title = currentTitle.replace('◉ [AI] ', '');
+          console.log('📝 Removed indicator, title now:', document.title);
+        }
+      }
+    }
+  } catch (error) {
+    console.error('❌ Error updating page title:', error, error instanceof Error ? error.stack : '');
+  }
+}
+
 // Listen for messages from background script or sidebar
 chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
   if (request.type === 'PING') {
@@ -1714,9 +2647,21 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
     return true;
   }
 
+  // Update page title for agent mode status
+  if (request.type === 'UPDATE_AGENT_MODE_TITLE') {
+    console.log('📝 Received UPDATE_AGENT_MODE_TITLE:', request.isActive, 'from:', _sender);
+    try {
+      updatePageTitle(request.isActive);
+      sendResponse({ success: true, title: document.title, originalTitle: originalPageTitle });
+    } catch (error) {
+      console.error('❌ Error handling UPDATE_AGENT_MODE_TITLE:', error);
+      sendResponse({ success: false, error: (error as Error).message });
+    }
+    return true;
+  }
+
   if (request.type === 'GET_PAGE_CONTEXT') {
     const context = extractPageContext();
-    console.log('📄 GET_PAGE_CONTEXT payload:', context);
     sendResponse(context);
     return true;
   }
@@ -1754,6 +2699,93 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
     }
   }
 
+  if (request.type === 'WAIT_FOR_MODAL') {
+    (async () => {
+      const timeout = request.timeout || 5000;
+      const startTime = Date.now();
+      
+      while (Date.now() - startTime < timeout) {
+        const modals = detectModals();
+        const visibleModals = modals.filter(m => m.isVisible);
+        
+        if (visibleModals.length > 0) {
+          sendResponse({ 
+            success: true, 
+            modals: visibleModals.map(m => ({
+              selector: m.selector,
+              hasCloseButton: !!m.closeButton,
+              closeButton: m.closeButton
+            }))
+          });
+          return;
+        }
+        
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      
+      sendResponse({ success: false, error: 'No modal appeared within timeout' });
+    })();
+    return true;
+  }
+
+  if (request.type === 'CLOSE_MODAL') {
+    try {
+      const modals = detectModals();
+      const visibleModals = modals.filter(m => m.isVisible);
+      
+      if (visibleModals.length === 0) {
+        sendResponse({ success: false, error: 'No visible modals found' });
+        return true;
+      }
+      
+      // Try to close the topmost modal (highest z-index)
+      const topModal = visibleModals[0];
+      
+      // Try close button first
+      if (topModal.closeButton) {
+        const closeBtn = document.querySelector(topModal.closeButton.selector);
+        if (closeBtn && isElementVisible(closeBtn)) {
+          (closeBtn as HTMLElement).click();
+          sendResponse({ success: true, method: 'close_button' });
+          return true;
+        }
+      }
+      
+      // Try ESC key
+      const modalElement = topModal.element;
+      modalElement.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Escape',
+        code: 'Escape',
+        bubbles: true,
+        cancelable: true
+      }));
+      
+      // Also try clicking backdrop if it exists
+      if (topModal.hasBackdrop) {
+        const backdrop = modalElement.parentElement?.querySelector(
+          '.backdrop, .overlay, .modal-backdrop, [class*="backdrop"], [class*="overlay"]'
+        );
+        if (backdrop && isElementVisible(backdrop)) {
+          (backdrop as HTMLElement).click();
+          sendResponse({ success: true, method: 'backdrop_click' });
+          return true;
+        }
+      }
+      
+      // Try setting dialog to closed if it's a <dialog> element
+      if (modalElement.tagName.toLowerCase() === 'dialog') {
+        (modalElement as HTMLDialogElement).close();
+        sendResponse({ success: true, method: 'dialog_close' });
+        return true;
+      }
+      
+      sendResponse({ success: false, error: 'Could not close modal' });
+    } catch (error) {
+      sendResponse({ success: false, error: (error as Error).message });
+    }
+    return true;
+  }
+
   if (request.type === 'GET_SELECTED_TEXT') {
     const selectedText = window.getSelection()?.toString() || '';
     sendResponse({ text: selectedText });
@@ -1778,9 +2810,15 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
  * Browser automation visual overlay
  * Shows blue border and "Take Over Control" button when AI is controlling the browser
  */
-let automationOverlay: HTMLDivElement | null = null;
-let automationButton: HTMLDivElement | null = null;
-let isUserAborted = false; // Track if user manually aborted
+// Use window properties to avoid duplicate declaration errors
+if (typeof (window as any).__atlasAutomationOverlay === 'undefined') {
+  (window as any).__atlasAutomationOverlay = null;
+  (window as any).__atlasAutomationButton = null;
+  (window as any).__atlasIsUserAborted = false;
+}
+let automationOverlay: HTMLDivElement | null = (window as any).__atlasAutomationOverlay;
+let automationButton: HTMLDivElement | null = (window as any).__atlasAutomationButton;
+let isUserAborted = (window as any).__atlasIsUserAborted;
 
 function showBrowserAutomationOverlay() {
   // Don't show overlay if user has aborted
@@ -1917,12 +2955,36 @@ function hideBrowserAutomationOverlay() {
   }
 }
 
+// Check if current page is an SSO/auth page that should be excluded from extension UI
+function isAuthPage(): boolean {
+  const url = window.location.href.toLowerCase();
+  const hostname = window.location.hostname.toLowerCase();
+  
+  // Exclude common SSO/auth pages
+  const authPatterns = [
+    'okta.com',
+    'sso',
+    '/saml',
+    '/oauth',
+    '/auth',
+    '/login',
+    'authenticatorlocalprod.com',
+    'authenticator',
+  ];
+  
+  return authPatterns.some(pattern => url.includes(pattern) || hostname.includes(pattern));
+}
+
 /**
  * Send page load event to background when DOM is fully ready
  * Waits for DOM to be interactive before sending message to ensure
  * all page data (links, forms, etc.) is available
  */
 function sendPageLoadMessage() {
+  // Clear DOM cache on page load/navigation
+  const domCache = getDomCache();
+  Object.keys(domCache).forEach(key => delete (domCache as any)[key]);
+  
   chrome.runtime.sendMessage({
     type: 'PAGE_LOADED',
     url: window.location.href,
@@ -1934,7 +2996,10 @@ function sendPageLoadMessage() {
     console.debug('Could not send PAGE_LOADED message:', error);
   });
 
-  console.log('Atlas content script loaded on:', window.location.href);
+  // Only log for non-auth pages to reduce console noise on SSO pages
+  if (!isAuthPage()) {
+    console.log('Atlas content script loaded on:', window.location.href);
+  }
 }
 
 // Wait for DOM to be ready before sending page load message
@@ -1946,3 +3011,316 @@ if (document.readyState === 'loading') {
   // DOM is already interactive or complete
   sendPageLoadMessage();
 }
+
+/**
+ * Inject floating "Ask GoDaddy ANS" button on web pages
+ * Opens the sidebar when clicked
+ * Only shows when sidebar is closed
+ */
+// Use window properties to avoid duplicate declaration errors
+if (typeof (window as any).__atlasAnsFloatingButton === 'undefined') {
+  (window as any).__atlasAnsFloatingButton = null;
+  (window as any).__atlasSidebarOpen = false;
+}
+let ansFloatingButton: HTMLDivElement | null = (window as any).__atlasAnsFloatingButton;
+let sidebarOpen = (window as any).__atlasSidebarOpen;
+
+function showANSFloatingButton() {
+  if (sidebarOpen) return;
+  
+  // Don't show floating button on SSO/auth pages to avoid interference
+  if (isAuthPage()) {
+    if (ansFloatingButton) {
+      ansFloatingButton.style.display = 'none';
+    }
+    return;
+  }
+  
+  // Check if floating button is enabled in settings
+  chrome.storage.local.get(['atlasSettings'], (result) => {
+    const settings = result.atlasSettings;
+    const floatingButtonEnabled = settings?.floatingButtonEnabled !== false; // Default to true
+    
+    if (!floatingButtonEnabled) {
+      // Hide button if disabled
+      if (ansFloatingButton) {
+        ansFloatingButton.style.display = 'none';
+      }
+      return;
+    }
+    
+    // Show button if enabled
+    showANSFloatingButtonInternal();
+  });
+}
+
+function showANSFloatingButtonInternal() {
+  if (sidebarOpen) return;
+  
+  if (ansFloatingButton) {
+    ansFloatingButton.style.display = 'block';
+    return;
+  }
+
+  // Ensure document.body exists
+  if (!document.body) {
+    const observer = new MutationObserver(() => {
+      if (document.body) {
+        observer.disconnect();
+        showANSFloatingButton();
+      }
+    });
+    observer.observe(document.documentElement, { childList: true });
+    return;
+  }
+
+  // Get extension icon URL
+  const iconUrl = chrome.runtime.getURL('icons/icon.png');
+
+  // Create button container
+  ansFloatingButton = document.createElement('div');
+  ansFloatingButton.id = 'ans-floating-button';
+  ansFloatingButton.style.cssText = `
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 999997;
+    pointer-events: auto;
+    display: block;
+  `;
+  
+  // Create button element safely without innerHTML
+  const button = document.createElement('button');
+  button.id = 'ans-floating-btn';
+  button.style.cssText = `
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: linear-gradient(135deg, #00B140 0%, #008A32 100%);
+    color: white;
+    border: none;
+    padding: 10px 16px;
+    font-size: 14px;
+    font-weight: 600;
+    border-radius: 24px;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(0, 177, 64, 0.3);
+    transition: all 0.2s ease;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    white-space: nowrap;
+    position: relative;
+  `;
+  
+  // Create image element safely
+  const img = document.createElement('img');
+  // Sanitize iconUrl to prevent XSS - only allow data URLs or chrome-extension URLs
+  const sanitizedIconUrl = (iconUrl && (iconUrl.startsWith('data:') || iconUrl.startsWith('chrome-extension://') || iconUrl.startsWith('chrome://'))) 
+    ? iconUrl 
+    : 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"></svg>';
+  img.src = sanitizedIconUrl;
+  img.alt = 'GoDaddy ANS';
+  img.style.cssText = 'width: 20px; height: 20px; object-fit: contain; display: block;';
+  img.onerror = () => { img.style.display = 'none'; };
+  
+  // Add text node safely
+  const textNode = document.createTextNode(' Ask GoDaddy ANS');
+  
+  button.appendChild(img);
+  button.appendChild(textNode);
+  
+  // Create close button (X icon)
+  const closeButton = document.createElement('button');
+  closeButton.id = 'ans-floating-close-btn';
+  closeButton.textContent = '×';
+  closeButton.style.cssText = `
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.7);
+    color: white;
+    border: 2px solid white;
+    font-size: 18px;
+    font-weight: bold;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+    transition: all 0.2s ease;
+    z-index: 1;
+  `;
+  
+  // Add hover effect for close button
+  closeButton.addEventListener('mouseenter', () => {
+    closeButton.style.background = 'rgba(220, 38, 38, 0.9)';
+    closeButton.style.transform = 'scale(1.1)';
+  });
+  closeButton.addEventListener('mouseleave', () => {
+    closeButton.style.background = 'rgba(0, 0, 0, 0.7)';
+    closeButton.style.transform = 'scale(1)';
+  });
+  
+  // Handle close button click - disable floating button in settings
+  closeButton.addEventListener('click', (e) => {
+    e.stopPropagation(); // Prevent triggering the main button click
+    // Get current settings and disable floating button
+    chrome.storage.local.get(['atlasSettings'], (result) => {
+      const settings = result.atlasSettings || {};
+      const newSettings = { ...settings, floatingButtonEnabled: false };
+      chrome.storage.local.set({ atlasSettings: newSettings }, () => {
+        // Hide the button
+        hideANSFloatingButton();
+        // Notify settings page if open
+        chrome.runtime.sendMessage({ type: 'SETTINGS_UPDATED', action: 'floating_button_changed' }, () => {
+          if (chrome.runtime.lastError) {
+            console.log('Settings updated');
+          }
+        });
+      });
+    });
+  });
+  
+  // Append close button to the main button (positioned relative to button)
+  button.appendChild(closeButton);
+  ansFloatingButton.appendChild(button);
+
+  // Add hover effects (button already created above)
+  if (button) {
+    button.addEventListener('mouseenter', () => {
+      button.style.transform = 'translateY(-2px)';
+      button.style.boxShadow = '0 6px 16px rgba(0, 177, 64, 0.4)';
+    });
+    button.addEventListener('mouseleave', () => {
+      button.style.transform = 'translateY(0)';
+      button.style.boxShadow = '0 4px 12px rgba(0, 177, 64, 0.3)';
+    });
+    button.addEventListener('click', () => {
+      // Hide button immediately when clicked
+      hideANSFloatingButton();
+      // Open sidebar via background script
+      chrome.runtime.sendMessage({ type: 'OPEN_SIDEBAR' }, (response) => {
+        if (chrome.runtime.lastError) {
+          console.error('Error opening sidebar:', chrome.runtime.lastError);
+          // Show button again if sidebar failed to open
+          showANSFloatingButton();
+        }
+      });
+    });
+  }
+
+  document.body.appendChild(ansFloatingButton);
+}
+
+function hideANSFloatingButton() {
+  if (ansFloatingButton) {
+    ansFloatingButton.style.display = 'none';
+  }
+}
+
+// Listen for sidebar state changes and settings updates
+chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
+  if (request.type === 'SIDEBAR_OPENED') {
+    sidebarOpen = true;
+    hideANSFloatingButton();
+  } else if (request.type === 'SIDEBAR_CLOSED') {
+    sidebarOpen = false;
+    showANSFloatingButton();
+  } else if (request.type === 'SETTINGS_UPDATED' && request.action === 'floating_button_changed') {
+    // Settings changed, update button visibility
+    checkSidebarStateAndUpdateButton();
+  }
+});
+
+// Simple function to check sidebar state and update button
+function checkSidebarStateAndUpdateButton() {
+  chrome.runtime.sendMessage({ type: 'CHECK_SIDEBAR_STATE' }, (response) => {
+    const isOpen = response && response.sidebarOpen === true;
+    sidebarOpen = isOpen;
+    
+    if (isOpen) {
+      hideANSFloatingButton();
+    } else {
+      // Check settings before showing
+      showANSFloatingButton();
+    }
+  });
+}
+
+// Reset original title on page navigation
+window.addEventListener('beforeunload', () => {
+  setOriginalPageTitle(null);
+});
+
+// Monitor for title changes and preserve the indicator if agent mode is active
+// Use window properties to avoid duplicate declaration errors
+if (typeof (window as any).__atlasTitleObserver === 'undefined') {
+  (window as any).__atlasTitleObserver = null;
+  (window as any).__atlasIsAgentModeActive = false;
+}
+let titleObserver: MutationObserver | null = (window as any).__atlasTitleObserver;
+let isAgentModeActive = (window as any).__atlasIsAgentModeActive;
+
+function startTitleObserver() {
+  if ((window as any).__atlasTitleObserver) return;
+  
+  (window as any).__atlasTitleObserver = new MutationObserver(() => {
+    // If agent mode is active and title doesn't have indicator, add it
+    if ((window as any).__atlasIsAgentModeActive && getOriginalPageTitle() !== null) {
+      const indicator = '◉ [AI]';
+      if (!document.title.startsWith(indicator + ' ')) {
+        // Title was changed externally, update it
+        document.title = `${indicator} ${getOriginalPageTitle()}`;
+      }
+    }
+  });
+  
+  // Observe title element changes
+  const titleElement = document.querySelector('title');
+  if (titleElement) {
+    titleObserver.observe(titleElement, { childList: true, subtree: true });
+  }
+}
+
+function stopTitleObserver() {
+  if ((window as any).__atlasTitleObserver) {
+    (window as any).__atlasTitleObserver.disconnect();
+    (window as any).__atlasTitleObserver = null;
+  }
+}
+
+// Initialize button on page load
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => {
+    checkSidebarStateAndUpdateButton();
+  }, { once: true });
+} else {
+  checkSidebarStateAndUpdateButton();
+}
+
+// Check state on page refresh and navigation
+window.addEventListener('pageshow', () => {
+  checkSidebarStateAndUpdateButton();
+});
+
+// Check state when tab becomes visible
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) {
+    checkSidebarStateAndUpdateButton();
+  }
+});
+
+// Check state when window gains focus
+window.addEventListener('focus', () => {
+  checkSidebarStateAndUpdateButton();
+});
+
+// Additional check on beforeunload to reset state (optional, but helps with cleanup)
+window.addEventListener('beforeunload', () => {
+  // Reset local state on page unload
+  sidebarOpen = false;
+});
