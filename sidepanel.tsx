@@ -3733,14 +3733,13 @@ GUIDELINES:
     const hasServices = hasMappedMCPs || hasMappedA2A;
 
     const serviceText = (() => {
-      if (hasMappedA2A && hasMappedMCPs) {
-        return `Trusted services: ${mappedServices.a2aMapping!.serviceName} + ${mappedServices.mcpServerIds.length} ANS certified server(s)`;
-      } else if (hasMappedA2A) {
-        return `Trusted agent: ${mappedServices.a2aMapping!.serviceName}`;
-      } else if (hasMappedMCPs) {
-        return `ANS certified: ${mappedServices.mcpServerIds.length} mapped`;
-      } else {
+      const totalCount = (hasMappedA2A ? 1 : 0) + mappedServices.mcpServerIds.length;
+      if (totalCount === 0) {
         return 'No trusted services for this site';
+      } else if (totalCount === 1) {
+        return '1 Verified Agent Connected';
+      } else {
+        return `${totalCount} Verified Agents Connected`;
       }
     })();
 
@@ -3930,7 +3929,24 @@ GUIDELINES:
           justifyContent: 'space-between',
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '16px' }}>{badgeData.hasServices ? '✓' : '○'}</span>
+            {badgeData.hasServices ? (
+              <>
+                <img 
+                  src={chrome.runtime.getURL('icons/trust-badge-light.svg')} 
+                  alt="Trust Badge" 
+                  style={{ width: '16px', height: '16px', display: 'none' }}
+                  className="trust-badge-icon trust-badge-light"
+                />
+                <img 
+                  src={chrome.runtime.getURL('icons/trust-badge-dark.svg')} 
+                  alt="Trust Badge" 
+                  style={{ width: '16px', height: '16px' }}
+                  className="trust-badge-icon trust-badge-dark"
+                />
+              </>
+            ) : (
+              <span style={{ fontSize: '16px' }}>○</span>
+            )}
             <span>{String(badgeData.serviceText || '')}</span>
           </div>
           {badgeData.hasMappedA2A && (
