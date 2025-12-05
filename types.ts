@@ -2,7 +2,7 @@
 import { z } from 'zod';
 
 export type ToolMode = 'tool-router';
-export type Provider = 'anthropic' | 'google';
+export type Provider = 'google' | 'anthropic' | 'openai';
 
 export type ProtocolType = 'mcp' | 'a2a';
 
@@ -57,12 +57,12 @@ export interface Settings {
   model: string;
   toolMode?: ToolMode;
   composioApiKey?: string;
-  enableScreenshots?: boolean;
   customBaseUrl?: string; // Custom provider URL
   customModelName?: string; // Custom model name when model is 'custom'
   mcpEnabled?: boolean; // Enable custom MCP servers
   mcpServers?: MCPServerConfig[]; // List of MCP servers to connect to
   ansApiToken?: string; // ANS API authentication token (optional)
+  floatingButtonEnabled?: boolean; // Enable/disable floating button on web pages (default: true)
   siteInstructions?: SiteInstruction[]; // Site-specific custom instructions
   autoSaveScreenshots?: boolean; // Automatically save screenshots to Downloads folder
   serviceMappings?: ServiceMapping[]; // Site-specific service mappings (MCP/A2A)
@@ -96,7 +96,25 @@ export interface Message {
   role: 'user' | 'assistant';
   content: string;
   toolCalls?: GeminiFunctionCall[];
+  // File metadata for GoCaaS OI integration
+  chat_files_metadata?: Array<{ id: string; name: string }>;
+  // Image data for direct API calls (base64 encoded)
+  images?: Array<{ data: string; mime_type: string }>;
+  // Special mode for GoCaaS integration
+  mode?: 'create_image' | 'thinking' | 'deep_research' | 'study_and_learn' | 'web_search' | 'canvas' | 'browser_memory';
   audioLink?: string; // URL to audio file (e.g., MP3 from music generation)
+}
+
+export interface ChatHistory {
+  id: string;                    // UUID v4
+  title: string;                 // Auto-generated or user-edited
+  createdAt: number;             // Timestamp
+  updatedAt: number;             // Last message timestamp
+  tabId?: number;                // Original tab (optional, for context)
+  url?: string;                  // Original page URL (optional)
+  messageCount: number;          // Quick reference
+  preview: string;               // First user message (truncated to 100 chars)
+  messages: Message[];          // Full message array
 }
 
 export interface PageContext {
@@ -110,10 +128,46 @@ export interface PageContext {
     action: string;
     inputs: Array<{ name: string; type: string }>
   }>;
+  interactiveElements?: Array<{
+    tag: string;
+    text: string;
+    value?: string;
+    selector: string;
+    type?: string;
+    ariaLabel?: string;
+    visible: boolean;
+    priority?: number;
+    bounds?: { x: number; y: number; width: number; height: number };
+    inModal?: boolean;
+  }>;
+  searchInputs?: Array<{
+    selector: string;
+    type: string;
+    id: string;
+    name: string;
+    placeholder: string;
+    'aria-label': string | null;
+    'data-automation-id': string | null;
+    role: string | null;
+    className: string;
+    visible: boolean;
+    dimensions: { width: number; height: number; top: number; left: number };
+  }>;
   metadata: {
     description?: string;
     keywords?: string;
     author?: string;
+    ogType?: string;
+  };
+  structure?: {
+    headings: Array<{ level: string; text: string }>;
+    hasArticleStructure: boolean;
+    hasMainStructure: boolean;
+    hasNavigation: boolean;
+    sectionCount: number;
+    paragraphCount: number;
+    mainContentLength: number;
+    mainContentRatio: number;
   };
   viewport?: {
     width: number;
