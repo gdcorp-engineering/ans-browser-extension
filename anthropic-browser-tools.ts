@@ -103,6 +103,27 @@ const BROWSER_TOOLS = [
       required: ['key'],
     },
   },
+  {
+    name: 'waitForModal',
+    description: 'Wait for a modal/dialog to appear on the page. Use this when you expect a modal to open after an action.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        timeout: {
+          type: 'number',
+          description: 'Maximum time to wait in milliseconds (default: 5000)',
+        },
+      },
+    },
+  },
+  {
+    name: 'closeModal',
+    description: 'Close the currently visible modal/dialog. Use the close button if available, or try ESC key or backdrop click.',
+    input_schema: {
+      type: 'object',
+      properties: {},
+    },
+  },
 ];
 
 /**
@@ -229,8 +250,6 @@ export async function streamAnthropicWithBrowserTools(
   // Always use GoCode endpoint - no direct Anthropic API access
   const baseUrl = customBaseUrl || 'https://caas-gocode-prod.caas-prod.prod.onkatana.net';
 
-  // Keep only the most recent messages to avoid context length issues
-  // Page context can be large, and tool use adds more messages during the loop
   // User can configure how much history to keep in settings
   const MAX_HISTORY_MESSAGES = settings?.conversationHistoryLength || 10; // Default: 10 messages (increased from 1)
 
@@ -293,35 +312,39 @@ export async function streamAnthropicWithBrowserTools(
     .map((tool: any) => tool.name);
   const mcpToolNameSet = new Set(mcpToolNames);
   const a2aToolNameSet = new Set(a2aToolNames);
-
+  
   // Build dynamic list of available MCP tools with descriptions
   const mcpToolsList = hasAdditionalTools ? (additionalTools || [])
     .filter((tool: any) => tool?.name && !tool.name.startsWith('a2a_'))
     .map((tool: any) => `  - ${tool.name}: ${tool.description || 'No description available'}`)
     .join('\n') : '';
-
+  
   const allTools = hasAdditionalTools
     ? [...additionalTools, ...browserToolsToInclude] // Surface MCP/A2A tools first
     : browserToolsToInclude;
 
   console.log('🔧 Total merged tools:', allTools.length);
   console.log('🔧 All tool names:', allTools.map((t: any) => t.name).join(', '));
-  console.log('🔧 Starting with', conversationMessages.length, 'messages (limited from', messages.length, ')');
+    console.log('🔧 Starting with', conversationMessages.length, 'messages (limited from', messages.length, ')');
 
-  const MAX_TURNS = 10; // Prevent infinite loops
-  let turnCount = 0;
+    // Get mode from last user message if using GoCaaS (customBaseUrl)
+    const lastUserMessage = messages.filter(m => m.role === 'user').pop();
+    const mode = customBaseUrl && lastUserMessage?.mode ? lastUserMessage.mode : undefined;
 
-  try {
-    while (turnCount < MAX_TURNS) {
-    turnCount++;
+    const MAX_TURNS = 20; // Increased from 10 to 20 for complex tasks
+    let turnCount = 0;
 
-    console.log('🔧 Anthropic Browser Tools - Turn', turnCount, `of ${MAX_TURNS}`);
-    if (turnCount >= MAX_TURNS - 2) {
-      console.warn(`⚠️ Approaching MAX_TURNS limit (${turnCount}/${MAX_TURNS})`);
-    }
-    console.log('📤 Sending request with tools:', allTools.map((t: any) => t.name));
+    try {
+      while (turnCount < MAX_TURNS) {
+        turnCount++;
 
-    const mcpPrioritySection = hasAdditionalTools ? `
+        console.log('🔧 Anthropic Browser Tools - Turn', turnCount, `of ${MAX_TURNS}`);
+        if (turnCount >= MAX_TURNS - 2) {
+          console.warn(`⚠️ Approaching MAX_TURNS limit (${turnCount}/${MAX_TURNS})`);
+        }
+        console.log('📤 Sending request with tools:', allTools.map((t: any) => t.name));
+
+        const mcpPrioritySection = hasAdditionalTools ? `
 🔴 CRITICAL - MCP / TRUSTED AGENT TOOLS AVAILABLE:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 You have specialized MCP tools available. READ EACH TOOL'S DESCRIPTION to understand what it does.
@@ -362,7 +385,7 @@ EXAMPLES:
 - "Create a rap version of GoDaddy.com" → navigate + screenshot + generate_song (WRONG - just use generate_song)
 - "Generate a song about Amazon" → navigate + screenshot + generate_song (WRONG - just use generate_song)
 
-IMPORTANT:
+IMPORTANT: 
 - MCP tools are specialized - they only handle specific tasks described in their tool descriptions
 - When an MCP tool matches the task, use it DIRECTLY - no browser automation needed
 - Browser tools handle navigation, clicking, typing, scrolling, screenshots - use these only when MCP tools don't match
@@ -370,7 +393,7 @@ IMPORTANT:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ` : '';
 
-    const siteInstructionsSection = siteInstructions ? `
+        const siteInstructionsSection = siteInstructions ? `
 📍 SITE-SPECIFIC INSTRUCTIONS:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Current URL: ${currentUrl}
@@ -381,40 +404,40 @@ ${siteInstructions}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ` : '';
 
-    // Filter out messages with empty content (API requirement)
-    const validMessages = conversationMessages.filter(m => {
-      if (!m.content) {
-        console.warn('⚠️ Filtering out message with empty content:', m);
-        return false;
-      }
-      // Handle both string and array content
-      if (typeof m.content === 'string') {
-        return m.content.trim().length > 0;
-      }
-      const contentArray = m.content as any[];
-      if (Array.isArray(contentArray)) {
-        return contentArray.length > 0;
-      }
-      return true;
-    });
+        // Filter out messages with empty content (API requirement)
+        const validMessages = conversationMessages.filter(m => {
+          if (!m.content) {
+            console.warn('⚠️ Filtering out message with empty content:', m);
+            return false;
+          }
+          // Handle both string and array content
+          if (typeof m.content === 'string') {
+            return m.content.trim().length > 0;
+          }
+          const contentArray = m.content as any[];
+          if (Array.isArray(contentArray)) {
+            return contentArray.length > 0;
+          }
+          return true;
+        });
 
-    console.log(`📨 Sending ${validMessages.length} messages to API (filtered ${conversationMessages.length - validMessages.length} empty)`);
-    console.log(`📨 Message breakdown:`, validMessages.map(m => ({
-      role: m.role,
-      contentType: Array.isArray(m.content) ? `array[${m.content.length}]` : typeof m.content,
-      hasToolUse: Array.isArray(m.content) && m.content.some((c: any) => c.type === 'tool_use'),
-      hasToolResult: Array.isArray(m.content) && m.content.some((c: any) => c.type === 'tool_result'),
-    })));
+        console.log(`📨 Sending ${validMessages.length} messages to API (filtered ${conversationMessages.length - validMessages.length} empty)`);
+        console.log(`📨 Message breakdown:`, validMessages.map(m => ({
+          role: m.role,
+          contentType: Array.isArray(m.content) ? `array[${m.content.length}]` : typeof m.content,
+          hasToolUse: Array.isArray(m.content) && m.content.some((c: any) => c.type === 'tool_use'),
+          hasToolResult: Array.isArray(m.content) && m.content.some((c: any) => c.type === 'tool_result'),
+        })));
 
-    const requestBody = {
-      model,
-      max_tokens: 4096,
-      tools: allTools,
-      messages: validMessages.map(m => ({
-        role: m.role,
-        content: m.content,
-      })),
-      system: `You are a helpful AI assistant${browserToolsEnabled ? ' with browser automation capabilities. You can navigate to websites, click elements, type text, scroll pages, and take screenshots.' : '. Browser automation tools are NOT available in this mode - you cannot navigate, click, type, or take screenshots.'}
+        const requestBody: any = {
+          model,
+          max_tokens: 4096,
+          tools: allTools,
+          messages: validMessages.map(m => ({
+            role: m.role,
+            content: m.content,
+          })),
+          system: `You are a helpful AI assistant${browserToolsEnabled ? ' with browser automation capabilities. You can navigate to websites, click elements, type text, scroll pages, and take screenshots.' : '. Browser automation tools are NOT available in this mode - you cannot navigate, click, type, or take screenshots.'}
 
 ${browserToolsEnabled ? '' : `🚨 CRITICAL: Browser tools are DISABLED. You CANNOT navigate, click, type, or take screenshots.
 
@@ -741,6 +764,12 @@ Remember: Take your time, verify each step, and describe what you see before act
 Remember: When browser tools are disabled, always tell users to perform browser actions manually.`}`,
     };
 
+    // Add mode parameter for GoCaaS integration if using customBaseUrl
+    if (customBaseUrl && mode) {
+      requestBody.mode = mode;
+      console.log(`🔵 [Anthropic Browser Tools] Mode parameter included: ${mode}`);
+    }
+
     console.log('📤 Request body:', JSON.stringify(requestBody, null, 2));
 
     const fetchOptions: RequestInit = {
@@ -765,12 +794,12 @@ Remember: When browser tools are disabled, always tell users to perform browser 
       const timeoutPromise = new Promise<never>((_, reject) => {
         setTimeout(() => reject(new Error('API request timed out after 3 minutes')), timeoutMs);
       });
-
+      
       console.log(`🌐 Making API call to ${baseUrl}/v1/messages`);
       console.log(`🌐 Request body size: ${JSON.stringify(requestBody).length} bytes`);
       console.log(`🌐 Tools count: ${allTools.length}`);
       console.log(`🌐 Messages count: ${validMessages.length}`);
-
+      
       const fetchStartTime = Date.now();
       response = await Promise.race([
         fetch(`${baseUrl}/v1/messages`, fetchOptions),
@@ -837,13 +866,13 @@ Remember: When browser tools are disabled, always tell users to perform browser 
 
     // Check if response includes text
     const textContent = data.content?.find((c: any) => c.type === 'text');
-
+    
     // If response has no content at all, this is an error
     if (data.content.length === 0) {
       console.error('❌ Response has no content items');
       throw new Error('API returned empty response - no content items');
     }
-
+    
     if (textContent?.text) {
       // Filter out XML-like syntax that shouldn't appear in text responses
       let filteredText = textContent.text;
@@ -853,7 +882,7 @@ Remember: When browser tools are disabled, always tell users to perform browser 
       filteredText = filteredText.replace(/<parameter\s+name="[^"]*">[^<]*<\/parameter>/gi, '');
       filteredText = filteredText.replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, '');
       filteredText = filteredText.replace(/<function>[\s\S]*?<\/function>/gi, '');
-
+      
       // When browser tools are disabled, remove any "[Executing: ...]" text that the AI might generate
       if (!browserToolsEnabled) {
         filteredText = filteredText.replace(/\[Executing:\s*[^\]]+\]/gi, '');
@@ -862,7 +891,7 @@ Remember: When browser tools are disabled, always tell users to perform browser 
         filteredText = filteredText.replace(/Let me take a screenshot[^.]*\./gi, '');
         filteredText = filteredText.replace(/Let me verify[^.]*\./gi, '');
       }
-
+      
       // Only output if there's actual content after filtering
       if (filteredText.trim().length > 0) {
         fullResponseText += filteredText;
@@ -873,6 +902,20 @@ Remember: When browser tools are disabled, always tell users to perform browser 
     // Check for tool use
     const toolUses = data.content?.filter((c: any) => c.type === 'tool_use') || [];
 
+    // Detect if model is describing tool calls instead of making them
+    if (toolUses.length === 0 && textContent?.text) {
+      const text = textContent.text.toLowerCase();
+      const toolKeywords = ['click_element', 'clickelement', 'executing:', 'selector:', 'description:'];
+      const hasToolLikeText = toolKeywords.some(keyword => text.includes(keyword));
+      
+      if (hasToolLikeText) {
+        console.warn('⚠️ Model appears to be describing tool calls instead of making them!');
+        console.warn('⚠️ Text content:', textContent.text.substring(0, 200));
+        console.warn('⚠️ This usually means the model is confused about tool format.');
+        onTextChunk('\n\n⚠️ Note: It looks like I described an action instead of executing it. Let me try again with the proper tool call.\n');
+      }
+    }
+
     if (toolUses.length === 0) {
       // No more tools to execute, we're done
       // But first, make sure we've output any text content
@@ -880,7 +923,7 @@ Remember: When browser tools are disabled, always tell users to perform browser 
       console.log(`✅ Total response text length: ${fullResponseText.length}`);
       console.log(`✅ Turn count: ${turnCount}/${MAX_TURNS}`);
       console.log(`✅ Conversation messages: ${conversationMessages.length}`);
-
+      
       // If we have no text content and no tools, something might be wrong
       if (fullResponseText.trim().length === 0 && !textContent?.text) {
         console.warn(`⚠️ No text content and no tools - response might be empty`);
@@ -888,7 +931,7 @@ Remember: When browser tools are disabled, always tell users to perform browser 
         // This shouldn't happen, but if it does, we should still break to avoid infinite loop
         // The user will see no response, which indicates an issue
       }
-
+      
       // If we have text content, make sure it was output
       if (textContent?.text && fullResponseText.trim().length === 0) {
         console.warn(`⚠️ Text content exists but wasn't output - outputting now`);
@@ -897,7 +940,7 @@ Remember: When browser tools are disabled, always tell users to perform browser 
           .replace(/<parameter\s+name="[^"]*">[^<]*<\/parameter>/gi, '')
           .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, '')
           .replace(/<function>[\s\S]*?<\/function>/gi, '');
-
+        
         // When browser tools are disabled, remove any "[Executing: ...]" text that the AI might generate
         if (!browserToolsEnabled) {
           filteredText = filteredText.replace(/\[Executing:\s*[^\]]+\]/gi, '');
@@ -906,13 +949,13 @@ Remember: When browser tools are disabled, always tell users to perform browser 
           filteredText = filteredText.replace(/Let me take a screenshot[^.]*\./gi, '');
           filteredText = filteredText.replace(/Let me verify[^.]*\./gi, '');
         }
-
+        
         if (filteredText.trim().length > 0) {
           fullResponseText += filteredText;
           onTextChunk(filteredText);
         }
       }
-
+      
       break;
     }
 
@@ -951,26 +994,6 @@ Remember: When browser tools are disabled, always tell users to perform browser 
 
       try {
         console.log('🔧 Calling executeTool with:', toolUse.name, toolUse.input);
-
-        // Extract context for screenshot to understand what AI is looking for
-        if (toolUse.name === 'screenshot') {
-          const lastUserMsg = conversationMessages
-            .filter(m => m.role === 'user')
-            .slice(-1)[0];
-          const userIntent = typeof lastUserMsg?.content === 'string'
-            ? lastUserMsg.content
-            : JSON.stringify(lastUserMsg?.content);
-
-          const aiExplanation = fullResponseText || textContent?.text || '';
-
-          console.log('📸 Screenshot Intent:', {
-            userRequest: userIntent,
-            aiExplanation: aiExplanation,
-            currentUrl: currentUrl,
-            lookingFor: aiExplanation || 'Unknown'
-          });
-        }
-
         const result = await executeTool(toolUse.name, toolUse.input);
         console.log('✅ Tool result:', result);
 
@@ -980,34 +1003,16 @@ Remember: When browser tools are disabled, always tell users to perform browser 
           const base64Data = result.screenshot.split(',')[1];
           const viewport = result.viewport || { width: 1280, height: 800, devicePixelRatio: 1 };
           const dpr = viewport.devicePixelRatio || 1;
-          const usingDefaults = !result.viewport;
-          console.log('📐 Viewport Info:', {
-            width: viewport.width,
-            height: viewport.height,
-            dpr: dpr,
-            usingDefaults: usingDefaults
-          });
-          const viewport_x = 100 * viewport.width / 1920;
-          const viewport_y = 50 * viewport.height / 1080;
-          const coordinateInstructions = `Click Task Procedure:
-Step 1. Measure the attached image dimensions in pixels to obtain: image_width and image_height.
-Step 2. Locate the center point of the element you want to click in the screenshot and record its pixel coordinates as: screenshot_x and screenshot_y
-Step 3. Apply the following conversion formulas to calculate viewport coordinates:
-   * viewport_x = (screenshot_x * ${viewport.width}) / (image_width)
-   * viewport_y = (screenshot_y * ${viewport.height}) / (image_height)
-Step 4. Output the final click coordinates as: (viewport_x, viewport_y).
-Example calculation:
-If image_max_x = 1920, image_max_y = 1080, and the element is at image_x = 100, image_y = 50:
-viewport_x = (100 * ${viewport.width}) ÷ 1920 = ${viewport_x}
-viewport_y = (50 * ${viewport.height}) ÷ 1080 = ${viewport_y}
-Final coordinates: (${viewport_x}, ${viewport_y})`;
+          const coordinateInstructions = dpr > 1
+            ? `IMPORTANT: This is a high-DPI display (devicePixelRatio=${dpr}). When measuring coordinates from this screenshot, DIVIDE by ${dpr} to get viewport coordinates. Example: if you measure (940, 882) in the image, use click({x: ${Math.round(940/dpr)}, y: ${Math.round(882/dpr)}}).`
+            : '';
           toolResults.push({
             type: 'tool_result',
             tool_use_id: toolUse.id,
             content: [
               {
                 type: 'text',
-                text: coordinateInstructions,
+                text: `Screenshot: ${viewport.width}×${viewport.height}px viewport (image is ${viewport.width * dpr}×${viewport.height * dpr}px). Top-left=(0,0), Bottom-right=(${viewport.width},${viewport.height}). ${coordinateInstructions}`,
               },
               {
                 type: 'image',
@@ -1030,8 +1035,8 @@ Final coordinates: (${viewport_x}, ${viewport_y})`;
                 toolResults.push({
                   type: 'tool_result',
                   tool_use_id: toolUse.id,
-                  content: JSON.stringify({
-                    success: false,
+                  content: JSON.stringify({ 
+                    success: false, 
                     error: `Navigation failed: ${errorMsg}. The page did not change. Please verify the URL is correct and try again.`,
                     attemptedUrl: result.url || toolUse.input?.url
                   }),
@@ -1042,8 +1047,8 @@ Final coordinates: (${viewport_x}, ${viewport_y})`;
                 toolResults.push({
                   type: 'tool_result',
                   tool_use_id: toolUse.id,
-                  content: JSON.stringify({
-                    success: true,
+                  content: JSON.stringify({ 
+                    success: true, 
                     url: result.url,
                     message: 'Navigation command executed. IMPORTANT: You must verify navigation succeeded by taking a screenshot to confirm the page actually changed.'
                   }),
@@ -1071,26 +1076,54 @@ Final coordinates: (${viewport_x}, ${viewport_y})`;
               // Tool returned an error - mark it as an error so AI can respond
               const errorMessage = result.error || 'Tool execution failed';
               const isTimeout = result.timeout === true || errorMessage.includes('timed out') || errorMessage.includes('took too long');
-
+              
               console.error(`❌ Tool "${toolUse.name}" returned an error:`, errorMessage);
               console.error(`   Timeout: ${isTimeout}`);
-
+              
               toolResults.push({
                 type: 'tool_result',
                 tool_use_id: toolUse.id,
-                content: JSON.stringify({
+                content: JSON.stringify({ 
                   error: errorMessage,
-                  timeout: isTimeout
+                  timeout: isTimeout 
                 }),
                 is_error: true,
               });
             } else {
               // Normal successful result
+              // Extract audioLink before stringifying (so it doesn't appear in content)
+              let audioLink: string | undefined;
+              let resultForContent = result;
+              if (result && typeof result === 'object') {
+                // Check for audioLink at top level
+                audioLink = result.audioLink || result.audio_link || result.audioUrl;
+                // Also check nested in result.result
+                if (!audioLink && result.result && typeof result.result === 'object') {
+                  audioLink = result.result.audioLink || result.result.audio_link || result.result.audioUrl;
+                }
+                
+                // If audioLink found, create a copy without it for content
+                if (audioLink) {
+                  resultForContent = { ...result };
+                  delete resultForContent.audioLink;
+                  delete resultForContent.audio_link;
+                  delete resultForContent.audioUrl;
+                  if (resultForContent.result && typeof resultForContent.result === 'object') {
+                    resultForContent.result = { ...resultForContent.result };
+                    delete resultForContent.result.audioLink;
+                    delete resultForContent.result.audio_link;
+                    delete resultForContent.result.audioUrl;
+                  }
+                  console.log(`🎵 Extracted audioLink from tool result: ${audioLink}`);
+                }
+              }
+              
               toolResults.push({
                 type: 'tool_result',
                 tool_use_id: toolUse.id,
-                content: JSON.stringify(result),
-              });
+                content: JSON.stringify(resultForContent),
+                audioLink: audioLink, // Store audioLink separately
+              } as any);
             }
           }
         }
@@ -1101,18 +1134,18 @@ Final coordinates: (${viewport_x}, ${viewport_y})`;
         console.error('❌ Tool execution error:', error);
         const errorMessage = error.message || 'Tool execution failed';
         const isTimeout = errorMessage.includes('timed out') || errorMessage.includes('took too long');
-
+        
         // Provide user-friendly error message for timeouts
         const friendlyError = isTimeout
           ? 'The request took too long and timed out. Please try again later or try a different approach.'
           : errorMessage;
-
+        
         toolResults.push({
           type: 'tool_result',
           tool_use_id: toolUse.id,
-          content: JSON.stringify({
+          content: JSON.stringify({ 
             error: friendlyError,
-            timeout: isTimeout
+            timeout: isTimeout 
           }),
           is_error: true,
         });
@@ -1175,11 +1208,11 @@ Final coordinates: (${viewport_x}, ${viewport_y})`;
     // - The AI will process them and respond with text
     // - If that response has no tool uses, the loop will break at line 750-752
     // - If that response has stop_reason 'end_turn', we'll handle it then
-
+    
     console.log(`🔄 Continuing loop to process tool results. Stop reason: ${data.stop_reason}, Tool results added: ${toolResults.length}`);
     console.log(`📝 Conversation messages count: ${conversationMessages.length}`);
     console.log(`📝 Last message role: ${conversationMessages[conversationMessages.length - 1]?.role}`);
-
+    
     // Continue the loop - we just added tool results that need to be processed by the AI
     // The next iteration will send these results back and get the AI's response
     // IMPORTANT: The loop will continue to the next iteration where:
@@ -1188,7 +1221,7 @@ Final coordinates: (${viewport_x}, ${viewport_y})`;
     // 3. If the response has text, it will be output
     // 4. If the response has no tool uses, the loop will break
     }
-
+    
     // Check if we exited due to MAX_TURNS limit
     if (turnCount >= MAX_TURNS) {
       console.warn(`⚠️ Loop exited due to MAX_TURNS limit (${turnCount}/${MAX_TURNS})`);
@@ -1200,12 +1233,12 @@ Final coordinates: (${viewport_x}, ${viewport_y})`;
     console.error('❌ Error in tool execution loop:', error);
     console.error('   Turn count when error occurred:', turnCount);
     console.error('   Conversation messages count:', conversationMessages.length);
-
+    
     // If we have partial response text, output it before error
     if (fullResponseText.trim().length > 0) {
       console.log(`📝 Outputting partial response before error: ${fullResponseText.length} chars`);
     }
-
+    
     // Ensure we still call onComplete to clear states even on error
     // The error will be handled by the caller's try-catch
     // Re-throw the error so the caller can handle it
@@ -1216,6 +1249,6 @@ Final coordinates: (${viewport_x}, ${viewport_y})`;
   console.log(`🏁 Total turns: ${turnCount}/${MAX_TURNS}`);
   console.log(`🏁 Final conversation messages: ${conversationMessages.length}`);
   console.log(`🏁 Total response text length: ${fullResponseText.length} chars`);
-
+  
   onComplete();
 }
