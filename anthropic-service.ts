@@ -135,6 +135,12 @@ Focus on using available tools to help the user, not on what you cannot do.`,
         if (json.type === 'content_block_delta' && json.delta?.type === 'text_delta') {
           onChunk(json.delta.text);
         }
+        // Log unexpected types for debugging
+        else if (json.type) {
+          // Security: Use separate arguments instead of template literal to avoid format string issues
+          // nosemgrep: javascript.lang.security.audit.unsafe-formatstring.unsafe-formatstring
+          console.debug('[Anthropic Service] Received unexpected chunk type:', json.type, json);
+        }
       } catch (e) {
         // Skip invalid JSON
       }

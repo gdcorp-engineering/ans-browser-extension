@@ -5,6 +5,8 @@
  * Provides search, filtering, and validation capabilities
  */
 
+import { parseAnsName, type AnsMetadata } from './ansName';
+
 export interface ANSBusinessService {
   id: string;
   name: string;
@@ -20,6 +22,10 @@ export interface ANSBusinessService {
   connectionCount?: number;
   availableServices?: string[];
   verified: boolean;
+  ansName?: string; // ANS name in format: protocol://agent.capability.provider.vX.Y.Z.extension
+  ansMetadata?: AnsMetadata; // Parsed ANS metadata
+  raStatus?: 'validated' | 'unknown'; // Registration Authority validation status
+  transparencyLogUrl?: string; // URL to transparency log for verified agents
 }
 
 const API_URL = 'https://api.ote-godaddy.com/v1/agents';
@@ -29,12 +35,110 @@ const DEFAULT_LIMIT = 100; // Fetch 100 at a time
 // Cache functions kept below for potential future use but not actively used
 
 /**
+ * Set auth_jomax cookie if token is provided
+ * The API requires the token as a cookie, not a Bearer token
+ */
+async function setAuthCookie(token: string): Promise<boolean> {
+  // Try setting cookie for the API domain directly
+  // Chrome cookies API requires the exact domain format
+  const domains = [
+    { url: 'https://ra.int.dev-godaddy.com', domain: 'ra.int.dev-godaddy.com' },
+    { url: 'https://ra.int.dev-godaddy.com', domain: '.ra.int.dev-godaddy.com' },  // With leading dot for subdomain
+    { url: 'https://dev-godaddy.com', domain: '.dev-godaddy.com' }  // Parent domain
+  ];
+
+  for (const { url, domain } of domains) {
+    try {
+      // Security: Use separate arguments instead of template literal to avoid format string issues
+      // nosemgrep: javascript.lang.security.audit.unsafe-formatstring.unsafe-formatstring
+      console.log('🍪 Attempting to set auth_jomax cookie for', domain, '...');
+      
+      const cookieDetails: chrome.Cookies.SetDetails = {
+        url: url,
+        name: 'auth_jomax',
+        value: token,
+        path: '/',
+        secure: true,
+        sameSite: 'lax' as chrome.Cookies.SameSiteStatus,
+        // Set expiration to 1 day from now
+        expirationDate: Math.floor(Date.now() / 1000) + (24 * 60 * 60)
+      };
+
+      // Only set domain if it starts with a dot (for parent domain cookies)
+      if (domain.startsWith('.')) {
+        cookieDetails.domain = domain;
+      }
+
+      const result = await chrome.cookies.set(cookieDetails);
+
+      if (result) {
+        console.log('✅ Cookie set API returned success for', domain);
+        
+        // Verify the cookie was actually set and accessible for the API domain
+        const verifyCookie = await chrome.cookies.get({
+          url: 'https://ra.int.dev-godaddy.com',
+          name: 'auth_jomax'
+        });
+        
+        if (verifyCookie) {
+          console.log('✅ Verified: auth_jomax cookie is set and accessible');
+          console.log('   Cookie details:', {
+            domain: verifyCookie.domain,
+            path: verifyCookie.path,
+            secure: verifyCookie.secure,
+            sameSite: verifyCookie.sameSite,
+            valuePreview: verifyCookie.value.substring(0, 30) + '...'
+          });
+          return true;
+        } else {
+          // Security: Use separate arguments instead of template literal
+          // nosemgrep: javascript.lang.security.audit.unsafe-formatstring.unsafe-formatstring
+          console.warn('⚠️ Cookie set API succeeded but cookie not found when verifying for', domain);
+        }
+      } else {
+        // Security: Use separate arguments instead of template literal
+        // nosemgrep: javascript.lang.security.audit.unsafe-formatstring.unsafe-formatstring
+        console.warn('⚠️ Cookie set API returned null for', domain);
+      }
+    } catch (error: any) {
+      console.error('❌ Failed to set auth_jomax cookie for', domain, ':', error.message || error);
+      // Continue to try next domain
+    }
+  }
+
+  console.error('❌ Failed to set auth_jomax cookie for any domain');
+  return false;
+}
+
+/**
  * Fetch trusted businesses from ANS API
  * Always fetches fresh data without caching
  */
 export async function fetchTrustedBusinesses(authToken?: string): Promise<ANSBusinessService[]> {
   try {
     console.log('🔄 Fetching trusted agents from ANS API...');
+
+    // If token is provided and is a JWT, set it as cookie (auth_jomax)
+    // The API requires cookie authentication, NOT Bearer token (Bearer returns 403)
+    if (authToken) {
+      const cleanToken = authToken.trim().replace(/^Bearer\s+/i, '');
+      
+      if (cleanToken.startsWith('eyJ')) {
+        // JWT token - set as cookie (auth_jomax) - API requires cookie, not Bearer
+        console.log('🔑 JWT token detected - attempting to set as auth_jomax cookie...');
+        const cookieSet = await setAuthCookie(cleanToken);
+        if (cookieSet) {
+          console.log('✅ Cookie set successfully - API will use cookie authentication');
+        } else {
+          console.error('❌ Cookie setting failed - API calls will likely fail');
+          throw new Error('Failed to set auth_jomax cookie. Please check console for details.');
+        }
+      } else {
+        console.warn('⚠️ Token does not appear to be a JWT (should start with "eyJ")');
+      }
+    } else {
+      console.log('🍪 No token provided - attempting to use existing browser cookies');
+    }
 
     // Fetch with pagination to get all agents
     const allBusinesses: ANSBusinessService[] = [];
@@ -43,35 +147,74 @@ export async function fetchTrustedBusinesses(authToken?: string): Promise<ANSBus
 
     while (hasMore) {
       const url = `${API_URL}?limit=${DEFAULT_LIMIT}&offset=${offset}`;
-      console.log(`📡 Fetching agents: offset=${offset}, limit=${DEFAULT_LIMIT}`);
+      // Security: Use separate arguments instead of template literal
+      // nosemgrep: javascript.lang.security.audit.unsafe-formatstring.unsafe-formatstring
+      console.log('📡 Fetching agents: offset=', offset, ', limit=', DEFAULT_LIMIT);
 
       const headers: Record<string, string> = {
         'accept': 'application/json',
       };
 
-      // Add Authorization header if token is provided
+      // Note: The API requires the token as a cookie (auth_jomax), not as a Bearer token
+      // The cookie is set above in setAuthCookie(), and credentials: 'include' will send it
+      // We do NOT set Authorization header because the API returns 403 for Bearer tokens
+
+      // Before making the request, verify the cookie exists
       if (authToken) {
-        // Clean the token - remove "Bearer " prefix if user accidentally included it
-        const cleanToken = authToken.trim().replace(/^Bearer\s+/i, '');
-        headers['Authorization'] = `Bearer ${cleanToken}`;
-        console.log('🔑 Using provided ANS API token');
+        const verifyCookie = await chrome.cookies.get({
+          url: 'https://ra.int.dev-godaddy.com',
+          name: 'auth_jomax'
+        });
+        if (verifyCookie) {
+          console.log('✅ Verified cookie exists before request:', verifyCookie.domain);
+        } else {
+          console.warn('⚠️ Cookie not found before request - this may cause authentication failure');
+        }
       }
 
       const response = await fetch(url, {
         method: 'GET',
         headers,
-        credentials: 'include', // Send cookies with the request
+        credentials: 'include', // Send cookies with the request (required for cookie auth)
       });
 
+      // Security: Use separate arguments instead of template literal
+      // nosemgrep: javascript.lang.security.audit.unsafe-formatstring.unsafe-formatstring
+      console.log('📡 Response status:', response.status, response.statusText);
+      
+      // Log set-cookie headers if present (might give us clues)
+      const setCookieHeader = response.headers.get('set-cookie');
+      if (setCookieHeader) {
+        // Security: Use separate arguments instead of template literal
+        // nosemgrep: javascript.lang.security.audit.unsafe-formatstring.unsafe-formatstring
+        console.log('📡 Set-Cookie header:', setCookieHeader.substring(0, 100), '...');
+      }
+
       if (!response.ok) {
-        if (response.status === 401 || response.status === 403) {
-          throw new Error(`Authentication failed (${response.status}): Please provide a valid ANS API token in Settings`);
+        // Try to get error details from response
+        let errorDetails = '';
+        try {
+          const errorData = await response.text();
+          errorDetails = errorData ? ` - ${errorData.substring(0, 200)}` : '';
+        } catch (e) {
+          // Ignore error reading response
         }
-        throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+        
+        if (response.status === 401 || response.status === 403) {
+          throw new Error(`Authentication failed (${response.status}): Please provide a valid ANS API token in Settings${errorDetails}`);
+        }
+        throw new Error(`API request failed: ${response.status} ${response.statusText}${errorDetails}`);
       }
 
       const data = await response.json();
-      console.log(`📦 API response (page ${offset / DEFAULT_LIMIT + 1}):`, data);
+      console.log(`📦 API response (page ${offset / DEFAULT_LIMIT + 1}):`, JSON.stringify(data, null, 2));
+      console.log(`📦 Response structure:`, {
+        hasAgents: !!data.agents,
+        agentsCount: Array.isArray(data.agents) ? data.agents.length : 'not an array',
+        totalCount: data.totalCount,
+        hasMore: data.hasMore,
+        keys: Object.keys(data)
+      });
 
       // Parse this page of results
       const businesses = parseAPIResponse(data);
@@ -128,7 +271,19 @@ function parseAPIResponse(data: any): ANSBusinessService[] {
         protocol = 'mcp';
         console.log(`   ✓ Using MCP1 remote URL: ${url}`);
       }
-      // Check for A2A protocol: protocolExtensions.a2a.remotes[0].url
+      // Check for A2A protocol: protocolExtensions.a2a.endpoints.rest.url (preferred REST endpoint)
+      else if (agent.protocolExtensions?.a2a?.endpoints?.rest?.url) {
+        url = agent.protocolExtensions.a2a.endpoints.rest.url;
+        protocol = 'a2a';
+        console.log(`   ✓ Using A2A REST endpoint URL: ${url}`);
+      }
+      // Check for A2A protocol: protocolExtensions.a2a.url (direct URL)
+      else if (agent.protocolExtensions?.a2a?.url) {
+        url = agent.protocolExtensions.a2a.url;
+        protocol = 'a2a';
+        console.log(`   ✓ Using A2A URL: ${url}`);
+      }
+      // Check for A2A protocol: protocolExtensions.a2a.remotes[0].url (nested remotes)
       else if (agent.protocolExtensions?.a2a?.remotes?.[0]?.url) {
         url = agent.protocolExtensions.a2a.remotes[0].url;
         protocol = 'a2a';
@@ -156,28 +311,48 @@ function parseAPIResponse(data: any): ANSBusinessService[] {
     // Log the extracted URL and protocol
     console.log(`📍 ${protocol?.toUpperCase()} URL for ${agent.agentName || 'unknown'}: ${url}`);
 
-    const agentId = agent.ansName || agent.agentName || '';
+    const ansName = agent.ansName || agent.protocolExtensions?.ans?.ansName;
     const agentCapability = agent.agentCapability || 'Other';
+
+    // Parse ANS name if available
+    let ansMetadata: AnsMetadata | undefined;
+    if (ansName) {
+      try {
+        ansMetadata = parseAnsName(ansName);
+      } catch (error) {
+        console.warn('⚠️  Invalid ANS name for', agent.agentName, ':', error);
+      }
+    }
+
+    // Determine protocol from ANS metadata or fallback
+    const finalProtocol = ansMetadata?.protocol || protocol;
+
+    // Check if ANS name is valid
+    const hasValidAnsName = !!ansMetadata;
 
     // Log agents with missing or unusual capabilities
     if (!agent.agentCapability) {
-      console.warn(`⚠️  Agent "${agent.agentName}" (${agentId}) has no agentCapability field`);
+      console.warn(`⚠️  Agent "${agent.agentName}" (${ansName || agent.agentName}) has no agentCapability field`);
     }
 
     return {
-      id: agentId,
+      id: ansName && hasValidAnsName ? ansName : agent.agentName,
       name: agent.agentName || 'Unknown Agent',
       description: `${agentCapability} service provided by ${agent.provider || 'provider'}`,
       capability: agentCapability, // Map agentCapability to capability field
       location: '', // Not provided in API
       url: url, // MCP or A2A URL
-      protocol: protocol, // Protocol type: 'mcp' or 'a2a'
+      protocol: finalProtocol, // Protocol type: 'mcp' or 'a2a'
       website: '', // Not provided in API
       phone: '', // Not provided in API
       logo: '', // Not provided in API
       rating: 0, // Not provided in API
       connectionCount: 0, // Not provided in API
       availableServices: [], // Would need to fetch from agent-details link
+      ansName: hasValidAnsName ? ansName : undefined,
+      ansMetadata: ansMetadata,
+      raStatus: agent.raStatus === 'validated' || hasValidAnsName ? 'validated' : 'unknown',
+      transparencyLogUrl: agent.transparencyLogUrl,
       verified: true, // All from ANS API are verified
     };
   });
