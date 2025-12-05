@@ -93,16 +93,16 @@ export class A2AService {
   /**
    * Execute a task on an A2A agent
    */
-  async executeTask(serverId: string, task: string): Promise<any> {
+  async executeTask(serverId: string, task: string): Promise<{ result: unknown; agent?: string; status?: string }> {
     const connection = this.connections.get(serverId);
 
     if (!connection || !connection.enabled) {
       throw new Error(`A2A server with ID "${serverId}" is not connected`);
     }
 
-    console.log(`🔧 Executing A2A task on server "${connection.serverName}"`);
-    console.log(`📤 Task: ${task}`);
-    console.log(`📍 URL: ${connection.url}`);
+    console.log('🔧 Executing A2A task on server:', connection.serverName);
+    console.log('📤 Task:', task);
+    console.log('📍 URL:', connection.url);
 
     try {
       const response = await fetch(connection.url, {
@@ -128,10 +128,12 @@ export class A2AService {
         status: result.status,
       };
 
-    } catch (error: any) {
+    } catch (error) {
       console.error(`❌ Error executing A2A task:`, error);
-      console.error(`   Error type:`, error?.constructor?.name);
-      console.error(`   Error message:`, error?.message);
+      if (error instanceof Error) {
+        console.error(`   Error type:`, error.constructor.name);
+        console.error(`   Error message:`, error.message);
+      }
       throw error;
     }
   }
@@ -229,11 +231,11 @@ export class A2AService {
       throw new Error(`A2A server with ID "${serverId}" is not connected`);
     }
 
-    console.log(`💬 Sending message to A2A agent "${connection.serverName}"`);
-    console.log(`📤 Message: ${messageText}`);
-    console.log(`📍 Endpoint: ${connection.url}`);
-    console.log(`📍 Endpoint type: ${typeof connection.url}`);
-    console.log(`📍 Endpoint length: ${connection.url?.length}`);
+    console.log('💬 Sending message to A2A agent:', connection.serverName);
+    console.log('📤 Message:', messageText);
+    console.log('📍 Endpoint:', connection.url);
+    console.log('📍 Endpoint type:', typeof connection.url);
+    console.log('📍 Endpoint length:', connection.url?.length);
     console.log(`📍 Connection object:`, JSON.stringify(connection, null, 2));
 
     try {
@@ -254,7 +256,7 @@ export class A2AService {
         role: 'user',
         parts: [
           {
-            type: 'text',
+            kind: 'text',
             text: messageText,
           } as TextPart,
         ],
@@ -285,8 +287,8 @@ export class A2AService {
       // Check if response has A2A message format
       if (responseData.parts && Array.isArray(responseData.parts)) {
         responseText = responseData.parts
-          .filter((part: any) => part.type === 'text')
-          .map((part: any) => part.text)
+          .filter((part: { kind: string; text?: string }) => part.kind === 'text')
+          .map((part: { kind: string; text?: string }) => part.text)
           .join('\n');
       }
       // Check for lyrics field (music generation MCP)
@@ -296,7 +298,7 @@ export class A2AService {
       }
       // Check if response has simple text format
       else if (responseData.response) {
-        responseText = responseData.response;
+        responseText = String(responseData.response);
       }
       // Check if response has text field
       else if (responseData.text) {
@@ -321,8 +323,10 @@ export class A2AService {
       return { text: responseText, audioLink };
     } catch (error: any) {
       console.error(`❌ Error sending message to A2A agent:`, error);
-      console.error(`   Error type:`, error?.constructor?.name);
-      console.error(`   Error message:`, error?.message);
+      if (error instanceof Error) {
+        console.error(`   Error type:`, error.constructor.name);
+        console.error(`   Error message:`, error.message);
+      }
       throw error;
     }
   }
@@ -333,15 +337,7 @@ export class A2AService {
   private async closeSDKClients(): Promise<void> {
     console.log(`🔌 Closing ${this.sdkClients.size} A2A SDK client(s)...`);
 
-    const closePromises = Array.from(this.sdkClients.values()).map(async (client) => {
-      try {
-        await client.close();
-      } catch (error) {
-        console.error('Error closing A2A SDK client:', error);
-      }
-    });
-
-    await Promise.allSettled(closePromises);
+    // A2AClient doesn't have a close() method, just clear the clients
     this.sdkClients.clear();
 
     console.log('✅ All A2A SDK clients closed');
