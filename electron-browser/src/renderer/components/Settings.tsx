@@ -141,9 +141,9 @@ const Settings = ({ settings, onSave, onClose }: SettingsProps) => {
             </select>
           </div>
 
-          {/* GoCode URL */}
+          {/* Custom Base URL */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <label style={{ fontSize: '14px', fontWeight: 600 }}>GoCode URL</label>
+            <label style={{ fontSize: '14px', fontWeight: 600 }}>Custom Base URL (Optional)</label>
             <input
               type="text"
               value={customBaseUrl}
@@ -163,10 +163,10 @@ const Settings = ({ settings, onSave, onClose }: SettingsProps) => {
             </p>
           </div>
 
-          {/* GoCode Key */}
+          {/* API Key */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             <label style={{ fontSize: '14px', fontWeight: 600 }}>
-              GoCode Key <span style={{ color: '#dc2626' }}>*</span>
+              {provider === 'anthropic' ? 'Anthropic API Key' : 'API Key'} <span style={{ color: '#dc2626' }}>*</span>
             </label>
             <div style={{ position: 'relative' }}>
               <input

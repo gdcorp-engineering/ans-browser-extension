@@ -19,6 +19,187 @@ interface MCPState {
 const mcpState: MCPState = {};
 
 /**
+ * Create browser automation tools for AI SDK
+ */
+function createBrowserTools(browserManager: BrowserManager): ToolSet {
+  // Helper to ensure browser view is available
+  const ensureBrowserView = () => {
+    const browserView = browserManager.getBrowserView();
+    if (!browserView) {
+      browserManager.showBrowserView();
+    }
+  };
+
+  return {
+    navigate: {
+      description: 'Navigate to a specific URL',
+      parameters: {
+        type: 'object',
+        properties: {
+          url: {
+            type: 'string',
+            description: 'The URL to navigate to (must include http:// or https://)',
+          },
+        },
+        required: ['url'],
+      },
+      execute: async ({ url }: { url: string }) => {
+        try {
+          ensureBrowserView();
+          await browserManager.navigateToUrl(url);
+          return { success: true, url: browserManager.getCurrentUrl() };
+        } catch (error: any) {
+          return { success: false, error: error.message };
+        }
+      },
+    },
+    getPageContext: {
+      description: 'Get page info. Call first to understand page structure.',
+      parameters: {
+        type: 'object',
+        properties: {},
+      },
+      execute: async () => {
+        try {
+          ensureBrowserView();
+          const context = await browserManager.getPageContext();
+          return { success: true, ...context };
+        } catch (error: any) {
+          return { success: false, error: error.message };
+        }
+      },
+    },
+    clickElement: {
+      description: 'Click an element using CSS selector or text content. PREFERRED method.',
+      parameters: {
+        type: 'object',
+        properties: {
+          selector: {
+            type: 'string',
+            description: 'CSS selector for the element',
+          },
+          text: {
+            type: 'string',
+            description: 'Alternative: text content to search for',
+          },
+        },
+      },
+      execute: async ({ selector, text }: { selector?: string; text?: string }) => {
+        try {
+          ensureBrowserView();
+          const result = await browserManager.clickElement(selector, text);
+          return result;
+        } catch (error: any) {
+          return { success: false, error: error.message };
+        }
+      },
+    },
+    click: {
+      description: 'Click at coordinates. Last resort only.',
+      parameters: {
+        type: 'object',
+        properties: {
+          x: { type: 'number', description: 'X coordinate' },
+          y: { type: 'number', description: 'Y coordinate' },
+        },
+        required: ['x', 'y'],
+      },
+      execute: async ({ x, y }: { x: number; y: number }) => {
+        try {
+          ensureBrowserView();
+          const result = await browserManager.clickAt(x, y);
+          return result;
+        } catch (error: any) {
+          return { success: false, error: error.message };
+        }
+      },
+    },
+    type: {
+      description: 'Type text into input field',
+      parameters: {
+        type: 'object',
+        properties: {
+          text: { type: 'string', description: 'Text to type' },
+          selector: { type: 'string', description: 'CSS selector for input' },
+        },
+        required: ['text'],
+      },
+      execute: async ({ text, selector }: { text: string; selector?: string }) => {
+        try {
+          ensureBrowserView();
+          const result = await browserManager.typeTextIntoField(text, selector);
+          return result;
+        } catch (error: any) {
+          return { success: false, error: error.message };
+        }
+      },
+    },
+    scroll: {
+      description: 'Scroll the page',
+      parameters: {
+        type: 'object',
+        properties: {
+          direction: {
+            type: 'string',
+            enum: ['up', 'down'],
+            description: 'Scroll direction',
+          },
+          amount: { type: 'number', description: 'Pixels to scroll (default: 500)' },
+        },
+        required: ['direction'],
+      },
+      execute: async ({ direction, amount = 500 }: { direction: 'up' | 'down'; amount?: number }) => {
+        try {
+          ensureBrowserView();
+          await browserManager.scrollPage(direction, amount);
+          return { success: true };
+        } catch (error: any) {
+          return { success: false, error: error.message };
+        }
+      },
+    },
+    screenshot: {
+      description: 'Take screenshot. Last resort if DOM fails.',
+      parameters: {
+        type: 'object',
+        properties: {},
+      },
+      execute: async () => {
+        try {
+          ensureBrowserView();
+          const screenshot = await browserManager.captureScreenshot();
+          return { success: true, screenshot };
+        } catch (error: any) {
+          return { success: false, error: error.message };
+        }
+      },
+    },
+    pressKey: {
+      description: 'Press key (Enter, Tab, Escape, etc)',
+      parameters: {
+        type: 'object',
+        properties: {
+          key: {
+            type: 'string',
+            description: 'Key name',
+          },
+        },
+        required: ['key'],
+      },
+      execute: async ({ key }: { key: string }) => {
+        try {
+          ensureBrowserView();
+          const result = await browserManager.pressKey(key);
+          return result;
+        } catch (error: any) {
+          return { success: false, error: error.message };
+        }
+      },
+    },
+  };
+}
+
+/**
  * Stream chat with AI providers (Google, Anthropic, OpenAI) and Composio tools
  * Runs in main process with Composio MCP tools integration
  * WARNING: Never store API keys in process.env - they can leak to child processes
@@ -105,10 +286,56 @@ async function streamChatWithToolsIpc(
       break;
   }
 
+  // Create system prompt that includes browser tool instructions
+  const browserToolsSystemPrompt = tools && Object.keys(tools).some(key => 
+    ['navigate', 'getPageContext', 'clickElement', 'click', 'type', 'scroll', 'screenshot', 'pressKey'].includes(key)
+  ) ? `You are GoDaddy ANS Desktop - a helpful AI assistant with browser automation capabilities.
+
+## Browser Automation Tools
+
+You have access to browser automation tools that allow you to interact with web pages:
+
+**Available Browser Tools:**
+- \`getPageContext\`: Get comprehensive page information including text content, links, forms, and interactive elements. ALWAYS use this first when asked to summarize, analyze, or understand a webpage.
+- \`navigate\`: Navigate to a specific URL
+- \`clickElement\`: Click elements by CSS selector or text content (preferred method)
+- \`click\`: Click at coordinates (last resort)
+- \`type\`: Type text into input fields
+- \`scroll\`: Scroll the page up or down
+- \`screenshot\`: Take a screenshot of the current page
+- \`pressKey\`: Press keyboard keys (Enter, Tab, Escape, etc.)
+
+## Important Guidelines for Webpage Tasks
+
+**When asked to summarize a webpage:**
+1. First, call \`getPageContext\` to get the page structure and content
+2. The tool returns: url, title, textContent, links, images, forms, interactiveElements, metadata, and viewport info
+3. Use the \`textContent\` field which contains the main text content of the page (up to 10,000 characters)
+4. Use the \`metadata.description\` if available for a quick summary
+5. Analyze the content and provide a comprehensive summary to the user
+
+**When asked to interact with a webpage:**
+1. First call \`getPageContext\` to understand the page structure
+2. Identify the elements you need to interact with from the \`interactiveElements\` array
+3. Use \`clickElement\` with selector or text to click elements
+4. Use \`type\` to fill in input fields
+5. Verify actions by calling \`getPageContext\` again or taking a \`screenshot\`
+
+**Best Practices:**
+- Always call \`getPageContext\` first to understand the page before taking actions
+- Prefer \`clickElement\` over \`click\` (coordinates) for reliability
+- For summarization tasks, \`getPageContext\` provides all the text content you need
+- The \`textContent\` field contains the main readable content of the page
+
+Remember: When summarizing webpages, you MUST use \`getPageContext\` to retrieve the page content first.` : undefined;
+
   try {
     const result = streamText({
       model,
-      messages: messages as any,
+      messages: browserToolsSystemPrompt ? [
+        { role: 'system', content: browserToolsSystemPrompt },
+        ...messages
+      ] as any : messages as any,
       tools: tools,
       stopWhen: stepCountIs(20),
     });
@@ -244,8 +471,8 @@ export function setupIpcHandlers(browserManager: BrowserManager, store: Store) {
   });
 
   // Browser mode toggle
-  ipcMain.handle('show-browser-view', async () => {
-    browserManager.showBrowserView();
+  ipcMain.handle('show-browser-view', async (_event, chatWidthPercent?: number) => {
+    browserManager.showBrowserView(chatWidthPercent || 40);
     return { success: true };
   });
 
@@ -359,6 +586,43 @@ export function setupIpcHandlers(browserManager: BrowserManager, store: Store) {
     }
   });
 
+  // Browser automation tools (for chat mode)
+  ipcMain.handle('get-page-context', async () => {
+    try {
+      const context = await browserManager.getPageContext();
+      return { success: true, context };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('click-element', async (_event, selector?: string, text?: string) => {
+    try {
+      const result = await browserManager.clickElement(selector, text);
+      return result;
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('press-key', async (_event, key: string) => {
+    try {
+      const result = await browserManager.pressKey(key);
+      return result;
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('type-text-into-field', async (_event, text: string, selector?: string) => {
+    try {
+      const result = await browserManager.typeTextIntoField(text, selector);
+      return result;
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  });
+
   // Composio MCP handlers
   ipcMain.handle('initialize-mcp', async (_event, apiKey: string) => {
     try {
@@ -405,7 +669,16 @@ export function setupIpcHandlers(browserManager: BrowserManager, store: Store) {
 
       try {
         // Get tools from mcpState (don't pass through IPC - they're non-serializable)
-        const tools = mcpState.tools as ToolSet | undefined;
+        const mcpTools = mcpState.tools as ToolSet | undefined;
+        
+        // Create browser tools
+        const browserTools = createBrowserTools(browserManager);
+        
+        // Merge browser tools with MCP tools
+        const tools: ToolSet = {
+          ...browserTools,
+          ...(mcpTools || {}),
+        };
 
         await streamChatWithToolsIpc(
           userInput,
@@ -485,6 +758,12 @@ export function setupIpcHandlers(browserManager: BrowserManager, store: Store) {
       activeStreams.set(streamId, streamState);
 
       try {
+        // ComputerUseService is ONLY for Gemini, not Anthropic
+        if (provider === 'anthropic') {
+          event.sender.send('stream-error', 'ComputerUseService is only for Gemini. Use browser tools for Anthropic.');
+          return;
+        }
+
         const browserView = browserManager.getBrowserView();
         if (!browserView) {
           event.sender.send('stream-error', 'Browser view not available');

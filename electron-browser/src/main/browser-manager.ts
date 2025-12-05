@@ -4,6 +4,7 @@ export class BrowserManager {
   private mainWindow: BrowserWindow;
   private browserView: BrowserView | null = null;
   private isWebModeActive: boolean = false;
+  private currentChatWidthPercent: number = 40;
 
   constructor(mainWindow: BrowserWindow) {
     this.mainWindow = mainWindow;
@@ -12,14 +13,14 @@ export class BrowserManager {
   /**
    * Show the embedded browser view for web mode
    */
-  showBrowserView() {
+  showBrowserView(chatWidthPercent: number = 40) {
     if (!this.browserView) {
       this.createBrowserView();
     }
 
     if (this.browserView) {
       this.mainWindow.addBrowserView(this.browserView);
-      this.updateBrowserViewBounds();
+      this.updateBrowserViewBounds(chatWidthPercent);
       this.isWebModeActive = true;
     }
   }
@@ -50,18 +51,19 @@ export class BrowserManager {
     this.browserView.webContents.loadURL('https://www.google.com');
 
     // Handle navigation
-    this.browserView.webContents.on('did-navigate', (event, url) => {
+    this.browserView.webContents.on('did-navigate', (_event, url) => {
       this.mainWindow.webContents.send('browser-navigated', url);
     });
 
-    this.browserView.webContents.on('did-navigate-in-page', (event, url) => {
+    this.browserView.webContents.on('did-navigate-in-page', (_event, url) => {
       this.mainWindow.webContents.send('browser-navigated', url);
     });
 
     // Update bounds on window resize
     this.mainWindow.on('resize', () => {
-      if (this.isWebModeActive) {
-        this.updateBrowserViewBounds();
+      if (this.isWebModeActive && this.browserView) {
+        // Use stored chat width percentage
+        this.updateBrowserViewBounds(this.currentChatWidthPercent);
       }
     });
   }
@@ -72,6 +74,9 @@ export class BrowserManager {
    */
   private updateBrowserViewBounds(chatWidthPercent: number = 40) {
     if (!this.browserView) return;
+
+    // Store current chat width for window resize handler
+    this.currentChatWidthPercent = chatWidthPercent;
 
     const bounds = this.mainWindow.getBounds();
     const chatPanelWidth = Math.floor(bounds.width * (chatWidthPercent / 100));
@@ -263,6 +268,327 @@ export class BrowserManager {
    */
   getPageTitle(): string {
     return this.browserView?.webContents.getTitle() || '';
+  }
+
+  /**
+   * Get page context (similar to Chrome extension's getPageContext)
+   */
+  async getPageContext(): Promise<any> {
+    if (!this.browserView) {
+      throw new Error('Browser view not initialized');
+    }
+
+    // Wait for page to be fully loaded before extracting context
+    const waitForPageLoad = async (): Promise<void> => {
+      return new Promise((resolve) => {
+        const maxWaitTime = 5000; // Maximum 5 seconds
+        const startTime = Date.now();
+        
+        const checkReady = async () => {
+          try {
+            const readyState = await this.browserView!.webContents.executeJavaScript('document.readyState');
+            if (readyState === 'complete') {
+              // Additional small delay to ensure all content is rendered (especially for SPAs)
+              setTimeout(resolve, 200);
+            } else if (Date.now() - startTime > maxWaitTime) {
+              // Timeout - proceed anyway
+              console.warn('[BrowserManager] Page load timeout, proceeding with getPageContext');
+              resolve();
+            } else {
+              setTimeout(checkReady, 100);
+            }
+          } catch (error) {
+            // If script execution fails, wait a bit and try again
+            if (Date.now() - startTime > maxWaitTime) {
+              console.warn('[BrowserManager] Page load check failed, proceeding anyway');
+              resolve();
+            } else {
+              setTimeout(checkReady, 100);
+            }
+          }
+        };
+        checkReady();
+      });
+    };
+
+    await waitForPageLoad();
+
+    // Get current URL to verify we're on the right page
+    const currentUrl = this.browserView.webContents.getURL();
+    console.log(`[BrowserManager] getPageContext called for URL: ${currentUrl}`);
+
+    const script = `
+      (function() {
+        const links = Array.from(document.querySelectorAll('a')).slice(0, 50).map(a => ({
+          text: a.textContent?.trim() || '',
+          href: a.href
+        }));
+
+        const images = Array.from(document.querySelectorAll('img')).slice(0, 20).map(img => ({
+          alt: img.alt,
+          src: img.src
+        }));
+
+        const forms = Array.from(document.querySelectorAll('form')).map(form => ({
+          id: form.id,
+          action: form.action,
+          inputs: Array.from(form.querySelectorAll('input, textarea, select')).map(input => ({
+            name: input.name,
+            type: input.type || 'text'
+          }))
+        }));
+
+        const getElementSelector = (el) => {
+          if (el.id) return '#' + el.id;
+          if (el.className) {
+            const classes = el.className.split(' ').filter(c => c.trim());
+            if (classes.length > 0) return el.tagName.toLowerCase() + '.' + classes[0];
+          }
+          const name = el.getAttribute('name');
+          if (name) return el.tagName.toLowerCase() + '[name="' + name + '"]';
+          return el.tagName.toLowerCase();
+        };
+
+        const interactiveElements = Array.from(
+          document.querySelectorAll('button, input[type="button"], input[type="submit"], a[href], [role="button"], [onclick]')
+        )
+          .slice(0, 30)
+          .map(el => {
+            const rect = el.getBoundingClientRect();
+            return {
+              tag: el.tagName.toLowerCase(),
+              text: (el.textContent?.trim() || '').slice(0, 50),
+              value: el.value || undefined,
+              selector: getElementSelector(el),
+              type: el.type || undefined,
+              ariaLabel: el.getAttribute('aria-label') || undefined,
+              visible: rect.width > 0 && rect.height > 0 && rect.top >= 0 && rect.bottom <= window.innerHeight,
+              boundingRect: {
+                top: rect.top,
+                left: rect.left,
+                right: rect.right,
+                bottom: rect.bottom,
+                width: rect.width,
+                height: rect.height,
+                centerX: rect.left + rect.width / 2,
+                centerY: rect.top + rect.height / 2
+              }
+            };
+          })
+          .filter(el => el.visible);
+
+        const searchInputs = Array.from(
+          document.querySelectorAll('input[type="search"], input[type="text"]')
+        )
+          .map(el => {
+            const rect = el.getBoundingClientRect();
+            return {
+              selector: getElementSelector(el),
+              type: el.type,
+              id: el.id,
+              name: el.name,
+              placeholder: el.placeholder,
+              'aria-label': el.getAttribute('aria-label'),
+              'data-automation-id': el.getAttribute('data-automation-id'),
+              role: el.getAttribute('role'),
+              className: el.className,
+              visible: rect.width > 0 && rect.height > 0 && rect.top >= 0,
+              dimensions: { width: rect.width, height: rect.height, top: rect.top, left: rect.left }
+            };
+          })
+          .filter(input => input.visible)
+          .slice(0, 10);
+
+        const getMetaContent = (name) => {
+          const meta = document.querySelector('meta[name="' + name + '"], meta[property="' + name + '"]');
+          return meta?.getAttribute('content') || undefined;
+        };
+
+        // Verify we're getting content from the current page
+        const currentPageUrl = window.location.href;
+        const pageTitle = document.title;
+        const bodyText = document.body ? document.body.innerText.slice(0, 10000) : '';
+        
+        console.log('[getPageContext] Extracting context from URL:', currentPageUrl);
+        console.log('[getPageContext] Page title:', pageTitle);
+        console.log('[getPageContext] Text content length:', bodyText.length);
+        
+        return {
+          url: currentPageUrl,
+          title: pageTitle,
+          textContent: bodyText,
+          links,
+          images,
+          forms,
+          interactiveElements,
+          searchInputs,
+          metadata: {
+            description: getMetaContent('description') || getMetaContent('og:description'),
+            keywords: getMetaContent('keywords'),
+            author: getMetaContent('author')
+          },
+          viewport: {
+            width: window.innerWidth,
+            height: window.innerHeight,
+            scrollX: window.scrollX,
+            scrollY: window.scrollY,
+            devicePixelRatio: window.devicePixelRatio
+          }
+        };
+      })();
+    `;
+
+    return await this.executeScript(script);
+  }
+
+  /**
+   * Click element by selector or text
+   */
+  async clickElement(selector?: string, text?: string): Promise<any> {
+    if (!this.browserView) {
+      throw new Error('Browser view not initialized');
+    }
+
+    const encodedSelector = selector ? JSON.stringify(selector) : 'null';
+    const encodedText = text ? JSON.stringify(text) : 'null';
+
+    const script = `
+      (function() {
+        let element = null;
+        
+        // Try selector first
+        if (${encodedSelector}) {
+          element = document.querySelector(${encodedSelector});
+        }
+        
+        // If not found and text provided, search by text
+        if (!element && ${encodedText}) {
+          const allElements = Array.from(document.querySelectorAll('button, a, [role="button"], input[type="button"], input[type="submit"]'));
+          element = allElements.find(el => {
+            const elText = el.textContent?.trim() || '';
+            return elText.includes(${encodedText}) || el.getAttribute('aria-label')?.includes(${encodedText});
+          });
+        }
+        
+        if (element) {
+          const rect = element.getBoundingClientRect();
+          const x = rect.left + rect.width / 2;
+          const y = rect.top + rect.height / 2;
+          
+          // Dispatch click events
+          element.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y }));
+          element.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y }));
+          element.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y }));
+          
+          return { success: true, element: element.tagName, text: element.textContent?.trim().slice(0, 50) };
+        }
+        
+        return { success: false, error: 'Element not found' };
+      })();
+    `;
+
+    return await this.executeScript(script);
+  }
+
+  /**
+   * Press a key (Enter, Tab, Escape, etc.)
+   */
+  async pressKey(key: string): Promise<any> {
+    if (!this.browserView) {
+      throw new Error('Browser view not initialized');
+    }
+
+    const encodedKey = JSON.stringify(key);
+    const script = `
+      (function() {
+        const activeElement = document.activeElement;
+        if (!activeElement) {
+          return { success: false, error: 'No active element' };
+        }
+        
+        const keyMap = {
+          'Enter': 'Enter',
+          'Tab': 'Tab',
+          'Escape': 'Escape',
+          'ArrowUp': 'ArrowUp',
+          'ArrowDown': 'ArrowDown',
+          'ArrowLeft': 'ArrowLeft',
+          'ArrowRight': 'ArrowRight'
+        };
+        
+        const keyName = keyMap[${encodedKey}] || ${encodedKey};
+        const event = new KeyboardEvent('keydown', {
+          key: keyName,
+          code: keyName,
+          bubbles: true,
+          cancelable: true
+        });
+        
+        activeElement.dispatchEvent(event);
+        
+        const keyupEvent = new KeyboardEvent('keyup', {
+          key: keyName,
+          code: keyName,
+          bubbles: true,
+          cancelable: true
+        });
+        activeElement.dispatchEvent(keyupEvent);
+        
+        // For Enter key, also trigger submit if in a form
+        if (keyName === 'Enter' && activeElement.tagName === 'INPUT') {
+          const form = activeElement.closest('form');
+          if (form) {
+            const submitEvent = new Event('submit', { bubbles: true, cancelable: true });
+            form.dispatchEvent(submitEvent);
+          }
+        }
+        
+        return { success: true };
+      })();
+    `;
+
+    return await this.executeScript(script);
+  }
+
+  /**
+   * Type text into an input field (by selector or focused element)
+   */
+  async typeTextIntoField(text: string, selector?: string): Promise<any> {
+    if (!this.browserView) {
+      throw new Error('Browser view not initialized');
+    }
+
+    const encodedText = JSON.stringify(text);
+    const encodedSelector = selector ? JSON.stringify(selector) : 'null';
+
+    const script = `
+      (function() {
+        let element = null;
+        
+        if (${encodedSelector}) {
+          element = document.querySelector(${encodedSelector});
+        } else {
+          element = document.activeElement;
+        }
+        
+        if (element && (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA' || element.isContentEditable)) {
+          if (element.isContentEditable) {
+            element.textContent = ${encodedText};
+          } else {
+            element.value = ${encodedText};
+          }
+          
+          element.dispatchEvent(new Event('input', { bubbles: true }));
+          element.dispatchEvent(new Event('change', { bubbles: true }));
+          
+          return { success: true };
+        }
+        
+        return { success: false, error: 'No suitable input element found' };
+      })();
+    `;
+
+    return await this.executeScript(script);
   }
 
   /**

@@ -27,6 +27,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('scroll-page', direction, amount),
   getCurrentUrl: () => ipcRenderer.invoke('get-current-url'),
   executeScript: (script: string) => ipcRenderer.invoke('execute-script', script),
+  getPageContext: () => ipcRenderer.invoke('get-page-context'),
+  clickElement: (selector?: string, text?: string) => ipcRenderer.invoke('click-element', selector, text),
+  pressKey: (key: string) => ipcRenderer.invoke('press-key', key),
+  typeTextIntoField: (text: string, selector?: string) => ipcRenderer.invoke('type-text-into-field', text, selector),
 
   // Composio MCP
   initializeMcp: (apiKey: string) => ipcRenderer.invoke('initialize-mcp', apiKey),
@@ -174,6 +178,10 @@ export interface ElectronAPI {
   ) => Promise<{ success: boolean; error?: string }>;
   getCurrentUrl: () => Promise<{ url: string; title: string }>;
   executeScript: (script: string) => Promise<{ success: boolean; result?: any; error?: string }>;
+  getPageContext: () => Promise<{ success: boolean; context?: any; error?: string }>;
+  clickElement: (selector?: string, text?: string) => Promise<{ success: boolean; element?: string; text?: string; error?: string }>;
+  pressKey: (key: string) => Promise<{ success: boolean; error?: string }>;
+  typeTextIntoField: (text: string, selector?: string) => Promise<{ success: boolean; error?: string }>;
   initializeMcp: (apiKey: string) => Promise<{ success: boolean; sessionId?: string; toolCount?: number; error?: string }>;
   getMcpTools: () => Promise<{ success: boolean; tools?: Record<string, any>; error?: string }>;
   streamChatWithTools: (

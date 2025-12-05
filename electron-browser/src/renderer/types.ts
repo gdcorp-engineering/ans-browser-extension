@@ -18,11 +18,14 @@ export interface Message {
 }
 
 export interface Settings {
-  provider?: 'anthropic';
+  provider?: 'google' | 'anthropic' | 'openai';
   googleApiKey: string;
   composioApiKey?: string;
   model: string;
   customBaseUrl?: string;
+  conversationHistoryLength?: number;
+  conversationLoopHistoryLength?: number;
+  enableSmartSummarization?: boolean;
 }
 
 export interface BrowserAction {
@@ -58,9 +61,12 @@ export const MessageSchema = z.object({
 export const ChatHistorySchema = z.array(MessageSchema);
 
 export const SettingsSchema = z.object({
-  provider: z.enum(['anthropic']).optional(),
+  provider: z.enum(['google', 'anthropic', 'openai']).optional(),
   googleApiKey: z.string(),
   composioApiKey: z.string().optional(),
   model: z.string(),
   customBaseUrl: z.string().optional(),
+  conversationHistoryLength: z.number().optional(),
+  conversationLoopHistoryLength: z.number().optional(),
+  enableSmartSummarization: z.boolean().optional(),
 });

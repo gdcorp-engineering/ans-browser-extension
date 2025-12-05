@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm';
 import type { Message, Settings } from '../types';
 import { streamWithGemini } from '../services/gemini-service';
 import { initializeMcpClient, areToolsInitialized } from '../services/tool-router-service';
+import { streamAnthropicWithBrowserTools } from '../services/anthropic-browser-tools';
 import { ToolCallComponent } from './ToolCallComponent';
 
 // Custom link component that opens URLs in browser sidebar
@@ -112,7 +113,113 @@ const ChatInterface = ({
           }
         }
 
-        // Chat mode: always use AI SDK with Composio tools (if available)
+        // Use Anthropic browser tools if provider is Anthropic
+        if (settings.provider === 'anthropic') {
+          // Create executeTool function that maps to Electron browser API
+          const executeTool = async (toolName: string, params: any): Promise<any> => {
+            try {
+              switch (toolName) {
+                case 'navigate':
+                  const navResult = await window.electronAPI.navigateToUrl(params.url);
+                  return navResult;
+                
+                case 'getPageContext':
+                  const contextResult = await window.electronAPI.getPageContext();
+                  if (contextResult.success) {
+                    return contextResult.context;
+                  }
+                  return { success: false, error: contextResult.error };
+                
+                case 'clickElement':
+                  const clickResult = await window.electronAPI.clickElement(params.selector, params.text);
+                  return clickResult;
+                
+                case 'click':
+                  const coordResult = await window.electronAPI.clickAt(params.x, params.y);
+                  return coordResult;
+                
+                case 'type':
+                  const typeResult = await window.electronAPI.typeTextIntoField(params.text, params.selector);
+                  return typeResult;
+                
+                case 'scroll':
+                  const scrollResult = await window.electronAPI.scrollPage(params.direction, params.amount);
+                  return scrollResult;
+                
+                case 'screenshot':
+                  const screenshotResult = await window.electronAPI.captureScreenshot();
+                  if (screenshotResult.success && screenshotResult.screenshot) {
+                    // Get viewport info for coordinate instructions
+                    const urlInfo = await window.electronAPI.getCurrentUrl();
+                    return {
+                      success: true,
+                      screenshot: screenshotResult.screenshot,
+                      viewport: { width: 1280, height: 800, devicePixelRatio: 1 } // Default, could be improved
+                    };
+                  }
+                  return screenshotResult;
+                
+                case 'pressKey':
+                  const keyResult = await window.electronAPI.pressKey(params.key);
+                  return keyResult;
+                
+                default:
+                  return { success: false, error: `Unknown tool: ${toolName}` };
+              }
+            } catch (error: any) {
+              console.error(`Error executing tool ${toolName}:`, error);
+              return { success: false, error: error.message || 'Tool execution failed' };
+            }
+          };
+
+          // Get current URL for site instructions
+          let currentUrl = '';
+          try {
+            const urlInfo = await window.electronAPI.getCurrentUrl();
+            currentUrl = urlInfo.url;
+          } catch (error) {
+            console.warn('Failed to get current URL:', error);
+          }
+
+          // Use Anthropic browser tools
+          // Include the user message that was just added
+          const messagesWithUser = [...messages, userMessage];
+          await streamAnthropicWithBrowserTools(
+            messagesWithUser,
+            settings.googleApiKey, // Using googleApiKey field for Anthropic API key
+            settings.model,
+            settings.customBaseUrl,
+            (chunk) => {
+              setMessages((prev) => {
+                const lastMsg = prev[prev.length - 1];
+                if (!lastMsg || lastMsg.role !== 'assistant') {
+                  return [...prev, {
+                    id: `msg-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+                    role: 'assistant',
+                    content: chunk,
+                    mode,
+                    timestamp: Date.now(),
+                  }];
+                }
+                return [...prev.slice(0, -1), { ...lastMsg, content: lastMsg.content + chunk }];
+              });
+            },
+            () => {
+              setIsLoading(false);
+            },
+            executeTool,
+            abortControllerRef.current.signal,
+            undefined, // additionalTools (MCP tools) - could be added later
+            currentUrl,
+            undefined, // siteInstructions - could be added later
+            settings,
+            undefined, // onToolStart
+            true // browserToolsEnabled
+          );
+          return;
+        }
+
+        // Chat mode: use AI SDK with Composio tools (if available) for other providers
         await new Promise<void>((resolve, reject) => {
           window.electronAPI.streamChatWithTools(
             userMessage.content,
@@ -234,7 +341,109 @@ const ChatInterface = ({
           );
         });
       } else {
-        // Web mode: use Gemini with browser automation tools
+        // Web mode: use browser automation tools
+        // For Anthropic, use browser tools; for Gemini, use Computer Use
+        if (settings.provider === 'anthropic') {
+          // Anthropic in web mode: use browser tools
+          const executeTool = async (toolName: string, params: any): Promise<any> => {
+            try {
+              switch (toolName) {
+                case 'navigate':
+                  const navResult = await window.electronAPI.navigateToUrl(params.url);
+                  return navResult;
+                
+                case 'getPageContext':
+                  const contextResult = await window.electronAPI.getPageContext();
+                  if (contextResult.success) {
+                    return contextResult.context;
+                  }
+                  return { success: false, error: contextResult.error };
+                
+                case 'clickElement':
+                  const clickResult = await window.electronAPI.clickElement(params.selector, params.text);
+                  return clickResult;
+                
+                case 'click':
+                  const coordResult = await window.electronAPI.clickAt(params.x, params.y);
+                  return coordResult;
+                
+                case 'type':
+                  const typeResult = await window.electronAPI.typeTextIntoField(params.text, params.selector);
+                  return typeResult;
+                
+                case 'scroll':
+                  const scrollResult = await window.electronAPI.scrollPage(params.direction, params.amount);
+                  return scrollResult;
+                
+                case 'screenshot':
+                  const screenshotResult = await window.electronAPI.captureScreenshot();
+                  if (screenshotResult.success && screenshotResult.screenshot) {
+                    const urlInfo = await window.electronAPI.getCurrentUrl();
+                    return {
+                      success: true,
+                      screenshot: screenshotResult.screenshot,
+                      viewport: { width: 1280, height: 800, devicePixelRatio: 1 }
+                    };
+                  }
+                  return screenshotResult;
+                
+                case 'pressKey':
+                  const keyResult = await window.electronAPI.pressKey(params.key);
+                  return keyResult;
+                
+                default:
+                  return { success: false, error: `Unknown tool: ${toolName}` };
+              }
+            } catch (error: any) {
+              console.error(`Error executing tool ${toolName}:`, error);
+              return { success: false, error: error.message || 'Tool execution failed' };
+            }
+          };
+
+          let currentUrl = '';
+          try {
+            const urlInfo = await window.electronAPI.getCurrentUrl();
+            currentUrl = urlInfo.url;
+          } catch (error) {
+            console.warn('Failed to get current URL:', error);
+          }
+
+          await streamAnthropicWithBrowserTools(
+            [...messages, userMessage],
+            settings.googleApiKey,
+            settings.model,
+            settings.customBaseUrl,
+            (chunk) => {
+              setMessages((prev) => {
+                const lastMsg = prev[prev.length - 1];
+                if (!lastMsg || lastMsg.role !== 'assistant') {
+                  return [...prev, {
+                    id: `msg-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+                    role: 'assistant',
+                    content: chunk,
+                    mode,
+                    timestamp: Date.now(),
+                  }];
+                }
+                return [...prev.slice(0, -1), { ...lastMsg, content: lastMsg.content + chunk }];
+              });
+            },
+            () => {
+              setIsLoading(false);
+            },
+            executeTool,
+            abortControllerRef.current.signal,
+            undefined,
+            currentUrl,
+            undefined,
+            settings,
+            undefined,
+            true
+          );
+          return;
+        }
+
+        // Web mode: use Gemini Computer Use (for Google provider)
         const assistantMessage: Message = {
           id: `msg-${Date.now()}-${Math.random().toString(36).substring(7)}`,
           role: 'assistant',

@@ -14,12 +14,43 @@ function App() {
   const [chatWidth, setChatWidth] = useState(40); // percentage
   const [canGoBack, setCanGoBack] = useState(false);
   const [canGoForward, setCanGoForward] = useState(false);
+  const [currentUrl, setCurrentUrl] = useState('');
 
   // Load settings and chat history on mount
   useEffect(() => {
     loadSettings();
     loadChatHistory();
   }, []);
+
+  // Listen for browser navigation events and update URL
+  useEffect(() => {
+    const handleNavigation = (url: string) => {
+      setCurrentUrl(url);
+      updateNavigationState();
+    };
+
+    window.electronAPI.onBrowserNavigated(handleNavigation);
+
+    // Get initial URL when browser sidebar is shown or mode changes
+    const getInitialUrl = async () => {
+      if (showBrowserSidebar || currentMode === 'web') {
+        try {
+          const urlInfo = await window.electronAPI.getCurrentUrl();
+          setCurrentUrl(urlInfo.url);
+          updateNavigationState();
+        } catch (error) {
+          console.error('Failed to get current URL:', error);
+        }
+      }
+    };
+    
+    // Small delay to ensure browser view is ready
+    const timeoutId = setTimeout(getInitialUrl, 100);
+
+    return () => {
+      clearTimeout(timeoutId);
+    };
+  }, [showBrowserSidebar, currentMode]);
 
   // Save chat history whenever messages change
   useEffect(() => {
@@ -99,6 +130,8 @@ function App() {
 
     if (mode === 'web') {
       await window.electronAPI.showBrowserView();
+      // Update browser view bounds with current chat width (40% for web mode)
+      await window.electronAPI.resizeBrowserView(40);
     } else {
       await window.electronAPI.hideBrowserView();
       setShowBrowserSidebar(false);
@@ -111,6 +144,8 @@ function App() {
 
     if (newState) {
       await window.electronAPI.showBrowserView();
+      // Update browser view bounds with current chat width
+      await window.electronAPI.resizeBrowserView(chatWidth);
     } else {
       await window.electronAPI.hideBrowserView();
     }
@@ -159,6 +194,22 @@ function App() {
       updateNavigationState();
     } catch (error) {
       console.error('Failed to go forward:', error);
+    }
+  };
+
+  const handleNavigateUrl = async (url: string) => {
+    // Show browser sidebar if not already visible
+    if (!showBrowserSidebar) {
+      setShowBrowserSidebar(true);
+      await window.electronAPI.showBrowserView();
+    }
+
+    // Navigate to the URL
+    try {
+      await window.electronAPI.navigateToUrl(url);
+      updateNavigationState();
+    } catch (error) {
+      console.error('Failed to navigate to URL:', error);
     }
   };
 
@@ -216,6 +267,15 @@ function App() {
 
   const chatWidthPercent = showBrowserSidebar && currentMode === 'chat' ? chatWidth : (currentMode === 'web' ? 40 : 100);
 
+  // Update browser view bounds when chat width or mode changes
+  useEffect(() => {
+    if ((showBrowserSidebar && currentMode === 'chat') || currentMode === 'web') {
+      window.electronAPI.resizeBrowserView(chatWidthPercent).catch(error => {
+        console.error('Failed to resize browser view:', error);
+      });
+    }
+  }, [chatWidthPercent, showBrowserSidebar, currentMode]);
+
   return (
     <div
       style={{
@@ -223,9 +283,11 @@ function App() {
         flexDirection: 'column',
         height: '100vh',
         width: `${chatWidthPercent}%`,
+        maxWidth: `${chatWidthPercent}%`,
         backgroundColor: '#ffffff',
         transition: showBrowserSidebar && currentMode === 'chat' ? 'none' : 'width 0.3s ease',
         position: 'relative',
+        overflow: 'hidden',
       }}
     >
       {/* Draggable divider - only show when browser sidebar is open in chat mode */}
@@ -258,6 +320,8 @@ function App() {
         canGoForward={canGoForward}
         currentMode={currentMode}
         onOpenSettings={handleOpenSettings}
+        currentUrl={currentUrl}
+        onNavigateUrl={handleNavigateUrl}
       />
 
       {/* Chat Interface */}

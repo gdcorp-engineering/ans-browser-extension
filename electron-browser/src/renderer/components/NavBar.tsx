@@ -1,3 +1,5 @@
+import { useState, useEffect } from 'react';
+
 interface NavBarProps {
   onNewChat: () => void;
   showBrowserSidebar: boolean;
@@ -8,6 +10,8 @@ interface NavBarProps {
   canGoForward: boolean;
   currentMode: 'chat' | 'web';
   onOpenSettings: () => void;
+  currentUrl: string;
+  onNavigateUrl: (url: string) => void;
 }
 
 export default function NavBar({
@@ -20,7 +24,30 @@ export default function NavBar({
   canGoForward,
   currentMode,
   onOpenSettings,
+  currentUrl,
+  onNavigateUrl,
 }: NavBarProps) {
+  const [urlInput, setUrlInput] = useState(currentUrl);
+  const [isNavigating, setIsNavigating] = useState(false);
+
+  // Update URL input when currentUrl changes
+  useEffect(() => {
+    setUrlInput(currentUrl);
+  }, [currentUrl]);
+
+  const handleUrlSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (urlInput.trim()) {
+      let urlToNavigate = urlInput.trim();
+      // Add https:// if no protocol is specified
+      if (!urlToNavigate.match(/^https?:\/\//i)) {
+        urlToNavigate = 'https://' + urlToNavigate;
+      }
+      setIsNavigating(true);
+      onNavigateUrl(urlToNavigate);
+      setTimeout(() => setIsNavigating(false), 1000);
+    }
+  };
   return (
     <nav
       style={{
@@ -41,9 +68,9 @@ export default function NavBar({
         <span style={{ fontSize: '14px', fontWeight: 600, color: '#1a1a1a' }}>GoDaddy ANS Desktop</span>
       </div>
 
-      {/* Center - Browser Controls (only show in chat mode when browser is visible) */}
-      {currentMode === 'chat' && showBrowserSidebar && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+      {/* Center - Browser Controls (show in chat mode when browser sidebar is visible, or in web mode) */}
+      {(currentMode === 'web' || (currentMode === 'chat' && showBrowserSidebar)) && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flex: 1, maxWidth: '600px', margin: '0 auto', WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
           <button
             onClick={onBrowserBack}
             disabled={!canGoBack}
@@ -86,6 +113,47 @@ export default function NavBar({
           >
             →
           </button>
+          {/* Address Bar */}
+          <form onSubmit={handleUrlSubmit} style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <input
+              type="text"
+              value={urlInput}
+              onChange={(e) => setUrlInput(e.target.value)}
+              placeholder="Enter URL or search"
+              style={{
+                flex: 1,
+                padding: '6px 12px',
+                backgroundColor: '#ffffff',
+                border: '1px solid #d1d5db',
+                borderRadius: '6px',
+                fontSize: '13px',
+                color: '#1a1a1a',
+                outline: 'none',
+                minWidth: 0,
+              }}
+              onFocus={(e) => {
+                e.target.select();
+              }}
+            />
+            <button
+              type="submit"
+              disabled={isNavigating}
+              style={{
+                padding: '6px 12px',
+                backgroundColor: isNavigating ? '#e5e5e5' : '#2563eb',
+                color: isNavigating ? '#666' : '#ffffff',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: isNavigating ? 'not-allowed' : 'pointer',
+                fontSize: '13px',
+                fontWeight: 500,
+                transition: 'all 0.2s ease',
+              }}
+              title="Go"
+            >
+              {isNavigating ? '...' : 'Go'}
+            </button>
+          </form>
         </div>
       )}
 
