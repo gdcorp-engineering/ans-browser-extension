@@ -1,16 +1,42 @@
 # ANS Browser Extension
 
-AI-powered browser automation with GoDaddy Agent Naming System (ANS) integration.
+AI-powered browser automation with GoDaddy Agent Name Service (ANS) integration.
 
 ## Features
 
-- **◉ Browser Tools Mode**: AI-powered browser automation with clicks, typing, scrolling, and navigation
-- **🤖 ANS Integration**: GoDaddy Agent Naming System (ANS) support for trusted A2A agents
+### Core Capabilities
+- **◉ Browser Tools Mode**: AI-powered browser automation with clicks, typing, scrolling, and navigation using Gemini 2.5 Computer Use
+- **🤖 ANS Integration**: GoDaddy Agent Name Service (ANS) support for trusted A2A agents and Business Marketplace
 - **Sidebar Chat Interface**: Clean, modern React-based chat UI accessible from any tab
+- **Multiple AI Providers**: Support for Google Gemini, Anthropic Claude, and OpenAI models
 - **Direct Browser Automation**: No backend required - all API calls made directly from extension
+
+### File & Media Support
+- **File Upload**: Upload images, documents, PDFs, and other file types
+- **Screenshot Capture**: Capture and attach screenshots of web pages
+- **Tab Attachment**: Attach entire browser tabs for context
+- **Voice Dictation**: Microphone support for voice-to-text input
+
+### Business Services
+- **🌐 ANS Business Marketplace**: Access to 115 Million verified GoDaddy customer services
+- **Service Integration**: Book appointments, order products, and interact with businesses through AI chat
+- **A2A Protocol**: Agent-to-Agent protocol support for trusted services
+
+### Protocol & Integration Support
+- **MCP (Model Context Protocol)**: Full support for custom MCP servers and ANS marketplace servers
+- **🔧 Composio Support**: Optional Tool Router mode for Gmail, Slack, GitHub, and 500+ integrations (hidden from UI)
+
+### User Experience
+- **Interactive Onboarding**: Chat-based guided setup process
+- **Floating Button**: "Ask GoDaddy ANS" floating button on web pages (configurable)
+- **Chat Modes**: Create image, thinking, deep research, study and learn, web search, and more
 - **Visual Feedback**: Blue border overlay and element highlighting during automation
+
+### Developer Features
 - **Multi-Environment Builds**: Separate Dev, Test, and Prod environment configurations
-- **🔧 Composio Support**: Optional Tool Router mode for Gmail, Slack, GitHub, and 500+ integrations
+- **Hot Reload**: Development mode with hot reload support
+
+For a complete list of features, see [FEATURES.md](./docs/FEATURES.md).
 
 ## Getting Started
 
@@ -19,8 +45,8 @@ AI-powered browser automation with GoDaddy Agent Naming System (ANS) integration
 #### Prerequisites
 - Chrome or Edge browser (Manifest V3 support)
 - GoDaddy VPN access
-- GoCode API key
-- ANS credentials
+- GoCode API key (required)
+- ANS API token (optional - needed for ANS Business Services)
 
 #### Installation Steps
 
@@ -32,23 +58,24 @@ AI-powered browser automation with GoDaddy Agent Naming System (ANS) integration
    - This step is required to access ANS services
 
 3. **Download and Install Extension**
-   - Download the extension zip file from the latest release
-   - Unzip into a folder named `dist`
 
-4. **Load Extension in Chrome**
-   - Open Chrome and navigate to `chrome://extensions/`
-   - Enable "Developer mode" in the top right corner
+   **Easy Method (Recommended for Non-Technical Users):**
+   - Download the extension ZIP file (from GitHub releases or your administrator)
+   - Extract the ZIP file to a folder (right-click → Extract All on Windows, double-click on Mac)
+   - Open the `INSTALL_INSTRUCTIONS.html` file in Chrome for a visual step-by-step guide
+   - Or follow the simple steps in [INSTALL_GUIDE.md](./docs/INSTALL_GUIDE.md)
+
+   **Quick Steps:**
+   - Open Chrome and go to `chrome://extensions/`
+   - Enable "Developer mode" (toggle in top right)
    - Click "Load unpacked"
-   - Select the `dist` folder
+   - Select the extracted folder (the one containing `manifest.json`)
 
-5. **Configure API Keys**
+4. **Configure API Keys**
    - Click the Settings (⚙️) icon in the extension
-   - Add the following base URL:
-     ```
-     https://caas-gocode-prod.caas-prod.prod.onkatana.net
-     ```
+   - Add the GoCode URL (default: `https://caas-gocode-prod.caas-prod.prod.onkatana.net`)
    - Get your GoCode API key: [https://caas.godaddy.com/gocode/my-api-keys](https://caas.godaddy.com/gocode/my-api-keys)
-   - Get your ANS credentials: [https://api.ote-godaddy.com/v1/agents](https://api.ote-godaddy.com/v1/agents)
+   - (Optional) Get your ANS API token: [https://api.ote-godaddy.com/v1/agents](https://api.ote-godaddy.com/v1/agents) - Required only if you want to use ANS Business Services
 
 ### For Developers (Building from Source)
 
@@ -82,6 +109,67 @@ BUILD_ENV=prod npm run build
    - Click "Load unpacked"
    - Select the `artifacts/Dev` (or `artifacts/Test` or `artifacts/Prod`) folder
    - Configure your API keys in Settings (⚙️ icon)
+
+#### Package for Distribution
+
+**Create a ZIP file (Recommended for Easy Distribution):**
+
+```bash
+# Package for Dev environment
+npm run package:zip:dev
+
+# Package for Test environment
+npm run package:zip:test
+
+# Package for Prod environment
+npm run package:zip:prod
+
+# Or specify environment manually
+BUILD_ENV=dev npm run package:zip
+```
+
+The ZIP file will be created in the `packages/` directory. Users can:
+1. Download the ZIP file
+2. Extract it to a folder
+3. Open `INSTALL_INSTRUCTIONS.html` (in the extracted folder) in Chrome for visual installation guide
+4. Follow the simple steps to load in Chrome
+
+**Create a .crx file:**
+
+To create a distributable `.crx` file:
+
+```bash
+# Package for Dev environment
+npm run package:crx:dev
+
+# Package for Test environment
+npm run package:crx:test
+
+# Package for Prod environment
+npm run package:crx:prod
+
+# Or specify environment manually
+BUILD_ENV=dev npm run package:crx
+```
+
+The packaged `.crx` file will be created in the `packages/` directory with the name `extension-{env}-v{version}.crx`.
+
+**Note**: The first time you package, a private key (`extension-key.pem`) will be generated. Keep this key file safe - you'll need it for future updates to maintain the same extension ID.
+
+**Installing the .crx file**: When installing a self-signed `.crx` file, Chrome will show a warning: "Chrome can't verify where this extension comes from". This is expected for extensions not published to the Chrome Web Store. 
+
+⚠️ **Important**: Chrome may block unsigned extensions from running even after installation. For local development, use "Load unpacked" instead.
+
+**Options:**
+- **For Development**: Use "Load unpacked" with the `artifacts/{Dev|Test|Prod}` folder (no warnings, works immediately)
+- **For Enterprise**: See [ENTERPRISE_DEPLOYMENT.md](./docs/ENTERPRISE_DEPLOYMENT.md) for Chrome Enterprise Policies
+- **For Public Distribution**: Publish to Chrome Web Store (removes all warnings)
+
+**Installation Helper:**
+```bash
+# Run the installation helper script
+./install-extension.sh
+```
 
 ### Running the Electron Browser
 
@@ -158,8 +246,9 @@ This extension also supports Composio's Tool Router for accessing Gmail, Slack, 
 
 ## Documentation
 
-- **[FAQ](./FAQ.md)** - Frequently asked questions and quick troubleshooting
-- **[TROUBLESHOOTING.md](./TROUBLESHOOTING.md)** - Detailed troubleshooting guide for common issues
+- **[FEATURES.md](./docs/FEATURES.md)** - Complete list of all features and capabilities
+- **[FAQ](./docs/FAQ.md)** - Frequently asked questions and quick troubleshooting
+- **[TROUBLESHOOTING.md](./docs/TROUBLESHOOTING.md)** - Detailed troubleshooting guide for common issues
 
 ## References
 
@@ -167,3 +256,7 @@ This extension also supports Composio's Tool Router for accessing Gmail, Slack, 
 - [Gemini Computer Use Model](https://blog.google/technology/google-deepmind/gemini-computer-use-model/) - Google's AI model for browser automation
 - [Gemini API Documentation](https://ai.google.dev/gemini-api/docs/computer-use) - Official documentation for Gemini Computer Use
 - [GoDaddy ANS Documentation](https://api.ote-godaddy.com/v1/agents) - ANS agent registration and credentials
+
+---
+
+**Last Updated:** November 23, 2025
