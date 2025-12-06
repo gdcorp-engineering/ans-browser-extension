@@ -16,11 +16,24 @@ const memory: BrowserMemory = {
 // Track if browser operations should be aborted
 let shouldAbortOperations = false;
 
-// Set side panel to open automatically on extension icon click
-// The side panel will be per-tab by default when using tabId
-chrome.sidePanel
-  .setPanelBehavior({ openPanelOnActionClick: true })
-  .catch((error: Error) => console.error(error));
+// Handle extension icon clicks to open sidepanel dynamically per tab
+// No static sidepanel registration in manifest - full dynamic control
+chrome.action.onClicked.addListener(async (tab) => {
+  if (tab.id) {
+    try {
+      // Set sidepanel options for this specific tab and open it
+      await chrome.sidePanel.setOptions({
+        tabId: tab.id,
+        path: "sidepanel.html",
+        enabled: true
+      });
+      await chrome.sidePanel.open({ tabId: tab.id });
+      console.log(`Sidepanel opened for tab ${tab.id}: ${tab.url}`);
+    } catch (error) {
+      console.error('Failed to open sidepanel:', error);
+    }
+  }
+});
 
 // Track page visits for memory
 chrome.webNavigation.onCompleted.addListener((details) => {
