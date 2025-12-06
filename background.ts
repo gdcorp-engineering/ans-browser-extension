@@ -13,27 +13,165 @@ const memory: BrowserMemory = {
   sessionData: {}
 };
 
-// Track if browser operations should be aborted
-let shouldAbortOperations = false;
+// Track if browser operations should be aborted (per-tab)
+const tabAbortFlags: Record<number, boolean> = {};
 
-// Handle extension icon clicks to open sidepanel dynamically per tab
-// No static sidepanel registration in manifest - full dynamic control
+// Track which tabs have the extension enabled
+const enabledTabs: Set<number> = new Set();
+
+// Helper functions for per-tab abort flags
+function setTabAbortFlag(tabId: number, value: boolean) {
+  tabAbortFlags[tabId] = value;
+  console.log(`🛑 Tab ${tabId} abort flag set to ${value}`);
+}
+
+function getTabAbortFlag(tabId: number): boolean {
+  return tabAbortFlags[tabId] || false;
+}
+
+function clearTabAbortFlag(tabId: number) {
+  delete tabAbortFlags[tabId];
+  console.log(`✅ Tab ${tabId} abort flag cleared`);
+}
+
+// Helper functions for tab activation state
+function isTabEnabled(tabId: number): boolean {
+  return enabledTabs.has(tabId);
+}
+
+function enableTab(tabId: number) {
+  enabledTabs.add(tabId);
+  console.log(`✅ Extension enabled for tab ${tabId}`);
+}
+
+async function disableTab(tabId: number) {
+  enabledTabs.delete(tabId);
+
+  // Disable sidepanel for this tab
+  try {
+    await chrome.sidePanel.setOptions({
+      tabId,
+      enabled: false
+    });
+  } catch (error) {
+    console.error(`Failed to disable sidepanel for tab ${tabId}:`, error);
+  }
+
+  console.log(`❌ Extension disabled for tab ${tabId}`);
+}
+
+// Inject content script into a tab
+async function injectContentScript(tabId: number): Promise<void> {
+  try {
+    // Check if content script is already injected by trying to ping it
+    try {
+      await chrome.tabs.sendMessage(tabId, { type: 'PING' });
+      console.log(`Content script already injected in tab ${tabId}`);
+      return;
+    } catch {
+      // Content script not found, proceed with injection
+    }
+
+    // Inject the content script
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ['content.js']
+    });
+
+    // Wait a bit for the script to initialize
+    await new Promise(resolve => setTimeout(resolve, 200));
+    console.log(`✅ Content script injected into tab ${tabId}`);
+  } catch (error) {
+    console.error(`Failed to inject content script into tab ${tabId}:`, error);
+  }
+}
+
+// Cleanup on tab removal
+chrome.tabs.onRemoved.addListener(async (tabId) => {
+  console.log(`🗑️ Tab ${tabId} removed, cleaning up background resources`);
+  clearTabAbortFlag(tabId);
+  await disableTab(tabId);
+  // Cleanup old memory entries (keep last 24 hours)
+  memory.recentPages = memory.recentPages.filter(page =>
+    page.timestamp > Date.now() - 24 * 60 * 60 * 1000
+  );
+});
+
+// Track if sidepanel options have been initialized
+let sidepanelInitialized = false;
+
+// Initialize global sidepanel options (disabled by default)
+async function initializeSidepanel() {
+  if (sidepanelInitialized) return;
+
+  try {
+    // Set sidepanel globally but disabled - it will be enabled per-tab
+    await chrome.sidePanel.setOptions({
+      path: "sidepanel.html",
+      enabled: false
+    });
+    sidepanelInitialized = true;
+    console.log('Sidepanel options initialized globally (disabled by default)');
+  } catch (error) {
+    console.error('Failed to initialize sidepanel options:', error);
+  }
+}
+
+// CRITICAL: Register click handler synchronously at top level
+// This ensures the handler is ready immediately when the service worker wakes up
+// If this is registered after async operations, clicks during worker startup may be lost
 chrome.action.onClicked.addListener(async (tab) => {
   if (tab.id) {
-    try {
-      // Set sidepanel options for this specific tab and open it
-      await chrome.sidePanel.setOptions({
+    // Check if extension is already enabled for this tab
+    const isEnabled = isTabEnabled(tab.id);
+
+    if (!isEnabled) {
+      // First click: Enable the extension for this tab
+      console.log(`⚡ FIRST CLICK - Enabling extension for tab ${tab.id}`);
+      enableTab(tab.id);
+
+      // Enable sidepanel for this specific tab SYNCHRONOUSLY (before async operations)
+      chrome.sidePanel.setOptions({
         tabId: tab.id,
-        path: "sidepanel.html",
+        path: 'sidepanel.html',
         enabled: true
+      }).then(() => {
+        console.log(`✅ Sidepanel enabled for tab ${tab.id}`);
+      }).catch((error) => {
+        console.error(`Failed to enable sidepanel for tab ${tab.id}:`, error);
       });
-      await chrome.sidePanel.open({ tabId: tab.id });
-      console.log(`Sidepanel opened for tab ${tab.id}: ${tab.url}`);
-    } catch (error) {
-      console.error('Failed to open sidepanel:', error);
+
+      // Open the sidepanel IMMEDIATELY while still in user gesture context
+      chrome.sidePanel.open({ tabId: tab.id }).then(() => {
+        console.log(`✅ Sidepanel opened for tab ${tab.id}: ${tab.url}`);
+      }).catch((error) => {
+        console.error('❌ Failed to open sidepanel:', error);
+      });
+
+      // Inject content script in the background (don't await - let it happen async)
+      injectContentScript(tab.id);
+    } else {
+      // Subsequent clicks: Just open the sidepanel
+      chrome.sidePanel.open({ tabId: tab.id }).then(() => {
+        console.log(`✅ Sidepanel opened for tab ${tab.id}: ${tab.url}`);
+      }).catch((error) => {
+        console.error('❌ Failed to open sidepanel:', error);
+      });
     }
   }
 });
+
+// Initialize sidepanel options on extension install/startup
+chrome.runtime.onInstalled.addListener(() => {
+  initializeSidepanel();
+});
+
+chrome.runtime.onStartup.addListener(() => {
+  initializeSidepanel();
+});
+
+// Also initialize immediately (for when service worker wakes up)
+initializeSidepanel();
 
 // Track page visits for memory
 chrome.webNavigation.onCompleted.addListener((details) => {
@@ -84,6 +222,64 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
     return true;
   }
 
+  // Check if extension is enabled for current tab
+  if (request.type === 'CHECK_TAB_ENABLED') {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0]?.id) {
+        sendResponse({ enabled: isTabEnabled(tabs[0].id) });
+      } else {
+        sendResponse({ enabled: false });
+      }
+    });
+    return true;
+  }
+
+  // Enable extension for current tab
+  if (request.type === 'ENABLE_TAB') {
+    (async () => {
+      try {
+        const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (tabs[0]?.id) {
+          const tabId = tabs[0].id;
+          enableTab(tabId);
+          await injectContentScript(tabId);
+
+          // Enable sidepanel for this specific tab
+          await chrome.sidePanel.setOptions({
+            tabId,
+            path: 'sidepanel.html',
+            enabled: true
+          });
+
+          sendResponse({ success: true });
+        } else {
+          sendResponse({ success: false, error: 'No active tab found' });
+        }
+      } catch (error) {
+        sendResponse({ success: false, error: (error as Error).message });
+      }
+    })();
+    return true;
+  }
+
+  // Disable extension for current tab
+  if (request.type === 'DISABLE_TAB') {
+    (async () => {
+      try {
+        const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (tabs[0]?.id) {
+          await disableTab(tabs[0].id);
+          sendResponse({ success: true });
+        } else {
+          sendResponse({ success: false, error: 'No active tab found' });
+        }
+      } catch (error) {
+        sendResponse({ success: false, error: (error as Error).message });
+      }
+    })();
+    return true;
+  }
+
   // Get browser history
   if (request.type === 'GET_HISTORY') {
     const query = request.query || '';
@@ -109,21 +305,12 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
   // Get page context from content script
   // Helper function to ensure content script is injected
   async function ensureContentScript(tabId: number): Promise<void> {
-    try {
-      // Try to ping the content script
-      await chrome.tabs.sendMessage(tabId, { type: 'PING' });
-    } catch (error) {
-      try {
-        await chrome.scripting.executeScript({
-          target: { tabId },
-          files: ['content.js']
-        });
-        // Wait a bit for the script to initialize
-        await new Promise(resolve => setTimeout(resolve, 200));
-      } catch (injectError) {
-        throw injectError;
-      }
+    // Enable the tab if not already enabled
+    if (!isTabEnabled(tabId)) {
+      enableTab(tabId);
     }
+    // Inject content script
+    await injectContentScript(tabId);
   }
 
   if (request.type === 'GET_PAGE_CONTEXT') {
@@ -146,13 +333,18 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
 
   // Abort all browser operations
   if (request.type === 'ABORT_ALL_BROWSER_OPERATIONS') {
-    console.log('🛑 ABORT_ALL_BROWSER_OPERATIONS received');
-    shouldAbortOperations = true;
-    // Reset the abort flag after a short delay to allow for new operations
-    setTimeout(() => {
-      shouldAbortOperations = false;
-      console.log('✅ Abort flag cleared - ready for new operations');
-    }, 1000);
+    const tabId = sender.tab?.id;
+    if (tabId !== undefined) {
+      console.log(`🛑 ABORT_ALL_BROWSER_OPERATIONS received for tab ${tabId}`);
+      setTabAbortFlag(tabId, true);
+      // Reset the abort flag after a short delay to allow for new operations
+      setTimeout(() => {
+        clearTabAbortFlag(tabId);
+        console.log(`✅ Tab ${tabId} abort flag cleared - ready for new operations`);
+      }, 1000);
+    } else {
+      console.warn('⚠️ ABORT_ALL_BROWSER_OPERATIONS received but no tab ID available');
+    }
     sendResponse({ success: true });
     return true;
   }
@@ -161,17 +353,19 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
   if (request.type === 'EXECUTE_ACTION') {
     (async () => {
       try {
-        // Check if operations should be aborted
-        if (shouldAbortOperations) {
-          console.log('⚠️ Operation aborted by user');
+        const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+        const tabId = tabs[0]?.id;
+
+        // Check if operations should be aborted for this specific tab
+        if (tabId !== undefined && getTabAbortFlag(tabId)) {
+          console.log(`⚠️ Operation aborted by user for tab ${tabId}`);
           sendResponse({ success: false, error: 'Operation aborted by user', aborted: true });
           return;
         }
 
-        const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-        if (tabs[0]?.id) {
-          await ensureContentScript(tabs[0].id);
-          const response = await chrome.tabs.sendMessage(tabs[0].id, {
+        if (tabId) {
+          await ensureContentScript(tabId);
+          const response = await chrome.tabs.sendMessage(tabId, {
             type: 'EXECUTE_ACTION',
             action: request.action,
             target: request.target,
@@ -326,16 +520,18 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
   if (request.type === 'NAVIGATE') {
     (async () => {
       try {
-        // Check if operations should be aborted
-        if (shouldAbortOperations) {
-          console.log('⚠️ Navigation aborted by user');
+        const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+        const tabId = tabs[0]?.id;
+
+        // Check if operations should be aborted for this specific tab
+        if (tabId !== undefined && getTabAbortFlag(tabId)) {
+          console.log(`⚠️ Navigation aborted by user for tab ${tabId}`);
           sendResponse({ success: false, error: 'Navigation aborted by user', aborted: true });
           return;
         }
 
-        const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-        if (tabs[0]?.id) {
-          await chrome.tabs.update(tabs[0].id, { url: request.url });
+        if (tabId) {
+          await chrome.tabs.update(tabId, { url: request.url });
           sendResponse({ success: true, url: request.url });
         } else {
           sendResponse({ success: false, error: 'No active tab found' });
