@@ -252,14 +252,15 @@ function ChatSidebar() {
   const tabMessagesRef = useRef<Record<number, Message[]>>({});
   const currentTabIdRef = useRef<number | null>(null);
   const messagesRef = useRef<Message[]>([]);
-  const lastTypedSelectorRef = useRef<string | null>(null); // Store last typed selector for Enter key
-  const pageContextRef = useRef<any | null>(null);
-  const pageContextTimestampRef = useRef<number>(0);
+  const tabLastTypedSelectorRef = useRef<Record<number, string | null>>({}); // Store last typed selector for Enter key (per-tab)
+  const tabPageContextRef = useRef<Record<number, any | null>>({}); // Per-tab page context
+  const tabPageContextTimestampRef = useRef<Record<number, number>>({}); // Per-tab page context timestamp
 
   const cachePageContext = (context: any) => {
-    if (context && typeof context === 'object') {
-      pageContextRef.current = context;
-      pageContextTimestampRef.current = Date.now();
+    const tabId = getCurrentTabId();
+    if (tabId !== null && context && typeof context === 'object') {
+      tabPageContextRef.current[tabId] = context;
+      tabPageContextTimestampRef.current[tabId] = Date.now();
     }
   };
 
@@ -337,6 +338,36 @@ function ChatSidebar() {
       customMCPInitPromiseRef.current = promise;
     }
   };
+  const getTabPageContext = () => {
+    const tabId = getCurrentTabId();
+    return tabId !== null ? tabPageContextRef.current[tabId] || null : null;
+  };
+  const setTabPageContext = (context: any | null) => {
+    const tabId = getCurrentTabId();
+    if (tabId !== null) {
+      tabPageContextRef.current[tabId] = context;
+    }
+  };
+  const getTabPageContextTimestamp = () => {
+    const tabId = getCurrentTabId();
+    return tabId !== null ? tabPageContextTimestampRef.current[tabId] || 0 : 0;
+  };
+  const setTabPageContextTimestamp = (timestamp: number) => {
+    const tabId = getCurrentTabId();
+    if (tabId !== null) {
+      tabPageContextTimestampRef.current[tabId] = timestamp;
+    }
+  };
+  const getTabLastTypedSelector = () => {
+    const tabId = getCurrentTabId();
+    return tabId !== null ? tabLastTypedSelectorRef.current[tabId] || null : null;
+  };
+  const setTabLastTypedSelector = (selector: string | null) => {
+    const tabId = getCurrentTabId();
+    if (tabId !== null) {
+      tabLastTypedSelectorRef.current[tabId] = selector;
+    }
+  };
   // Helper functions to get or create tab-specific service instances
   const getTabMcpService = (): MCPService => {
     const tabId = getCurrentTabId();
@@ -367,7 +398,7 @@ function ChatSidebar() {
   };
 
   const clearTabResources = (tabId: number) => {
-    // Clear tab-specific resources when switching away from a tab
+    // Clear tab-specific resources when tab is closed to prevent memory leaks
     if (tabAbortControllerRef.current[tabId]) {
       tabAbortControllerRef.current[tabId]?.abort();
       delete tabAbortControllerRef.current[tabId];
@@ -390,6 +421,13 @@ function ChatSidebar() {
     delete tabCustomMCPToolsRef.current[tabId];
     delete tabMcpInitPromiseRef.current[tabId];
     delete tabCustomMCPInitPromiseRef.current[tabId];
+
+    // Clear page context refs (from Stage 2)
+    delete tabPageContextRef.current[tabId];
+    delete tabPageContextTimestampRef.current[tabId];
+    delete tabLastTypedSelectorRef.current[tabId];
+
+    console.log(`✅ Tab ${tabId} cleanup complete`);
   };
 
   // Helper function to match URL against domain patterns and get site instructions text
@@ -514,7 +552,7 @@ function ChatSidebar() {
         }, handleResponse);
       } else if (toolName === 'type') {
         // Store the selector for later use with pressKey
-        lastTypedSelectorRef.current = parameters.selector;
+        setTabLastTypedSelector(parameters.selector);
         chrome.runtime.sendMessage({
           type: 'EXECUTE_ACTION',
           action: 'fill',
@@ -541,7 +579,7 @@ function ChatSidebar() {
         }, handleResponse);
       } else if (toolName === 'pressKey') {
         // Use provided selector or fall back to last typed selector
-        const selectorToUse = parameters.selector || lastTypedSelectorRef.current;
+        const selectorToUse = parameters.selector || getTabLastTypedSelector();
         chrome.runtime.sendMessage({
           type: 'EXECUTE_ACTION',
           action: 'press_key',
@@ -581,10 +619,10 @@ function ChatSidebar() {
   const getCachedPageContext = async (forceRefresh = false): Promise<any | null> => {
     if (
       !forceRefresh &&
-      pageContextRef.current &&
-      Date.now() - pageContextTimestampRef.current < 4000
+      getTabPageContext() &&
+      Date.now() - getTabPageContextTimestamp() < 4000
     ) {
-      return pageContextRef.current;
+      return getTabPageContext();
     }
 
     try {
@@ -1023,8 +1061,11 @@ function ChatSidebar() {
       if (tab.id) {
         console.log('📍 Current tab ID:', tab.id);
         console.log('📍 Current tab URL:', tab.url);
+
+        // Set both state and ref immediately
         setCurrentTabId(tab.id);
         setCurrentTabUrl(tab.url || null);
+        currentTabIdRef.current = tab.id;
 
         // Reset all chat-related states for initial load
         setIsLoading(false);
@@ -1032,9 +1073,10 @@ function ChatSidebar() {
         setInput('');
         setShowBrowserToolsWarning(false);
         setIsUserScrolled(false);
-        
+
         // Load messages for this tab
         if (tabMessagesRef.current[tab.id]) {
+          console.log(`📦 Loading ${tabMessagesRef.current[tab.id].length} cached messages for tab ${tab.id}`);
           setMessages(tabMessagesRef.current[tab.id]);
         } else {
           // Try to load persisted messages from chrome.storage
@@ -1050,6 +1092,8 @@ function ChatSidebar() {
               console.log(`🆕 Starting fresh chat for new tab ${tab.id}`);
               setMessages([]);
               tabMessagesRef.current[tab.id] = [];
+              // Clear any stale storage for this tab
+              chrome.storage.local.remove(`conversations_tab_${tab.id}`).catch(() => {});
             }
           } catch (err) {
             console.error('Failed to load persisted messages:', err);
@@ -1070,10 +1114,27 @@ function ChatSidebar() {
       // Save current tab's resources and messages before switching
       const currentId = currentTabIdRef.current;
       if (currentId !== null) {
-        // Save messages
+        // Save messages to memory
+        console.log(`💾 Saving ${messagesRef.current.length} messages for tab ${currentId} before switching`);
         tabMessagesRef.current[currentId] = messagesRef.current;
-        // Save abort controller state (but don't abort - allow concurrent conversations)
-        tabAbortControllerRef.current[currentId] = abortControllerRef.current;
+
+        // Also persist to storage if enabled
+        if (settings?.enableConversationPersistence !== false && messagesRef.current.length > 0) {
+          chrome.storage.local.set({
+            [`conversations_tab_${currentId}`]: messagesRef.current
+          }).then(() => {
+            console.log(`💾 Persisted ${messagesRef.current.length} messages to storage for tab ${currentId} during tab switch`);
+          }).catch(err => {
+            console.error('Failed to persist messages during tab switch:', err);
+          });
+        }
+
+        // ABORT any active conversation when switching away from this tab
+        if (abortControllerRef.current) {
+          abortControllerRef.current.abort();
+          console.log(`🛑 Aborted active conversation for tab ${currentId} (switching tabs)`);
+        }
+
         // Save MCP client and tools state
         tabMcpClientRef.current[currentId] = mcpClientRef.current;
         tabMcpToolsRef.current[currentId] = mcpToolsRef.current;
@@ -1095,9 +1156,9 @@ function ChatSidebar() {
       // Load new tab's resources (or initialize if new tab)
       const newTabId = activeInfo.tabId;
       currentTabIdRef.current = newTabId;
-      
-      // Restore abort controller for new tab (or create new one)
-      abortControllerRef.current = tabAbortControllerRef.current[newTabId] || null;
+
+      // Always start with a fresh abort controller for this tab
+      abortControllerRef.current = null;
       // Restore MCP client and tools for new tab
       mcpClientRef.current = tabMcpClientRef.current[newTabId] || null;
       mcpToolsRef.current = tabMcpToolsRef.current[newTabId] || null;
@@ -1121,7 +1182,13 @@ function ChatSidebar() {
       setIsUserScrolled(false);
       
       // Load messages for this tab (if any exist)
+      console.log(`🔍 Checking messages for tab ${activeInfo.tabId}:`, {
+        hasInMemory: !!tabMessagesRef.current[activeInfo.tabId],
+        messageCount: tabMessagesRef.current[activeInfo.tabId]?.length || 0
+      });
+
       if (tabMessagesRef.current[activeInfo.tabId]) {
+        console.log(`📦 Loading ${tabMessagesRef.current[activeInfo.tabId].length} cached messages for tab ${activeInfo.tabId}`);
         setMessages(tabMessagesRef.current[activeInfo.tabId]);
       } else {
         // Try to load persisted messages from chrome.storage
@@ -1129,7 +1196,7 @@ function ChatSidebar() {
           const result = await chrome.storage.local.get([`conversations_tab_${activeInfo.tabId}`]);
           const persistedMessages = result[`conversations_tab_${activeInfo.tabId}`];
           if (persistedMessages && Array.isArray(persistedMessages) && persistedMessages.length > 0) {
-            console.log(`📦 Loaded ${persistedMessages.length} persisted messages for tab ${activeInfo.tabId}`);
+            console.log(`📦 Loaded ${persistedMessages.length} persisted messages from storage for tab ${activeInfo.tabId}`);
             setMessages(persistedMessages);
             tabMessagesRef.current[activeInfo.tabId] = persistedMessages;
           } else {
@@ -1137,6 +1204,8 @@ function ChatSidebar() {
             console.log(`🆕 Starting fresh chat for new tab ${activeInfo.tabId}`);
             setMessages([]);
             tabMessagesRef.current[activeInfo.tabId] = [];
+            // Clear any stale storage for this tab
+            chrome.storage.local.remove(`conversations_tab_${activeInfo.tabId}`).catch(() => {});
           }
         } catch (err) {
           console.error('Failed to load persisted messages:', err);
@@ -1161,9 +1230,24 @@ function ChatSidebar() {
 
     chrome.tabs.onUpdated.addListener(handleTabUpdate);
 
+    // Listen for tab removal to cleanup resources and prevent memory leaks
+    const handleTabRemoved = (tabId: number) => {
+      console.log(`🗑️ Tab ${tabId} closed, cleaning up resources`);
+      clearTabResources(tabId);
+
+      // Also cleanup message persistence
+      chrome.storage.local.remove(`conversations_tab_${tabId}`).catch(() => {});
+
+      // Remove from message history
+      delete tabMessagesRef.current[tabId];
+    };
+
+    chrome.tabs.onRemoved.addListener(handleTabRemoved);
+
     return () => {
       chrome.tabs.onActivated.removeListener(handleTabChange);
       chrome.tabs.onUpdated.removeListener(handleTabUpdate);
+      chrome.tabs.onRemoved.removeListener(handleTabRemoved);
     };
   }, []); // Empty array - only run once on mount
 
@@ -1185,7 +1269,8 @@ function ChatSidebar() {
   //   }
   // }, [currentTabUrl, settings]);
 
-  // Save messages whenever they change
+  // Save messages whenever they change (but NOT when currentTabId changes)
+  // Note: Messages are also saved during tab switches in handleTabChange
   useEffect(() => {
     if (currentTabId !== null && messages.length > 0) {
       console.log(`💾 Saving ${messages.length} messages for tab ${currentTabId}`);
@@ -1202,7 +1287,7 @@ function ChatSidebar() {
         });
       }
     }
-  }, [messages, currentTabId, settings?.enableConversationPersistence]);
+  }, [messages, settings?.enableConversationPersistence]); // Removed currentTabId to prevent saving wrong messages during tab switch
 
   useEffect(() => {
     // Load settings on mount
