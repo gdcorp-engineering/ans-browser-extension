@@ -1,5 +1,86 @@
 import type { Message } from './types';
 
+/**
+ * Maximum size for the longest edge of screenshots sent to Claude.
+ * This ensures Claude won't resize the image further internally.
+ * Claude's limit is ~1568px, so 1280px gives us a safe margin.
+ */
+const MAX_SCREENSHOT_LONG_EDGE = 1280;
+
+/**
+ * Resize a base64 screenshot for Claude, maintaining aspect ratio.
+ * Only resizes if the longest edge exceeds MAX_SCREENSHOT_LONG_EDGE.
+ *
+ * Why limit size?
+ * - Claude automatically resizes large images (max ~1568px on longest edge)
+ * - By keeping under 1280px, we KNOW Claude won't resize further
+ * - We maintain aspect ratio to avoid distortion
+ * - We can then calculate the scale factor to convert coordinates to viewport
+ *
+ * Returns: { base64: string, width: number, height: number }
+ */
+async function resizeScreenshotForClaude(
+  base64Data: string
+): Promise<{ base64: string; width: number; height: number }> {
+  try {
+    // Convert base64 to blob
+    const byteCharacters = atob(base64Data);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) {
+      byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
+    const blob = new Blob([byteArray], { type: 'image/png' });
+
+    // Create ImageBitmap from blob to get original dimensions
+    const imageBitmap = await createImageBitmap(blob);
+    const originalWidth = imageBitmap.width;
+    const originalHeight = imageBitmap.height;
+
+    // Calculate the longest edge
+    const longestEdge = Math.max(originalWidth, originalHeight);
+
+    // If already under the limit, return original
+    if (longestEdge <= MAX_SCREENSHOT_LONG_EDGE) {
+      console.log(`📐 Screenshot ${originalWidth}×${originalHeight} is under ${MAX_SCREENSHOT_LONG_EDGE}px limit, no resize needed`);
+      return { base64: base64Data, width: originalWidth, height: originalHeight };
+    }
+
+    // Calculate scale factor to fit longest edge within limit
+    const scale = MAX_SCREENSHOT_LONG_EDGE / longestEdge;
+    const targetWidth = Math.round(originalWidth * scale);
+    const targetHeight = Math.round(originalHeight * scale);
+
+    console.log(`📐 Resizing screenshot from ${originalWidth}×${originalHeight} to ${targetWidth}×${targetHeight} (scale: ${scale.toFixed(4)})`);
+
+    // Use OffscreenCanvas to resize (available in modern browsers)
+    const canvas = new OffscreenCanvas(targetWidth, targetHeight);
+    const ctx = canvas.getContext('2d');
+
+    if (!ctx) {
+      console.warn('⚠️ Could not get canvas context, returning original image');
+      return { base64: base64Data, width: originalWidth, height: originalHeight };
+    }
+
+    // Draw the image scaled to target dimensions (maintains aspect ratio)
+    ctx.drawImage(imageBitmap, 0, 0, targetWidth, targetHeight);
+
+    // Convert back to blob then base64
+    const resizedBlob = await canvas.convertToBlob({ type: 'image/png' });
+    const arrayBuffer = await resizedBlob.arrayBuffer();
+    const resizedBase64 = btoa(
+      new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
+    );
+
+    console.log(`✅ Screenshot resized successfully to ${targetWidth}×${targetHeight} (aspect ratio preserved)`);
+    return { base64: resizedBase64, width: targetWidth, height: targetHeight };
+  } catch (error) {
+    console.error('❌ Failed to resize screenshot:', error);
+    // Return original if resize fails - estimate dimensions based on common sizes
+    return { base64: base64Data, width: 1280, height: 720 };
+  }
+}
+
 // Browser tool definitions for Anthropic API
 const BROWSER_TOOLS = [
   {
@@ -104,6 +185,149 @@ const BROWSER_TOOLS = [
     },
   },
 ];
+
+/**
+ * Check if content contains page context (screenshots or large DOM data)
+ */
+function hasPageContext(content: any): boolean {
+  if (!Array.isArray(content)) return false;
+  return content.some((item: any) => {
+    // Check for images (screenshots)
+    if (item.type === 'image') return true;
+    // Check for tool_result with large content (DOM context from getPageContext)
+    if (item.type === 'tool_result' && typeof item.content === 'string') {
+      // Page context typically has URLs, textContent, links arrays
+      try {
+        const parsed = JSON.parse(item.content);
+        // If it has url, textContent, or links - it's likely page context
+        if (parsed.url || parsed.textContent || parsed.links || parsed.interactiveElements) {
+          return true;
+        }
+      } catch {
+        // Not JSON, check if it's a large text block
+        return item.content.length > 2000;
+      }
+    }
+    return false;
+  });
+}
+
+/**
+ * Create a summary of stripped page context for older messages
+ */
+function summarizePageContext(content: any): string {
+  if (!Array.isArray(content)) return '[Previous action]';
+
+  const summaries: string[] = [];
+
+  for (const item of content) {
+    if (item.type === 'image') {
+      summaries.push('[Screenshot taken]');
+    } else if (item.type === 'tool_result') {
+      try {
+        const parsed = JSON.parse(item.content);
+        if (parsed.url) {
+          summaries.push(`[Page context: ${parsed.url}]`);
+        } else if (parsed.success !== undefined) {
+          summaries.push(`[Action: ${parsed.success ? 'succeeded' : 'failed'}]`);
+        } else {
+          summaries.push('[Tool result]');
+        }
+      } catch {
+        summaries.push('[Tool result]');
+      }
+    }
+  }
+
+  return summaries.length > 0 ? summaries.join(' ') : '[Previous action]';
+}
+
+/**
+ * Prepare messages for API by separating chat history from page context
+ * Keeps longer chat history but only recent page context (screenshots, DOM)
+ *
+ * @param messages - Full message history
+ * @param chatHistoryLength - Number of pure chat messages to keep (default: 20)
+ * @param pageContextHistoryLength - Number of page context messages to keep (default: 2)
+ * @returns Optimized messages with full chat history but trimmed page context
+ */
+function prepareMessagesWithSeparateHistory(
+  messages: Message[],
+  chatHistoryLength: number = 20,
+  pageContextHistoryLength: number = 2
+): Message[] {
+  console.log(`📚 Preparing messages with separate history management`);
+  console.log(`   Chat history: ${chatHistoryLength}, Page context: ${pageContextHistoryLength}`);
+  console.log(`   Input messages: ${messages.length}`);
+
+  // Track which messages have page context
+  const messageInfo = messages.map((msg, index) => ({
+    index,
+    message: msg,
+    hasPageContext: msg.role === 'user' && hasPageContext(msg.content),
+  }));
+
+  // Find all messages with page context
+  const pageContextIndices = messageInfo
+    .filter(info => info.hasPageContext)
+    .map(info => info.index);
+
+  console.log(`   Messages with page context: ${pageContextIndices.length}`);
+
+  // If we have more page context messages than allowed, we need to strip some
+  const pageContextToStrip = pageContextIndices.slice(0, -pageContextHistoryLength);
+  const pageContextToKeep = new Set(pageContextIndices.slice(-pageContextHistoryLength));
+
+  console.log(`   Stripping page context from ${pageContextToStrip.length} messages`);
+  console.log(`   Keeping page context in ${pageContextToKeep.size} messages`);
+
+  // Process messages: strip old page context, keep recent
+  const processedMessages: Message[] = [];
+
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i];
+
+    if (pageContextToStrip.includes(i)) {
+      // This message has page context we want to strip
+      // Replace the content with a summary
+      const summary = summarizePageContext(msg.content);
+      processedMessages.push({
+        ...msg,
+        content: summary,
+      });
+      console.log(`   Stripped message ${i}: ${summary}`);
+    } else {
+      // Keep message as-is
+      processedMessages.push(msg);
+    }
+  }
+
+  // Now apply chat history limit to pure chat messages
+  // We want to keep the last N messages, but we've already processed page context
+  if (processedMessages.length > chatHistoryLength) {
+    // Smart trim: preserve tool_use/tool_result pairs
+    let trimmed = processedMessages.slice(-chatHistoryLength);
+
+    // Check if first message is a user message with tool_result
+    const firstMsg = trimmed[0];
+    if (firstMsg?.role === 'user' && Array.isArray(firstMsg.content)) {
+      const hasToolResult = (firstMsg.content as any[]).some((item: any) => item.type === 'tool_result');
+      if (hasToolResult) {
+        // Include one more message to get the assistant's tool_use
+        const firstMsgIndex = processedMessages.length - chatHistoryLength;
+        if (firstMsgIndex > 0) {
+          trimmed = processedMessages.slice(-(chatHistoryLength + 1));
+        }
+      }
+    }
+
+    console.log(`   Final message count: ${trimmed.length} (from ${processedMessages.length})`);
+    return trimmed;
+  }
+
+  console.log(`   Final message count: ${processedMessages.length}`);
+  return processedMessages;
+}
 
 /**
  * Summarize old messages to reduce token usage while preserving context
@@ -232,35 +456,52 @@ export async function streamAnthropicWithBrowserTools(
   // Keep only the most recent messages to avoid context length issues
   // Page context can be large, and tool use adds more messages during the loop
   // User can configure how much history to keep in settings
-  const MAX_HISTORY_MESSAGES = settings?.conversationHistoryLength || 10; // Default: 10 messages (increased from 1)
+  const MAX_HISTORY_MESSAGES = settings?.conversationHistoryLength || 10; // Default: 10 messages
+  const CHAT_HISTORY_LENGTH = settings?.chatHistoryLength || 20; // Default: 20 chat messages
+  const PAGE_CONTEXT_HISTORY_LENGTH = settings?.pageContextHistoryLength || 2; // Default: 2 page contexts
+  const ENABLE_SEPARATE_HISTORY = settings?.enableSeparateHistoryManagement !== false; // Default: true
 
   console.log(`🚀 streamAnthropicWithBrowserTools called with ${messages.length} messages`);
-  console.log(`🚀 MAX_HISTORY_MESSAGES: ${MAX_HISTORY_MESSAGES}`);
   console.log(`🚀 Browser tools enabled: ${browserToolsEnabled}`);
   console.log(`🚀 Additional tools count: ${additionalTools?.length || 0}`);
+  console.log(`🚀 Separate history management: ${ENABLE_SEPARATE_HISTORY}`);
 
-  // Smart trimming to preserve tool_use/tool_result pairs
   let conversationMessages: Message[] = [];
-  if (messages.length > MAX_HISTORY_MESSAGES) {
-    console.log(`✂️ Trimming messages from ${messages.length} to ${MAX_HISTORY_MESSAGES}`);
-    let trimmed = messages.slice(-MAX_HISTORY_MESSAGES);
 
-    // Check if first message is a user message with tool_result
-    const firstMsg = trimmed[0];
-    if (firstMsg?.role === 'user' && Array.isArray(firstMsg.content)) {
-      const hasToolResult = (firstMsg.content as any[]).some((item: any) => item.type === 'tool_result');
-      if (hasToolResult) {
-        // Include one more message to get the assistant's tool_use
-        const firstMsgIndex = messages.length - MAX_HISTORY_MESSAGES;
-        if (firstMsgIndex > 0) {
-          trimmed = messages.slice(-(MAX_HISTORY_MESSAGES + 1));
-          console.log(`📎 Preserved tool_use/tool_result pair during initial trim`);
+  // Use separate history management if enabled (separates chat from page context)
+  if (ENABLE_SEPARATE_HISTORY) {
+    console.log(`📚 Using separate history: chat=${CHAT_HISTORY_LENGTH}, pageContext=${PAGE_CONTEXT_HISTORY_LENGTH}`);
+    conversationMessages = prepareMessagesWithSeparateHistory(
+      messages,
+      CHAT_HISTORY_LENGTH,
+      PAGE_CONTEXT_HISTORY_LENGTH
+    );
+  } else {
+    // Fallback to legacy trimming behavior
+    console.log(`🚀 Using legacy trimming: MAX_HISTORY_MESSAGES=${MAX_HISTORY_MESSAGES}`);
+
+    // Smart trimming to preserve tool_use/tool_result pairs
+    if (messages.length > MAX_HISTORY_MESSAGES) {
+      console.log(`✂️ Trimming messages from ${messages.length} to ${MAX_HISTORY_MESSAGES}`);
+      let trimmed = messages.slice(-MAX_HISTORY_MESSAGES);
+
+      // Check if first message is a user message with tool_result
+      const firstMsg = trimmed[0];
+      if (firstMsg?.role === 'user' && Array.isArray(firstMsg.content)) {
+        const hasToolResult = (firstMsg.content as any[]).some((item: any) => item.type === 'tool_result');
+        if (hasToolResult) {
+          // Include one more message to get the assistant's tool_use
+          const firstMsgIndex = messages.length - MAX_HISTORY_MESSAGES;
+          if (firstMsgIndex > 0) {
+            trimmed = messages.slice(-(MAX_HISTORY_MESSAGES + 1));
+            console.log(`📎 Preserved tool_use/tool_result pair during initial trim`);
+          }
         }
       }
+      conversationMessages = trimmed;
+    } else {
+      conversationMessages = [...messages];
     }
-    conversationMessages = trimmed;
-  } else {
-    conversationMessages = [...messages];
   }
 
   // Smart summarization: If enabled and we have many messages, summarize old ones
@@ -308,7 +549,7 @@ export async function streamAnthropicWithBrowserTools(
   console.log('🔧 All tool names:', allTools.map((t: any) => t.name).join(', '));
   console.log('🔧 Starting with', conversationMessages.length, 'messages (limited from', messages.length, ')');
 
-  const MAX_TURNS = 10; // Prevent infinite loops
+  const MAX_TURNS = 20; // Prevent infinite loops
   let turnCount = 0;
 
   try {
@@ -604,15 +845,23 @@ Preference order:
 2. clickElement with selector: clickElement({selector: "button.login"})
 3. Coordinate click (last resort): click({x: 100, y: 200})
 
-For coordinates (use ONLY when DOM methods fail):
-- Take screenshot first to see exact location
-- Screenshot shows viewport - measure from top-left corner (0,0)
-- Measure to the CENTER of the ENTIRE clickable control (button/link/tab), not just the text
-- Include all visible parts: text, badges, icons, padding - measure to center of the whole control
-- For "Assigned to me 11": measure center of the entire tab including both text and badge
-- Be precise - off by even 20-30 pixels can miss the target
-- Double-check your measurement before clicking
-- If click misses, take new screenshot and measure again more carefully
+For coordinate clicks (screenshots are resized with max 1280px on longest edge):
+⚠️ Screenshots are resized to fit within 1280px (longest edge), maintaining aspect ratio.
+⚠️ You MUST convert your measurements to viewport coordinates using the scale factors provided.
+
+CONVERSION PROCESS:
+1. Measure the element's center position in the screenshot (x, y)
+2. Apply the scale factors shown in the screenshot result:
+   click_x = measured_x × scale_x
+   click_y = measured_y × scale_y
+3. Use the converted coordinates: click({x: click_x, y: click_y})
+
+TIPS FOR ACCURATE CLICKING:
+- Measure to the CENTER of the entire clickable element (not just the text)
+- Include badges, icons, padding - click center of whole control
+- For tabs like "Assigned to me 11", measure center of entire tab including badge
+- Being off by 20-30px can miss the target - be precise with measurements
+- ALWAYS apply the scale factors before clicking!
 
 ⌨️ TYPING TEXT:
 1. Focus field first if needed: clickElement to focus
@@ -977,30 +1226,39 @@ Remember: When browser tools are disabled, always tell users to perform browser 
         // Handle screenshot results differently - include image data
         if (toolUse.name === 'screenshot' && result.success && result.screenshot) {
           // Extract base64 data from data URL
-          const base64Data = result.screenshot.split(',')[1];
+          const originalBase64 = result.screenshot.split(',')[1];
           const viewport = result.viewport || { width: 1280, height: 800, devicePixelRatio: 1 };
           const dpr = viewport.devicePixelRatio || 1;
-          const usingDefaults = !result.viewport;
           console.log('📐 Viewport Info:', {
             width: viewport.width,
             height: viewport.height,
             dpr: dpr,
-            usingDefaults: usingDefaults
+            hasViewport: !!result.viewport
           });
-          const viewport_x = 100 * viewport.width / 1920;
-          const viewport_y = 50 * viewport.height / 1080;
-          const coordinateInstructions = `Click Task Procedure:
-Step 1. Measure the attached image dimensions in pixels to obtain: image_width and image_height.
-Step 2. Locate the center point of the element you want to click in the screenshot and record its pixel coordinates as: screenshot_x and screenshot_y
-Step 3. Apply the following conversion formulas to calculate viewport coordinates:
-   * viewport_x = (screenshot_x * ${viewport.width}) / (image_width)
-   * viewport_y = (screenshot_y * ${viewport.height}) / (image_height)
-Step 4. Output the final click coordinates as: (viewport_x, viewport_y).
-Example calculation:
-If image_max_x = 1920, image_max_y = 1080, and the element is at image_x = 100, image_y = 50:
-viewport_x = (100 * ${viewport.width}) ÷ 1920 = ${viewport_x}
-viewport_y = (50 * ${viewport.height}) ÷ 1080 = ${viewport_y}
-Final coordinates: (${viewport_x}, ${viewport_y})`;
+
+          // Resize screenshot to fixed size so we know exactly what Claude sees
+          // This is small enough that Claude won't resize it further
+          const resized = await resizeScreenshotForClaude(originalBase64);
+
+          // Calculate scale factors from image to viewport
+          const scaleX = viewport.width / resized.width;
+          const scaleY = viewport.height / resized.height;
+
+          // Instructions with conversion formula
+          const coordinateInstructions = `Screenshot captured.
+📐 IMAGE SIZE: ${resized.width}×${resized.height}px
+📐 VIEWPORT SIZE: ${viewport.width}×${viewport.height}px
+
+⚠️ COORDINATE CONVERSION REQUIRED:
+When you measure coordinates in this image, convert them to viewport coordinates:
+  click_x = measured_x × ${scaleX.toFixed(2)}
+  click_y = measured_y × ${scaleY.toFixed(2)}
+
+Example: Element at image position (400, 300):
+  click_x = 400 × ${scaleX.toFixed(2)} = ${Math.round(400 * scaleX)}
+  click_y = 300 × ${scaleY.toFixed(2)} = ${Math.round(300 * scaleY)}
+  Use: click({x: ${Math.round(400 * scaleX)}, y: ${Math.round(300 * scaleY)}})`;
+
           toolResults.push({
             type: 'tool_result',
             tool_use_id: toolUse.id,
@@ -1014,7 +1272,7 @@ Final coordinates: (${viewport_x}, ${viewport_y})`;
                 source: {
                   type: 'base64',
                   media_type: 'image/png',
-                  data: base64Data,
+                  data: resized.base64,
                 },
               },
             ],
