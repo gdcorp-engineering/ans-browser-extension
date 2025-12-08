@@ -1481,7 +1481,7 @@ async function executePageAction(
           return { success: true, message: `Pressed ${keyToPress} key` };
         }
         return { success: false, message: 'No focused element to send key to' };
-      
+
       case 'clear_input':
         // Clear the currently focused input field
         const activeEl = document.activeElement as HTMLInputElement;
@@ -1499,12 +1499,12 @@ async function executePageAction(
           return { success: true, message: 'Cleared input field' };
         }
         return { success: false, message: 'No input field focused to clear' };
-      
+
       case 'key_combination':
         // Press a combination of keys like ["Control", "A"] or ["Enter"]
         const keysList = keys || ['Enter'];
         const targetEl = document.activeElement || document.body;
-        
+
         // Hold down all keys except the last one
         for (let i = 0; i < keysList.length - 1; i++) {
           const k = keysList[i];
@@ -1515,13 +1515,13 @@ async function executePageAction(
             cancelable: true
           }));
         }
-        
+
         // Press the last key
         const lastKey = keysList[keysList.length - 1];
         targetEl.dispatchEvent(new KeyboardEvent('keydown', { key: lastKey, code: lastKey, bubbles: true }));
         targetEl.dispatchEvent(new KeyboardEvent('keypress', { key: lastKey, code: lastKey, bubbles: true }));
         targetEl.dispatchEvent(new KeyboardEvent('keyup', { key: lastKey, code: lastKey, bubbles: true }));
-        
+
         // Release all held keys in reverse order
         for (let i = keysList.length - 2; i >= 0; i--) {
           const k = keysList[i];
@@ -1532,9 +1532,9 @@ async function executePageAction(
             cancelable: true
           }));
         }
-        
+
         return { success: true, message: `Pressed key combination: ${keysList.join('+')}` };
-      
+
       case 'hover':
         // Hover at specific coordinates
         if (coordinates) {
@@ -1559,7 +1559,7 @@ async function executePageAction(
           return { success: false, message: `No element at (${coordinates.x}, ${coordinates.y})` };
         }
         return { success: false, message: 'Coordinates required for hover' };
-      
+
       case 'drag_drop':
         // Drag and drop from coordinates to destination
         if (coordinates && destination) {
