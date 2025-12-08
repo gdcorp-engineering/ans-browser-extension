@@ -1,8 +1,8 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { createRoot } from 'react-dom/client';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import type { Settings, MCPClient, Message, SiteInstruction, ServiceMapping } from './types';
+import type { Settings, MCPClient, Message, SiteInstruction, ServiceMapping, Provider, MCPServerConfig } from './types';
 import { GeminiResponseSchema } from './types';
 import { experimental_createMCPClient, stepCountIs } from 'ai';
 import { streamAnthropic } from './anthropic-service';
@@ -37,6 +37,23 @@ const getModelDisplayName = (modelId: string | undefined): string => {
   return MODEL_DISPLAY_NAMES[modelId] || modelId;
 };
 
+const QUICK_PROMPTS = [
+  { id: 'purpose', label: 'What is the purpose of this page?' },
+  { id: 'summary', label: 'Summarize the main content' },
+  { id: 'understand', label: 'Help me understand this page better' },
+  { id: 'actions', label: 'What should I do next here?' },
+];
+
+const MODEL_QUICK_OPTIONS: Array<{ id: string; provider: Provider; name: string; description: string }> = [
+  { id: 'claude-sonnet-4-5-20250929', provider: 'anthropic', name: 'Claude Sonnet 4.5', description: 'Latest and most capable' },
+  { id: 'claude-3-5-sonnet-20241022', provider: 'anthropic', name: 'Claude 3.5 Sonnet', description: 'Most intelligent model' },
+  { id: 'claude-3-5-haiku-20241022', provider: 'anthropic', name: 'Claude 3.5 Haiku', description: 'Fastest model' },
+  { id: 'claude-3-opus-20240229', provider: 'anthropic', name: 'Claude 3 Opus', description: 'Previous generation' },
+  { id: 'gemini-2.5-computer-use-preview-10-2025', provider: 'google', name: 'Gemini 2.5 Computer Use', description: 'Browser automation model' },
+  { id: 'gemini-2.5-pro', provider: 'google', name: 'Gemini 2.5 Pro', description: 'General reasoning' },
+  { id: 'gemini-2.5-flash', provider: 'google', name: 'Gemini 2.5 Flash', description: 'Fast responses' },
+];
+
 const BROWSER_TOOL_NAMES = new Set([
   'navigate',
   'clickElement',
@@ -47,6 +64,13 @@ const BROWSER_TOOL_NAMES = new Set([
   'screenshot',
   'pressKey',
 ]);
+
+type ChatSummary = {
+  tabId: number;
+  title: string;
+  url?: string;
+  messageCount: number;
+};
 
 // Custom component to handle link clicks - opens in new tab
 const LinkComponent = ({ href, children }: { href?: string; children?: React.ReactNode }) => {
@@ -182,6 +206,8 @@ const MessageParser = ({ content }: { content: string }) => {
 function ChatSidebar() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const dropdownContainerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -203,6 +229,9 @@ function ChatSidebar() {
   const toolAudioLinksRef = useRef<string[]>([]); // Track audio links from tool results
   const [isToolExecuting, setIsToolExecuting] = useState(false); // Track when tools are executing
   const hasLoadedTrustedAgentOptInRef = useRef(false); // Track if we've loaded from storage
+  const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  const [chatMenuOpen, setChatMenuOpen] = useState(false);
+  const [chatSummaries, setChatSummaries] = useState<ChatSummary[]>([]);
 
   // Load trustedAgentOptIn from storage on mount
   useEffect(() => {
@@ -255,6 +284,112 @@ function ChatSidebar() {
   const tabLastTypedSelectorRef = useRef<Record<number, string | null>>({}); // Store last typed selector for Enter key (per-tab)
   const tabPageContextRef = useRef<Record<number, any | null>>({}); // Per-tab page context
   const tabPageContextTimestampRef = useRef<Record<number, number>>({}); // Per-tab page context timestamp
+
+  const quickPromptMatches = useMemo(() => {
+    const normalized = input.trim().toLowerCase();
+    if (!normalized) {
+      return QUICK_PROMPTS.slice(0, 4);
+    }
+    return QUICK_PROMPTS.filter(prompt =>
+      prompt.label.toLowerCase().includes(normalized)
+    ).slice(0, 4);
+  }, [input]);
+
+  const refreshChatSummaries = useCallback(async () => {
+    try {
+      const tabs = await chrome.tabs.query({ currentWindow: true });
+      const summaries: ChatSummary[] = [];
+
+      for (const tab of tabs) {
+        if (!tab.id || !tab.url) continue;
+        if (tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://')) continue;
+
+        let messageCount = tabMessagesRef.current[tab.id]?.length || 0;
+        if (!messageCount) {
+          try {
+            const result = await chrome.storage.local.get([`conversations_tab_${tab.id}`]);
+            const persistedMessages = result[`conversations_tab_${tab.id}`];
+            if (Array.isArray(persistedMessages)) {
+              messageCount = persistedMessages.length;
+            }
+          } catch (error) {
+            console.warn('Failed to load persisted messages for chat summary:', error);
+          }
+        }
+
+        summaries.push({
+          tabId: tab.id,
+          title: tab.title || `Chat ${tab.id}`,
+          url: tab.url,
+          messageCount,
+        });
+      }
+
+      setChatSummaries(summaries);
+    } catch (error) {
+      console.warn('Failed to refresh chat summaries:', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshChatSummaries();
+  }, [refreshChatSummaries, currentTabId, messages]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (!dropdownContainerRef.current) return;
+      if (!dropdownContainerRef.current.contains(event.target as Node)) {
+        setModelMenuOpen(false);
+        setChatMenuOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleQuickPromptClick = (promptText: string) => {
+    setInput(promptText);
+    requestAnimationFrame(() => {
+      inputRef.current?.focus();
+    });
+  };
+
+  const handleModelQuickSelect = async (option: { id: string; provider: Provider }) => {
+    if (!settings) {
+      openSettings();
+      return;
+    }
+
+    const updatedSettings = {
+      ...settings,
+      provider: option.provider,
+      model: option.id,
+    };
+
+    setSettings(updatedSettings);
+    setModelMenuOpen(false);
+
+    try {
+      await chrome.storage.local.set({ atlasSettings: updatedSettings });
+      chrome.runtime.sendMessage({ type: 'SETTINGS_UPDATED', action: 'model_changed' }, () => {
+        if (chrome.runtime.lastError) {
+          console.log('Sidebar not active during model change, continuing');
+        }
+      });
+    } catch (error) {
+      console.error('Failed to update model from quick switcher:', error);
+    }
+  };
+
+  const handleChatSwitch = async (tabId: number) => {
+    try {
+      await chrome.tabs.update(tabId, { active: true });
+      setChatMenuOpen(false);
+    } catch (error) {
+      console.warn('Failed to switch tab for chat:', error);
+    }
+  };
 
   const cachePageContext = (context: any) => {
     const tabId = getCurrentTabId();
@@ -918,7 +1053,9 @@ function ChatSidebar() {
     }
 
     // Determine which servers to connect based on mappings
-    let serversToConnect = localSettings.mcpServers.filter(s => s.enabled);
+    const configuredServers: MCPServerConfig[] = (localSettings.mcpServers || []) as MCPServerConfig[];
+    localSettings.mcpServers = configuredServers;
+    let serversToConnect: MCPServerConfig[] = configuredServers.filter((server) => server.enabled);
 
     if (localSettings.serviceMappings && localSettings.serviceMappings.length > 0) {
       // If mappings exist, only use mapped services
@@ -927,12 +1064,14 @@ function ChatSidebar() {
       if (mappedServerIds.length > 0) {
         console.log(`🗺️  Found ${mappedServerIds.length} service mapping(s) for current site`);
         console.log(`🗺️  Mapped server IDs:`, mappedServerIds);
-        console.log(`🗺️  Available server IDs:`, localSettings.mcpServers.map((s: any) => s.id));
+        console.log(`🗺️  Available server IDs:`, configuredServers.map((server) => server.id));
 
-        serversToConnect = serversToConnect.filter(s => mappedServerIds.includes(s.id));
+        serversToConnect = serversToConnect.filter((server) => mappedServerIds.includes(server.id));
 
         // Check if mapped services exist in mcpServers
-        const missingServerIds = mappedServerIds.filter(id => !localSettings.mcpServers.find((s: any) => s.id === id));
+        const missingServerIds = mappedServerIds.filter(
+          (id) => !configuredServers.find((server) => server.id === id)
+        );
         if (missingServerIds.length > 0) {
           console.warn(`⚠️  Mapped services not found in configured services:`, missingServerIds);
           console.warn(`⚠️  These services will be auto-added from mappings`);
@@ -3944,23 +4083,104 @@ GUIDELINES:
   return (
     <div className="chat-container dark-mode">
       <div className="chat-header">
-        <div style={{ flex: 1 }}>
+        <div className="header-meta">
           <h1>GoDaddy ANS</h1>
           <p>
             {(settings?.provider
               ? settings.provider.charAt(0).toUpperCase() + settings.provider.slice(1)
               : 'Unknown')} · {browserToolsEnabled
                 ? (settings?.provider === 'google'
-                  ? getModelDisplayName('gemini-2.5-computer-use-preview-10-2025')
-                  : (settings?.model === 'custom' && settings?.customModelName
-                    ? String(settings.customModelName || '')
-                    : getModelDisplayName(settings?.model)) + ' (Browser Tools)')
+                  ? `${getModelDisplayName('gemini-2.5-computer-use-preview-10-2025')} (Browser Tools)`
+                  : `${getModelDisplayName(settings?.model)} (Browser Tools)`)
                 : (settings?.model === 'custom' && settings?.customModelName
                   ? String(settings.customModelName || '')
                   : getModelDisplayName(settings?.model))}
           </p>
         </div>
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+        <div className="header-actions" ref={dropdownContainerRef}>
+          <div className="menu-trigger">
+            <button
+              type="button"
+              className="toolbar-button"
+              onClick={() => setModelMenuOpen(prev => !prev)}
+            >
+              <span className="toolbar-label">Model</span>
+              <span className="toolbar-value">
+                {browserToolsEnabled && settings?.provider !== 'google'
+                  ? `${getModelDisplayName(settings?.model)}*`
+                  : getModelDisplayName(browserToolsEnabled ? 'gemini-2.5-computer-use-preview-10-2025' : settings?.model)}
+              </span>
+              <span className="toolbar-caret">▾</span>
+            </button>
+            {modelMenuOpen && (
+              <div className="dropdown-panel">
+                {MODEL_QUICK_OPTIONS.map(option => {
+                  const isActive = settings?.model === option.id && settings?.provider === option.provider;
+                  return (
+                    <button
+                      key={option.id}
+                      className={`dropdown-option ${isActive ? 'active' : ''}`}
+                      onClick={() => handleModelQuickSelect(option)}
+                    >
+                      <div className="dropdown-option-title">{option.name}</div>
+                      <div className="dropdown-option-meta">{option.description}</div>
+                    </button>
+                  );
+                })}
+                <div className="dropdown-note">
+                  Need more? Open Settings for advanced options.
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="menu-trigger">
+            <button
+              type="button"
+              className="toolbar-button"
+              onClick={() => setChatMenuOpen(prev => !prev)}
+            >
+              <span className="toolbar-label">Switch Chat</span>
+              <span className="toolbar-value">
+                {chatSummaries.find(summary => summary.tabId === currentTabId)?.title || 'Current tab'}
+              </span>
+              <span className="toolbar-caret">▾</span>
+            </button>
+            {chatMenuOpen && (
+              <div className="dropdown-panel dropdown-panel-wide">
+                <button
+                  className="dropdown-option"
+                  onClick={() => {
+                    newChat();
+                    setChatMenuOpen(false);
+                  }}
+                >
+                  <div className="dropdown-option-title">Start new chat</div>
+                  <div className="dropdown-option-meta">Clears the current conversation</div>
+                </button>
+                <div className="dropdown-divider" />
+                {chatSummaries.length === 0 ? (
+                  <div className="dropdown-empty">No recent chats yet.</div>
+                ) : (
+                  chatSummaries.map(summary => (
+                    <button
+                      key={summary.tabId}
+                      className={`dropdown-option ${summary.tabId === currentTabId ? 'active' : ''}`}
+                      onClick={() => handleChatSwitch(summary.tabId)}
+                    >
+                      <div className="dropdown-option-title">
+                        {summary.title}
+                      </div>
+                      <div className="dropdown-option-meta">
+                        {summary.messageCount > 0
+                          ? `${summary.messageCount} message${summary.messageCount === 1 ? '' : 's'}`
+                          : 'No messages yet'}
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
           <button
             onClick={toggleBrowserTools}
             className={`settings-icon-btn ${browserToolsEnabled ? 'active' : ''}`}
@@ -4382,33 +4602,51 @@ GUIDELINES:
         <div ref={messagesEndRef} />
       </div>
 
-      <form className="input-form" onSubmit={handleSubmit}>
-        <input
-          type="text"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder={!settings ? "Loading settings..." : "Message GoDaddy ANS..."}
-          disabled={isLoading || !settings}
-          className="chat-input"
-        />
-        {isLoading ? (
-          <button
-            type="button"
-            onClick={stop}
-            className="send-button stop-button"
-          >
-            ⬛
-          </button>
-        ) : (
-          <button
-            type="submit"
-            disabled={!input.trim() || !settings}
-            className="send-button"
-          >
-            ⏎
-          </button>
+      <div className="composer">
+        {quickPromptMatches.length > 0 && (
+          <div className="quick-prompts">
+            {quickPromptMatches.map((prompt) => (
+              <button
+                key={prompt.id}
+                type="button"
+                className="quick-prompt"
+                onClick={() => handleQuickPromptClick(prompt.label)}
+                disabled={isLoading}
+              >
+                {prompt.label}
+              </button>
+            ))}
+          </div>
         )}
-      </form>
+        <form className="input-form" onSubmit={handleSubmit}>
+          <input
+            ref={inputRef}
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder={!settings ? "Loading settings..." : "Message GoDaddy ANS..."}
+            disabled={isLoading || !settings}
+            className="chat-input"
+          />
+          {isLoading ? (
+            <button
+              type="button"
+              onClick={stop}
+              className="send-button stop-button"
+            >
+              ⬛
+            </button>
+          ) : (
+            <button
+              type="submit"
+              disabled={!input.trim() || !settings}
+              className="send-button"
+            >
+              ↵
+            </button>
+          )}
+        </form>
+      </div>
     </div>
   );
 }
