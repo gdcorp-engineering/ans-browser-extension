@@ -27,14 +27,14 @@ body {
 }
 
 .chat-header {
-  padding: 16px 20px;
+  padding: 12px 20px;
   background: rgba(4, 7, 20, 0.9);
   border-bottom: 1px solid rgba(148, 163, 184, 0.25);
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
   position: sticky;
   top: 0;
   z-index: 10;
@@ -69,15 +69,15 @@ body {
 
 .menu-trigger {
   position: relative;
-  width: 100%;
+  width: auto;
 }
 
 .settings-icon-btn {
   font-family: inherit;
-  font-size: 12px;
+  font-size: 11px;
   cursor: pointer;
-  width: 44px;
-  height: 44px;
+  width: 36px;
+  height: 36px;
   padding: 0;
   display: inline-flex;
   align-items: center;
@@ -85,28 +85,28 @@ body {
   background: rgba(15, 23, 42, 0.8);
   color: #e2e8f0;
   border: 1px solid rgba(148, 163, 184, 0.25);
-  border-radius: 14px;
+  border-radius: 10px;
   transition: border-color 0.15s ease, transform 0.15s ease, background 0.15s ease;
-  box-shadow: 0 12px 30px rgba(2, 6, 23, 0.3);
+  box-shadow: 0 8px 18px rgba(2, 6, 23, 0.25);
 }
 
 .header-actions .settings-icon-btn {
-  flex: 0 0 44px;
+  flex: 0 0 36px;
 }
 
 .header-actions .menu-trigger .toolbar-button {
-  width: 100%;
+  width: auto;
 }
 
-@media (min-width: 520px) {
+@media (max-width: 520px) {
   .menu-trigger {
-    width: auto;
+    width: 100%;
   }
   .header-actions {
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
   }
   .header-actions .menu-trigger .toolbar-button {
-    width: auto;
+    width: 100%;
   }
 }
 
@@ -130,17 +130,18 @@ body {
   background: rgba(15, 23, 42, 0.8);
   border: 1px solid rgba(148, 163, 184, 0.4);
   color: #e2e8f0;
-  border-radius: 14px;
-  padding: 8px 14px;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  min-width: 0;
+  border-radius: 10px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  max-height: 36px;
   cursor: pointer;
   transition: border-color 0.15s ease, transform 0.15s ease, background 0.15s ease;
   font: inherit;
-  gap: 2px;
-  box-shadow: 0 12px 30px rgba(2, 6, 23, 0.3);
+  gap: 6px;
+  box-shadow: 0 6px 14px rgba(2, 6, 23, 0.2);
 }
 
 .toolbar-button:hover {
@@ -150,20 +151,20 @@ body {
 }
 
 .toolbar-label {
-  font-size: 11px;
+  font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: #94a3b8;
 }
 
 .toolbar-value {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   color: #e2e8f0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  width: 100%;
+  max-width: 180px;
 }
 
 .toolbar-caret {
