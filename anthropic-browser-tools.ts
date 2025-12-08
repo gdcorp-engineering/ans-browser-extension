@@ -43,6 +43,7 @@ async function resizeScreenshotForClaude(
     // If already under the limit, return original
     if (longestEdge <= MAX_SCREENSHOT_LONG_EDGE) {
       console.log(`📐 Screenshot ${originalWidth}×${originalHeight} is under ${MAX_SCREENSHOT_LONG_EDGE}px limit, no resize needed`);
+      imageBitmap.close(); // Free memory
       return { base64: base64Data, width: originalWidth, height: originalHeight };
     }
 
@@ -59,11 +60,15 @@ async function resizeScreenshotForClaude(
 
     if (!ctx) {
       console.warn('⚠️ Could not get canvas context, returning original image');
+      imageBitmap.close(); // Free memory even on error path
       return { base64: base64Data, width: originalWidth, height: originalHeight };
     }
 
     // Draw the image scaled to target dimensions (maintains aspect ratio)
     ctx.drawImage(imageBitmap, 0, 0, targetWidth, targetHeight);
+
+    // Free the ImageBitmap memory immediately after drawing (before base64 conversion)
+    imageBitmap.close();
 
     // Convert back to blob then base64
     const resizedBlob = await canvas.convertToBlob({ type: 'image/png' });
