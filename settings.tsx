@@ -1025,9 +1025,78 @@ function SettingsPage() {
             />
             Smart Summarization
           </label>
-          <p className="help-text">
+          <p className="help-text" style={{ marginBottom: '20px' }}>
             🤖 Automatically summarize old messages when approaching context limits. Preserves conversation flow while reducing token usage.
           </p>
+
+          <div style={{
+            borderTop: '1px solid #eee',
+            paddingTop: '15px',
+            marginTop: '10px'
+          }}>
+            <h4 style={{ marginBottom: '10px', fontSize: '14px', color: '#555' }}>
+              🧠 Advanced: Separate Chat vs Page Context History
+            </h4>
+            <p className="help-text" style={{ marginBottom: '15px' }}>
+              When enabled, chat messages and page context (screenshots, DOM data) are managed separately.
+              This allows keeping longer conversation history while only retaining recent page snapshots.
+            </p>
+
+            <label style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '15px' }}>
+              <input
+                type="checkbox"
+                checked={settings.enableSeparateHistoryManagement !== false}
+                onChange={(e) => setSettings({ ...settings, enableSeparateHistoryManagement: e.target.checked })}
+              />
+              Enable Separate History Management
+            </label>
+
+            {settings.enableSeparateHistoryManagement !== false && (
+              <>
+                <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500' }}>
+                  Chat History Length (default: 20)
+                </label>
+                <input
+                  type="number"
+                  min="5"
+                  max="50"
+                  value={settings.chatHistoryLength || 20}
+                  onChange={(e) => setSettings({ ...settings, chatHistoryLength: parseInt(e.target.value) || 20 })}
+                  style={{
+                    width: '100%',
+                    padding: '8px',
+                    marginBottom: '5px',
+                    border: '1px solid #ddd',
+                    borderRadius: '4px'
+                  }}
+                />
+                <p className="help-text" style={{ marginBottom: '15px' }}>
+                  💬 Number of pure text chat messages to keep. These are your questions and assistant responses (no screenshots/DOM).
+                </p>
+
+                <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500' }}>
+                  Page Context History (default: 2)
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="10"
+                  value={settings.pageContextHistoryLength || 2}
+                  onChange={(e) => setSettings({ ...settings, pageContextHistoryLength: parseInt(e.target.value) || 2 })}
+                  style={{
+                    width: '100%',
+                    padding: '8px',
+                    marginBottom: '5px',
+                    border: '1px solid #ddd',
+                    borderRadius: '4px'
+                  }}
+                />
+                <p className="help-text">
+                  📸 Number of recent page snapshots to keep (screenshots, DOM context). Old ones become summaries like "[Page context: url]".
+                </p>
+              </>
+            )}
+          </div>
         </div>
 
         {settings.mcpEnabled && (
@@ -1758,7 +1827,7 @@ function SettingsPage() {
               {(settings.siteInstructions || []).map((instruction) => {
                 const isExpanded = expandedInstructions.has(instruction.id);
                 const isEditing = editingInstruction === instruction.id;
-                
+
                 return (
                   <div
                     key={instruction.id}
@@ -1888,9 +1957,9 @@ function SettingsPage() {
                           </div>
                         ) : (
                           <div style={{ marginTop: '12px' }}>
-                            <div style={{ 
-                              fontSize: '13px', 
-                              color: '#666', 
+                            <div style={{
+                              fontSize: '13px',
+                              color: '#666',
                               whiteSpace: 'pre-wrap',
                               fontFamily: 'monospace',
                               lineHeight: '1.6',
