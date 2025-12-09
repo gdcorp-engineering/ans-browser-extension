@@ -624,6 +624,7 @@ Current URL: ${currentUrl}
 Follow these site-specific instructions when interacting with this site:
 
 ${siteInstructions}
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ` : '';
 
@@ -708,7 +709,6 @@ ${browserToolsEnabled ? `BROWSER TOOLS (always use for these):
    - Information requests (e.g., "screenshot", "get page context") → Tell user these features are not available`}
 
 ${mcpPrioritySection}
-${siteInstructionsSection}
 
 ${browserToolsEnabled ? `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 GENERAL BROWSER INTERACTION FRAMEWORK
