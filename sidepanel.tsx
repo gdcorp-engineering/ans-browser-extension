@@ -688,12 +688,16 @@ function ChatSidebar() {
       } else if (toolName === 'type') {
         // Store the selector for later use with pressKey
         setTabLastTypedSelector(parameters.selector);
+        console.log('🔤 Type tool called:', { selector: parameters.selector, text: parameters.text });
         chrome.runtime.sendMessage({
           type: 'EXECUTE_ACTION',
           action: 'fill',
           target: parameters.selector,
           value: parameters.text
-        }, handleResponse);
+        }, (response) => {
+          console.log('🔤 Type tool response:', response);
+          handleResponse(response);
+        });
       } else if (toolName === 'scroll') {
         chrome.runtime.sendMessage({ 
           type: 'EXECUTE_ACTION', 
@@ -4102,7 +4106,10 @@ GUIDELINES:
             <button
               type="button"
               className="toolbar-button"
-              onClick={() => setModelMenuOpen(prev => !prev)}
+              onClick={() => {
+                setChatMenuOpen(false);
+                setModelMenuOpen(prev => !prev);
+              }}
             >
               <span className="toolbar-label">Model</span>
               <span className="toolbar-value">
@@ -4137,7 +4144,10 @@ GUIDELINES:
             <button
               type="button"
               className="toolbar-button"
-              onClick={() => setChatMenuOpen(prev => !prev)}
+              onClick={() => {
+                setModelMenuOpen(false);
+                setChatMenuOpen(prev => !prev);
+              }}
             >
               <span className="toolbar-label">Switch Chat</span>
               <span className="toolbar-value">
