@@ -29,6 +29,85 @@ function getTabAbortFlag(tabId: number): boolean {
   return tabAbortFlags[tabId] || false;
 }
 
+// Maximum screenshot dimension (longest edge) - matches Claude's optimal input size
+const MAX_SCREENSHOT_LONG_EDGE = 1280;
+
+/**
+ * Resize screenshot to have longest edge at MAX_SCREENSHOT_LONG_EDGE while preserving aspect ratio.
+ * This ensures consistent sizing for Claude's vision API and reduces file size.
+ */
+async function resizeScreenshot(dataUrl: string, viewportWidth: number, viewportHeight: number): Promise<{ dataUrl: string; width: number; height: number }> {
+  try {
+    // Extract base64 data from data URL
+    const base64Data = dataUrl.replace(/^data:image\/\w+;base64,/, '');
+
+    // Convert base64 to blob
+    const byteCharacters = atob(base64Data);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) {
+      byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
+    const blob = new Blob([byteArray], { type: 'image/png' });
+
+    // Create ImageBitmap to get dimensions
+    const imageBitmap = await createImageBitmap(blob);
+    const originalWidth = imageBitmap.width;
+    const originalHeight = imageBitmap.height;
+
+    // Calculate the longest edge
+    const longestEdge = Math.max(originalWidth, originalHeight);
+
+    // If already under the limit, return original
+    if (longestEdge <= MAX_SCREENSHOT_LONG_EDGE) {
+      console.log(`📐 Screenshot ${originalWidth}×${originalHeight} is under ${MAX_SCREENSHOT_LONG_EDGE}px limit, no resize needed`);
+      imageBitmap.close();
+      return { dataUrl, width: originalWidth, height: originalHeight };
+    }
+
+    // Calculate scale factor to fit longest edge within limit
+    const scale = MAX_SCREENSHOT_LONG_EDGE / longestEdge;
+    const targetWidth = Math.round(originalWidth * scale);
+    const targetHeight = Math.round(originalHeight * scale);
+
+    console.log(`📐 Resizing screenshot: ${originalWidth}×${originalHeight} → ${targetWidth}×${targetHeight} (scale: ${scale.toFixed(3)})`);
+
+    // Use OffscreenCanvas to resize
+    const canvas = new OffscreenCanvas(targetWidth, targetHeight);
+    const ctx = canvas.getContext('2d');
+
+    if (!ctx) {
+      console.warn('⚠️ Could not get canvas context, returning original image');
+      imageBitmap.close();
+      return { dataUrl, width: originalWidth, height: originalHeight };
+    }
+
+    // Draw the image scaled to target dimensions
+    ctx.drawImage(imageBitmap, 0, 0, targetWidth, targetHeight);
+
+    // Free the ImageBitmap memory immediately after drawing
+    imageBitmap.close();
+
+    // Convert back to data URL
+    const resizedBlob = await canvas.convertToBlob({ type: 'image/png' });
+    const arrayBuffer = await resizedBlob.arrayBuffer();
+    const resizedBase64 = btoa(
+      new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
+    );
+
+    console.log(`✅ Screenshot resized successfully to ${targetWidth}×${targetHeight}`);
+    return {
+      dataUrl: `data:image/png;base64,${resizedBase64}`,
+      width: targetWidth,
+      height: targetHeight
+    };
+  } catch (error) {
+    console.error('❌ Screenshot resize failed:', error);
+    // Return original on error
+    return { dataUrl, width: viewportWidth, height: viewportHeight };
+  }
+}
+
 function clearTabAbortFlag(tabId: number) {
   delete tabAbortFlags[tabId];
   console.log(`✅ Tab ${tabId} abort flag cleared`);
@@ -333,7 +412,7 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
 
   // Abort all browser operations
   if (request.type === 'ABORT_ALL_BROWSER_OPERATIONS') {
-    const tabId = sender.tab?.id;
+    const tabId = _sender.tab?.id;
     if (tabId !== undefined) {
       console.log(`🛑 ABORT_ALL_BROWSER_OPERATIONS received for tab ${tabId}`);
       setTabAbortFlag(tabId, true);
@@ -461,7 +540,7 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
         }
 
         // Capture the visible tab in the current window
-        const dataUrl = await chrome.tabs.captureVisibleTab(currentWindow.id, {
+        const rawDataUrl = await chrome.tabs.captureVisibleTab(currentWindow.id, {
           format: 'png',
           quality: 80
         });
@@ -471,6 +550,13 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
           type: 'GET_VIEWPORT_SIZE'
         }).catch(() => ({ width: 1280, height: 800 })); // Fallback dimensions
 
+        // Resize screenshot to max 1280px longest edge for optimal Claude processing
+        const { dataUrl, width: imageWidth, height: imageHeight } = await resizeScreenshot(
+          rawDataUrl,
+          viewport.width,
+          viewport.height
+        );
+
         // Check if auto-save screenshots is enabled
         const settings = await chrome.storage.local.get(['atlasSettings']);
         if (settings.atlasSettings?.autoSaveScreenshots) {
@@ -479,14 +565,14 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
             const filename = `atlas-screenshot-${timestamp}.png`;
 
-            // Save screenshot to Downloads folder
+            // Save the RESIZED screenshot to Downloads folder
             await chrome.downloads.download({
               url: dataUrl,
               filename: filename,
               saveAs: false // Auto-save without prompting
             });
 
-            console.log(`📸 Screenshot auto-saved: ${filename}`);
+            console.log(`📸 Screenshot auto-saved (${imageWidth}×${imageHeight}): ${filename}`);
           } catch (downloadError) {
             console.error('❌ Failed to auto-save screenshot:', downloadError);
             // Don't fail the screenshot operation if download fails
@@ -496,7 +582,8 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
         sendResponse({
           success: true,
           screenshot: dataUrl,
-          viewport: viewport
+          viewport: viewport,
+          imageSize: { width: imageWidth, height: imageHeight }
         });
       } catch (error) {
         console.error('❌ Screenshot capture error:', error);
