@@ -60,24 +60,28 @@ body {
 
 .header-actions {
   display: flex;
-  gap: 8px;
+  gap: 4px;
   align-items: center;
   justify-content: flex-end;
-  flex: 1 1 220px;
-  flex-wrap: wrap;
+  flex: 1 1 auto;
+  flex-wrap: nowrap;
+  min-width: 0;
 }
 
 .menu-trigger {
   position: relative;
   width: auto;
+  flex: 1 1 0;
+  min-width: 50px;
+  max-width: 100px;
 }
 
 .settings-icon-btn {
   font-family: inherit;
   font-size: 11px;
   cursor: pointer;
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   padding: 0;
   display: inline-flex;
   align-items: center;
@@ -85,28 +89,47 @@ body {
   background: rgba(15, 23, 42, 0.8);
   color: #e2e8f0;
   border: 1px solid rgba(148, 163, 184, 0.25);
-  border-radius: 10px;
+  border-radius: 8px;
   transition: border-color 0.15s ease, transform 0.15s ease, background 0.15s ease;
-  box-shadow: 0 8px 18px rgba(2, 6, 23, 0.25);
+  box-shadow: 0 6px 14px rgba(2, 6, 23, 0.2);
 }
 
 .header-actions .settings-icon-btn {
-  flex: 0 0 36px;
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
 }
 
 .header-actions .menu-trigger .toolbar-button {
-  width: auto;
+  width: 100%;
 }
 
 @media (max-width: 520px) {
-  .menu-trigger {
-    width: 100%;
-  }
   .header-actions {
-    flex-wrap: wrap;
+    gap: 2px;
   }
-  .header-actions .menu-trigger .toolbar-button {
-    width: 100%;
+  .menu-trigger {
+    min-width: 36px;
+    max-width: 70px;
+  }
+  .toolbar-label,
+  .toolbar-caret {
+    display: none;
+  }
+  .toolbar-value {
+    font-size: 9px;
+    max-width: 50px;
+  }
+  .toolbar-button {
+    padding: 4px 6px;
+    min-height: 28px;
+    max-height: 28px;
+  }
+  .header-actions .settings-icon-btn {
+    flex: 0 0 28px;
+    width: 28px;
+    height: 28px;
+    font-size: 10px;
   }
 }
 
@@ -130,17 +153,17 @@ body {
   background: rgba(15, 23, 42, 0.8);
   border: 1px solid rgba(148, 163, 184, 0.4);
   color: #e2e8f0;
-  border-radius: 10px;
-  padding: 0 12px;
+  border-radius: 8px;
+  padding: 0 8px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 36px;
-  max-height: 36px;
+  min-height: 32px;
+  max-height: 32px;
   cursor: pointer;
   transition: border-color 0.15s ease, transform 0.15s ease, background 0.15s ease;
   font: inherit;
-  gap: 6px;
+  gap: 4px;
   box-shadow: 0 6px 14px rgba(2, 6, 23, 0.2);
 }
 
@@ -151,20 +174,20 @@ body {
 }
 
 .toolbar-label {
-  font-size: 10px;
+  font-size: 8px;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
   color: #94a3b8;
 }
 
 .toolbar-value {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
   color: #e2e8f0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 180px;
+  max-width: 70px;
 }
 
 .toolbar-caret {
@@ -175,33 +198,42 @@ body {
 
 .dropdown-panel {
   position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
+  top: calc(100% + 4px);
+  left: 0;
+  right: auto;
   background: #0f172a;
   border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 12px;
-  box-shadow: 0 20px 50px rgba(2, 6, 23, 0.45);
-  min-width: 220px;
-  padding: 8px;
-  z-index: 20;
-  max-height: 70vh;
+  border-radius: 10px;
+  box-shadow: 0 16px 40px rgba(2, 6, 23, 0.5);
+  min-width: 160px;
+  max-width: 220px;
+  padding: 6px;
+  z-index: 1000;
+  max-height: 50vh;
   overflow-y: auto;
 }
 
+.menu-trigger:last-of-type .dropdown-panel {
+  left: auto;
+  right: 0;
+}
+
 .dropdown-panel-wide {
-  min-width: 260px;
+  min-width: 180px;
+  max-width: 240px;
 }
 
 .dropdown-option {
   width: 100%;
   text-align: left;
-  padding: 10px 12px;
+  padding: 8px 10px;
   border: none;
   background: transparent;
   color: #e2e8f0;
-  border-radius: 8px;
+  border-radius: 6px;
   cursor: pointer;
   transition: background 0.15s ease;
+  font-size: 12px;
 }
 
 .dropdown-option:hover {
@@ -213,28 +245,28 @@ body {
 }
 
 .dropdown-option-title {
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 600;
 }
 
 .dropdown-option-meta {
-  font-size: 11px;
+  font-size: 9px;
   color: #94a3b8;
   margin-top: 2px;
 }
 
 .dropdown-note {
-  font-size: 11px;
+  font-size: 9px;
   color: #94a3b8;
-  margin-top: 8px;
-  padding: 8px 8px 0;
+  margin-top: 6px;
+  padding: 6px 6px 0;
   border-top: 1px solid rgba(148, 163, 184, 0.15);
 }
 
 .dropdown-empty {
-  font-size: 12px;
+  font-size: 10px;
   color: #94a3b8;
-  padding: 12px 8px;
+  padding: 8px 6px;
   text-align: center;
 }
 

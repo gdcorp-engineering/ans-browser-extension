@@ -4102,7 +4102,10 @@ GUIDELINES:
             <button
               type="button"
               className="toolbar-button"
-              onClick={() => setModelMenuOpen(prev => !prev)}
+              onClick={() => {
+                setChatMenuOpen(false);
+                setModelMenuOpen(prev => !prev);
+              }}
             >
               <span className="toolbar-label">Model</span>
               <span className="toolbar-value">
@@ -4137,7 +4140,10 @@ GUIDELINES:
             <button
               type="button"
               className="toolbar-button"
-              onClick={() => setChatMenuOpen(prev => !prev)}
+              onClick={() => {
+                setModelMenuOpen(false);
+                setChatMenuOpen(prev => !prev);
+              }}
             >
               <span className="toolbar-label">Switch Chat</span>
               <span className="toolbar-value">
