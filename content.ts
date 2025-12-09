@@ -776,6 +776,7 @@ async function executePageAction(
         return { success: false, message: 'Target selector or coordinates required for click action' };
 
       case 'fill':
+        console.log('🔍 FILL ACTION CALLED:', { target, value, selector, hasValue: !!value });
         if (value) {
           const textToType = value; // Capture value to preserve type narrowing
           let element: HTMLElement | null = null;
@@ -889,19 +890,25 @@ async function executePageAction(
                 function proceedWithTyping() {
                   // Clear existing value first
                   if (element!.tagName === 'INPUT' || element!.tagName === 'TEXTAREA') {
-                    const inputElement = element as HTMLInputElement;
+                    const inputElement = element as HTMLInputElement | HTMLTextAreaElement;
 
                     // Clear the value using multiple methods for compatibility
                     inputElement.value = '';
 
                     // Set the new value using native setter (works with React)
-                    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
-                      window.HTMLInputElement.prototype,
+                    // Use the correct prototype based on element type
+                    const isTextarea = element!.tagName === 'TEXTAREA';
+                    const prototype = isTextarea 
+                      ? window.HTMLTextAreaElement.prototype 
+                      : window.HTMLInputElement.prototype;
+                    
+                    const nativeValueSetter = Object.getOwnPropertyDescriptor(
+                      prototype,
                       'value'
                     )?.set;
 
-                    if (nativeInputValueSetter) {
-                      nativeInputValueSetter.call(inputElement, textToType);
+                    if (nativeValueSetter) {
+                      nativeValueSetter.call(inputElement, textToType);
                     } else {
                       inputElement.value = textToType;
                     }
@@ -1486,15 +1493,25 @@ async function executePageAction(
         // Clear the currently focused input field
         const activeEl = document.activeElement as HTMLInputElement;
         if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.getAttribute('contenteditable') === 'true')) {
-          // Select all and delete
+          // Clear value directly (avoid execCommand which can trigger CSP violations)
           if (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA') {
-            activeEl.select();
-            document.execCommand('delete');
-            activeEl.value = '';
+            // Use native setter for React compatibility
+            const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+              window.HTMLInputElement.prototype,
+              'value'
+            )?.set;
+            
+            if (nativeInputValueSetter) {
+              nativeInputValueSetter.call(activeEl, '');
+            } else {
+              activeEl.value = '';
+            }
             activeEl.dispatchEvent(new Event('input', { bubbles: true }));
+            activeEl.dispatchEvent(new Event('change', { bubbles: true }));
           } else {
             activeEl.textContent = '';
             activeEl.dispatchEvent(new Event('input', { bubbles: true }));
+            activeEl.dispatchEvent(new Event('change', { bubbles: true }));
           }
           return { success: true, message: 'Cleared input field' };
         }
@@ -1847,8 +1864,7 @@ function showBrowserAutomationOverlay() {
         cursor: pointer;
         transition: all 0.2s ease;
         pointer-events: auto;
-      " onmouseover="this.style.background='rgba(255, 255, 255, 0.3)';"
-         onmouseout="this.style.background='rgba(255, 255, 255, 0.2)';">
+      ">
         Stop
       </button>
     </div>
@@ -1884,9 +1900,18 @@ function showBrowserAutomationOverlay() {
     document.head.appendChild(style);
   }
 
-  // Handle stop button click
-  const stopBtn = automationOverlay.querySelector('#atlas-abort-btn');
+  // Handle stop button click and hover events
+  const stopBtn = automationOverlay.querySelector('#atlas-abort-btn') as HTMLElement;
   if (stopBtn) {
+    // Add hover event listeners (replacing inline handlers to avoid CSP violations)
+    stopBtn.addEventListener('mouseover', () => {
+      stopBtn.style.background = 'rgba(255, 255, 255, 0.3)';
+    });
+    stopBtn.addEventListener('mouseout', () => {
+      stopBtn.style.background = 'rgba(255, 255, 255, 0.2)';
+    });
+    
+    // Add click event listener
     stopBtn.addEventListener('click', () => {
       console.log('🛑 Stop button clicked');
       isUserAborted = true;
