@@ -672,19 +672,49 @@ function ChatSidebar() {
           chrome.runtime.sendMessage({ type: 'TAKE_SCREENSHOT' }, handleResponse);
         }
       } else if (toolName === 'clickElement') {
+        console.log('🖱️ ClickElement tool called:', { selector: parameters.selector, text: parameters.text });
         chrome.runtime.sendMessage({
           type: 'EXECUTE_ACTION',
           action: 'click',
           selector: parameters.selector,
           target: parameters.text // For text-based search
-        }, handleResponse);
+        }, (response) => {
+          console.log('🖱️ ClickElement tool response:', response);
+
+          // Add explicit logging for failures
+          if (response && response.success === false) {
+            console.error('❌ CLICKELEMENT TOOL FAILED:', response.message || 'Unknown error');
+            console.error('   Parameters used:', { selector: parameters.selector, text: parameters.text });
+          } else if (response && response.success === true) {
+            console.log('✅ CLICKELEMENT TOOL SUCCEEDED:', response.message || 'Success');
+          } else {
+            console.warn('⚠️ CLICKELEMENT TOOL: Unexpected response format:', response);
+          }
+
+          handleResponse(response);
+        });
       } else if (toolName === 'click') {
+        console.log('🖱️ Click tool called:', { x: parameters.x, y: parameters.y, selector: parameters.selector });
         chrome.runtime.sendMessage({
           type: 'EXECUTE_ACTION',
           action: 'click',
           selector: parameters.selector,
           coordinates: parameters.x !== undefined ? { x: parameters.x, y: parameters.y } : undefined
-        }, handleResponse);
+        }, (response) => {
+          console.log('🖱️ Click tool response:', response);
+
+          // Add explicit logging for failures
+          if (response && response.success === false) {
+            console.error('❌ CLICK TOOL FAILED:', response.message || 'Unknown error');
+            console.error('   Parameters used:', { x: parameters.x, y: parameters.y, selector: parameters.selector });
+          } else if (response && response.success === true) {
+            console.log('✅ CLICK TOOL SUCCEEDED:', response.message || 'Success');
+          } else {
+            console.warn('⚠️ CLICK TOOL: Unexpected response format:', response);
+          }
+
+          handleResponse(response);
+        });
       } else if (toolName === 'type') {
         // Store the selector for later use with pressKey
         setTabLastTypedSelector(parameters.selector);
@@ -696,6 +726,17 @@ function ChatSidebar() {
           value: parameters.text
         }, (response) => {
           console.log('🔤 Type tool response:', response);
+
+          // Add explicit logging for failures
+          if (response && response.success === false) {
+            console.error('❌ TYPE TOOL FAILED:', response.message || 'Unknown error');
+            console.error('   Parameters used:', { selector: parameters.selector, text: parameters.text });
+          } else if (response && response.success === true) {
+            console.log('✅ TYPE TOOL SUCCEEDED:', response.message || 'Success');
+          } else {
+            console.warn('⚠️ TYPE TOOL: Unexpected response format:', response);
+          }
+
           handleResponse(response);
         });
       } else if (toolName === 'scroll') {

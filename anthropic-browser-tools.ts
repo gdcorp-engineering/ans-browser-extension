@@ -656,9 +656,6 @@ ${siteInstructions}
     const systemPrompt = browserToolsEnabled
       ? `You are a helpful AI assistant with browser automation and MCP tool capabilities.
 
-${mcpPrioritySection}
-${siteInstructionsSection}
-
 Follow the PEVI loop:
 
 1. PLAN — Understand the user's goal. Decide whether the task needs:
@@ -667,10 +664,14 @@ Follow the PEVI loop:
 
 2. EXECUTE — Perform ONE action at a time using the correct tool.
 
-3. VERIFY — After every action:
-   - Check tool results for {success: false}, {error}, {timeout}
-   - Use screenshot + getPageContext to confirm page state
-   - Do not assume success unless visually/structurally confirmed
+3. VERIFY — MANDATORY AFTER EVERY ACTION:
+   - FIRST: Check tool results for {success: false}, {error}, {timeout}
+   - IF success: false → IMMEDIATELY report "❌ Tool failed: [error message]" and STOP
+   - IF error exists → IMMEDIATELY report "❌ Error: [error message]" and STOP
+   - IF timeout: true → IMMEDIATELY report "❌ Tool timed out" and STOP
+   - ONLY if tool result shows success: true → use getPageContext to confirm page state
+   - Take screenshot ONLY if getPageContext is insufficient to verify success
+   - FORBIDDEN: Do not claim success unless tool result shows success: true AND getPageContext confirms it worked
 
 4. ITERATE — If verification fails:
    - Adjust plan: try an alternate selector, query, or path
@@ -685,9 +686,38 @@ BROWSER AUTOMATION RULES:
 - Minimize taking screenshots unless strictly necessary, and prefer getPageContext to understand the page before acting.
 - Prefer clickElement(text/selector) over coordinate clicks
 - Use coordinate clicks ONLY after measuring in screenshot and applying scale factors
-- Navigation: always verify via screenshot and getPageContext
+- Navigation: verify via getPageContext; use screenshot only if getPageContext doesn't confirm successful navigation
 - Type: focus field if needed; Enter auto-submits for search bars
 - Scroll before clicking if element not visible
+
+SCREENSHOT USAGE RULES:
+- Take screenshots ONLY when:
+  • getPageContext doesn't contain enough information for the specific task
+  • You need to measure coordinates for complex layouts
+  • Visual confirmation is required for verification after multiple failed attempts
+- DO NOT take screenshots for simple tasks like:
+  • Clicking buttons/links when text is available in getPageContext (e.g., "Edit", "Save", "Submit")
+  • Typing in form fields when selectors are available in getPageContext
+  • Adding text content (e.g., "add a subtitle") when editing interfaces are accessible
+  • Basic navigation when page content is clear from getPageContext
+
+EXAMPLE - Adding a subtitle to a page (SUCCESS):
+1. Use getPageContext to find "Edit" button text
+2. clickElement({text: "Edit"}) - Check result: {success: true}
+3. Use getPageContext to find content area or text input
+4. clickElement({text: "content area"}) or click at coordinates - Check result: {success: true}
+5. type({text: "subtitle content"}) - Check result: {success: true}
+6. Use getPageContext to verify content was added
+
+EXAMPLE - Tool failure handling:
+1. clickElement({text: "Edit"}) - Result: {success: false, message: "Element not found"}
+2. STOP and report: "❌ Could not find Edit button. Available elements: [list from getPageContext]"
+3. Do not proceed to type - the click failed
+
+EXAMPLE - Type tool failure:
+1. type({text: "content"}) - Result: {success: false, message: "No focused element found"}
+2. STOP and report: "❌ Could not type text - no input field is focused. Try clicking on the content area first."
+3. Do not claim the text was added
 
 CLICKING ELEMENTS:
 Preference order:
