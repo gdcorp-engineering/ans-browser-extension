@@ -556,9 +556,18 @@ export async function streamAnthropicWithBrowserTools(
 
   const MAX_TURNS = 20; // Prevent infinite loops
   let turnCount = 0;
+  let wasAborted = false; // Flag to track if execution was aborted
 
   try {
-    while (turnCount < MAX_TURNS) {
+    while (turnCount < MAX_TURNS && !wasAborted) {
+    // Check if execution was aborted before starting this turn
+    if (signal?.aborted) {
+      console.log('🛑 Execution aborted by user - stopping loop');
+      onTextChunk('\n\n⚠️ Execution cancelled by user.');
+      wasAborted = true;
+      break;
+    }
+
     turnCount++;
 
     console.log('🔧 Anthropic Browser Tools - Turn', turnCount, `of ${MAX_TURNS}`);
@@ -906,6 +915,14 @@ Remember: When browser tools are disabled, always tell users to perform browser 
       fetchOptions.signal = signal;
     }
 
+    // Check if execution was aborted before making API call
+    if (signal?.aborted) {
+      console.log('🛑 Execution aborted by user - stopping before API call');
+      onTextChunk('\n\n⚠️ Execution cancelled by user.');
+      wasAborted = true;
+      break;
+    }
+
     let response;
     try {
       // Add timeout to prevent hanging (3 minutes for API calls)
@@ -927,6 +944,14 @@ Remember: When browser tools are disabled, always tell users to perform browser 
       const fetchDuration = Date.now() - fetchStartTime;
       console.log(`✅ API call completed in ${fetchDuration}ms, status: ${response.status}`);
     } catch (fetchError: any) {
+      // Check if the error is due to abort
+      if (fetchError.name === 'AbortError' || signal?.aborted) {
+        console.log('🛑 API call aborted by user');
+        onTextChunk('\n\n⚠️ Execution cancelled by user.');
+        wasAborted = true;
+        break;
+      }
+
       // Network error - likely VPN not connected or endpoint unreachable
       console.error('❌ Network Error:', fetchError);
       throw new Error(
@@ -1064,10 +1089,26 @@ Remember: When browser tools are disabled, always tell users to perform browser 
       break;
     }
 
+    // Check if execution was aborted before executing tools
+    if (signal?.aborted) {
+      console.log('🛑 Execution aborted by user - stopping before tool execution');
+      onTextChunk('\n\n⚠️ Execution cancelled by user.');
+      wasAborted = true;
+      break;
+    }
+
     // Execute tools and collect results
     const toolResults: any[] = [];
 
     for (const toolUse of toolUses) {
+      // Check if execution was aborted before executing each tool
+      if (signal?.aborted) {
+        console.log('🛑 Execution aborted by user - stopping tool execution');
+        onTextChunk('\n\n⚠️ Execution cancelled by user.');
+        wasAborted = true;
+        break;
+      }
+
       console.log(`🔧 Executing tool: ${toolUse.name}`, toolUse.input);
       const isMcpToolUse = mcpToolNameSet.has(toolUse.name);
       const isA2AToolUse = a2aToolNameSet.has(toolUse.name);
@@ -1255,6 +1296,14 @@ Example: Element at image position (400, 300):
         // Small delay between actions
         await new Promise(resolve => setTimeout(resolve, 500));
       } catch (error: any) {
+        // Check if the error is due to abort
+        if (error.name === 'AbortError' || signal?.aborted) {
+          console.log('🛑 Tool execution aborted by user');
+          onTextChunk('\n\n⚠️ Execution cancelled by user.');
+          wasAborted = true;
+          break;
+        }
+
         console.error('❌ Tool execution error:', error);
         const errorMessage = error.message || 'Tool execution failed';
         const isTimeout = errorMessage.includes('timed out') || errorMessage.includes('took too long');
@@ -1274,6 +1323,12 @@ Example: Element at image position (400, 300):
           is_error: true,
         });
       }
+    }
+
+    // Check if execution was aborted during tool execution - break out of while loop
+    if (wasAborted || signal?.aborted) {
+      console.log('🛑 Execution aborted during tool execution - stopping loop');
+      break;
     }
 
     // Add assistant message with tool uses
@@ -1337,6 +1392,14 @@ Example: Element at image position (400, 300):
     console.log(`📝 Conversation messages count: ${conversationMessages.length}`);
     console.log(`📝 Last message role: ${conversationMessages[conversationMessages.length - 1]?.role}`);
 
+    // Check if execution was aborted after tool execution
+    if (signal?.aborted || wasAborted) {
+      console.log('🛑 Execution aborted by user - stopping loop');
+      onTextChunk('\n\n⚠️ Execution cancelled by user.');
+      wasAborted = true;
+      break;
+    }
+
     // Continue the loop - we just added tool results that need to be processed by the AI
     // The next iteration will send these results back and get the AI's response
     // IMPORTANT: The loop will continue to the next iteration where:
@@ -1346,14 +1409,22 @@ Example: Element at image position (400, 300):
     // 4. If the response has no tool uses, the loop will break
     }
 
-    // Check if we exited due to MAX_TURNS limit
-    if (turnCount >= MAX_TURNS) {
+    // Check if we exited due to MAX_TURNS limit (only if not aborted)
+    if (turnCount >= MAX_TURNS && !wasAborted) {
       console.warn(`⚠️ Loop exited due to MAX_TURNS limit (${turnCount}/${MAX_TURNS})`);
       console.warn(`⚠️ This might indicate the conversation is stuck in a loop or needs more turns`);
       // Output a message to the user about the limit
       onTextChunk(`\n\n⚠️ Note: Reached maximum turn limit (${MAX_TURNS}). If you need to continue, please send a new message.`);
     }
   } catch (error: any) {
+    // Check if the error is due to abort - don't treat it as an error
+    if (error.name === 'AbortError' || signal?.aborted || wasAborted) {
+      console.log('🛑 Execution aborted by user');
+      onTextChunk('\n\n⚠️ Execution cancelled by user.');
+      // Don't re-throw abort errors, just exit gracefully
+      return;
+    }
+
     console.error('❌ Error in tool execution loop:', error);
     console.error('   Turn count when error occurred:', turnCount);
     console.error('   Conversation messages count:', conversationMessages.length);
