@@ -232,6 +232,7 @@ function ChatSidebar() {
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [chatMenuOpen, setChatMenuOpen] = useState(false);
   const [chatSummaries, setChatSummaries] = useState<ChatSummary[]>([]);
+  const [showAutomationOverlay, setShowAutomationOverlay] = useState(false); // Track overlay visibility in sidepanel
 
   // Load trustedAgentOptIn from storage on mount
   useEffect(() => {
@@ -1318,6 +1319,14 @@ function ChatSidebar() {
           abortControllerRef.current.abort();
           console.log(`🛑 Aborted active conversation for tab ${currentId} (switching tabs)`);
         }
+        
+        // Also abort the tab-specific abort controller if it exists
+        if (tabAbortControllerRef.current[currentId]) {
+          tabAbortControllerRef.current[currentId]?.abort();
+          console.log(`🛑 Aborted tab-specific controller for tab ${currentId} (switching tabs)`);
+          // Clean up the tab-specific controller
+          delete tabAbortControllerRef.current[currentId];
+        }
 
         // Save MCP client and tools state
         tabMcpClientRef.current[currentId] = mcpClientRef.current;
@@ -1327,15 +1336,8 @@ function ChatSidebar() {
         tabCustomMCPInitPromiseRef.current[currentId] = customMCPInitPromiseRef.current;
       }
 
-      // Hide browser automation overlay when switching tabs
-      try {
-        const [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        if (currentTab?.id) {
-          await chrome.tabs.sendMessage(currentTab.id, { type: 'HIDE_BROWSER_AUTOMATION_OVERLAY' });
-        }
-      } catch (error) {
-        console.warn('Failed to hide browser automation overlay on tab switch:', error);
-      }
+      // Note: Sidepanel overlay is automatically hidden when switching tabs (state is cleared)
+      // No need to hide overlay on the old tab since we only use sidepanel overlay now
 
       // Load new tab's resources (or initialize if new tab)
       const newTabId = activeInfo.tabId;
@@ -1618,27 +1620,17 @@ function ChatSidebar() {
     console.log('✅ All browser operations aborted');
   };
 
-  // Show/hide browser automation overlay on current tab
+  // Show/hide browser automation overlay - only in sidepanel for better UX
   const showBrowserAutomationOverlay = async () => {
-    try {
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (tab?.id) {
-        await chrome.tabs.sendMessage(tab.id, { type: 'SHOW_BROWSER_AUTOMATION_OVERLAY' });
-      }
-    } catch (error) {
-      console.warn('Failed to show browser automation overlay:', error);
-    }
+    // Show overlay in sidepanel immediately (persists during navigation)
+    console.log('🔵 Showing browser automation overlay in sidepanel');
+    setShowAutomationOverlay(true);
   };
 
   const hideBrowserAutomationOverlay = async () => {
-    try {
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (tab?.id) {
-        await chrome.tabs.sendMessage(tab.id, { type: 'HIDE_BROWSER_AUTOMATION_OVERLAY' });
-      }
-    } catch (error) {
-      console.warn('Failed to hide browser automation overlay:', error);
-    }
+    // Hide overlay in sidepanel
+    console.log('🔴 Hiding browser automation overlay in sidepanel');
+    setShowAutomationOverlay(false);
   };
 
   const newChat = async () => {
@@ -3360,37 +3352,33 @@ GUIDELINES:
             // The system prompt already instructs prioritizing MCP tools when relevant
             // Browser tools can be used for tasks that MCP tools don't handle (e.g., navigation, clicking)
 
-            // Only show overlay for browser tools, not MCP tools
-            // Also only show if browser tools are enabled
-            const isBrowserTool = BROWSER_TOOL_NAMES.has(toolName);
-            if (isBrowserTool && browserToolsEnabled) {
-              // Show overlay before browser tool execution
-              // (ensures overlay is always visible during automation)
-              console.log(`🔵 Showing overlay for browser tool: ${toolName}`);
-              await showBrowserAutomationOverlay();
-            } else if (isBrowserTool && !browserToolsEnabled) {
-              console.log(`ℹ️ Skipping overlay - browser tools not enabled: ${toolName}`);
-            } else {
-              console.log(`ℹ️ Skipping overlay for non-browser tool: ${toolName}`);
+            // Check abort signal before executing tool
+            if (abortControllerRef.current?.signal.aborted) {
+              console.log(`🛑 Tool execution aborted before starting: ${toolName}`);
+              return { 
+                error: 'Execution cancelled by user', 
+                cancelled: true 
+              };
             }
 
             // Execute tool (browser or other)
             const result = await executeTool(toolName, params);
 
-            // Re-show overlay after browser tool execution (in case page navigation removed it)
-            // Only for browser tools, not MCP tools, and only if browser tools are enabled
-            if (isBrowserTool && browserToolsEnabled) {
-              // Small delay to let any page changes settle
-              setTimeout(async () => {
-                await showBrowserAutomationOverlay();
-              }, 500);
-            }
+            // Note: Sidepanel overlay persists automatically during navigation, no need to re-show
 
             return result;
           };
 
           // Get matching site instructions for current URL
           const matchedInstructions = getMatchingSiteInstructions(currentTabUrl);
+
+          // Show browser automation overlay before the loop starts (only if browser tools are enabled)
+          if (browserToolsEnabled) {
+            console.log('🔵 Showing browser automation overlay (browser tools enabled)');
+            await showBrowserAutomationOverlay();
+          } else {
+            console.log('⏭️ Skipping overlay (browser tools disabled)');
+          }
 
           await streamAnthropicWithBrowserTools(
             newMessages,
@@ -3415,8 +3403,11 @@ GUIDELINES:
               console.log(`✅ onComplete called - clearing states`);
               console.log(`✅ Final messages count: ${messages.length}`);
               
-              // On complete - hide browser automation overlay
-              hideBrowserAutomationOverlay();
+              // Hide browser automation overlay after the loop ends (only if it was shown)
+              if (browserToolsEnabled) {
+                console.log('🔴 Hiding browser automation overlay');
+                hideBrowserAutomationOverlay();
+              }
               // Clear loading and tool executing states
               setIsLoading(false);
               setIsToolExecuting(false);
@@ -3464,7 +3455,7 @@ GUIDELINES:
               }
             },
             wrappedExecuteTool,
-            undefined, // Don't pass abort signal for now - causes issues
+            abortControllerRef.current?.signal, // Pass abort signal to allow cancellation
             mcpTools,
             currentTabUrl || undefined,
             matchedInstructions || undefined,
@@ -3685,6 +3676,14 @@ GUIDELINES:
           // Get matching site instructions for current URL
           const matchedInstructions = getMatchingSiteInstructions(currentTabUrl);
 
+          // Show browser automation overlay before the loop starts (only if browser tools are enabled)
+          if (browserToolsEnabled) {
+            console.log('🔵 Showing browser automation overlay (browser tools enabled)');
+            await showBrowserAutomationOverlay();
+          } else {
+            console.log('⏭️ Skipping overlay (browser tools disabled)');
+          }
+
           await streamAnthropicWithBrowserTools(
               newMessages,
               settings.apiKey,
@@ -3701,7 +3700,12 @@ GUIDELINES:
                 });
               },
               () => {
-                // On complete - clear tool executing state
+                // Hide browser automation overlay after the loop ends (only if it was shown)
+                if (browserToolsEnabled) {
+                  console.log('🔴 Hiding browser automation overlay');
+                  hideBrowserAutomationOverlay();
+                }
+                // Clear tool executing state
                 setIsToolExecuting(false);
                 // Attach audio links from MCP tools to the assistant message (fallback if not already attached)
                 if (toolAudioLinksRef.current.length > 0) {
@@ -3747,6 +3751,15 @@ GUIDELINES:
               },
               async (toolName: string, params: any) => {
                 console.log(`🔧 Tool call: ${toolName}`, params);
+
+                // Check abort signal before executing tool
+                if (abortControllerRef.current?.signal.aborted) {
+                  console.log(`🛑 Tool execution aborted before starting: ${toolName}`);
+                  return { 
+                    error: 'Execution cancelled by user', 
+                    cancelled: true 
+                  };
+                }
 
                 // Check if this is an A2A tool (starts with "a2a_")
                 if (toolName.startsWith('a2a_')) {
@@ -3876,7 +3889,7 @@ GUIDELINES:
                   return { error: 'Browser tools not enabled. Please enable browser tools in settings to use navigation, clicking, and other automation features.' };
                 }
               },
-              undefined, // Don't pass abort signal for now - causes issues
+              abortControllerRef.current?.signal, // Pass abort signal to allow cancellation
               mcpTools,  // Pass MCP tools
               currentTabUrl || undefined,
               matchedInstructions || undefined,
@@ -4698,6 +4711,90 @@ GUIDELINES:
           )}
         </form>
       </div>
+      {/* Browser Automation Overlay - shown in sidepanel for better UX during navigation */}
+      {showAutomationOverlay && (
+        <div
+          style={{
+            position: 'fixed',
+            top: '20px',
+            right: '20px',
+            zIndex: 999999,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            background: 'linear-gradient(135deg, rgba(0, 122, 255, 0.95) 0%, rgba(0, 81, 213, 0.95) 100%)',
+            backdropFilter: 'blur(10px)',
+            color: 'white',
+            padding: '10px 16px',
+            borderRadius: '24px',
+            fontSize: '13px',
+            fontWeight: 600,
+            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+            boxShadow: '0 4px 16px rgba(0, 122, 255, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.1)',
+            animation: 'atlasIndicatorSlideIn 0.3s ease-out',
+            pointerEvents: 'auto',
+          }}
+        >
+          <div
+            style={{
+              width: '8px',
+              height: '8px',
+              background: '#00ff88',
+              borderRadius: '50%',
+              boxShadow: '0 0 8px #00ff88',
+              animation: 'atlasIndicatorPulse 2s ease-in-out infinite',
+            }}
+          />
+          <span>AI Automation Active</span>
+          <button
+            onClick={() => {
+              console.log('🛑 Stop button clicked in sidepanel overlay');
+              hideBrowserAutomationOverlay();
+              if (abortControllerRef.current) {
+                abortControllerRef.current.abort();
+              }
+            }}
+            style={{
+              background: 'rgba(255, 255, 255, 0.2)',
+              border: '1px solid rgba(255, 255, 255, 0.3)',
+              color: 'white',
+              padding: '4px 12px',
+              borderRadius: '12px',
+              fontSize: '11px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+            }}
+            onMouseOver={(e) => {
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.3)';
+            }}
+            onMouseOut={(e) => {
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)';
+            }}
+          >
+            Stop
+          </button>
+        </div>
+      )}
+      {/* Add animation styles if not already present */}
+      <style>
+        {`
+          @keyframes atlasIndicatorSlideIn {
+            from {
+              transform: translateX(400px);
+              opacity: 0;
+            }
+            to {
+              transform: translateX(0);
+              opacity: 1;
+            }
+          }
+          @keyframes atlasIndicatorPulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.6; transform: scale(1.2); }
+          }
+        `}
+      </style>
     </div>
   );
 }
