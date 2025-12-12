@@ -333,7 +333,7 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
 
   // Abort all browser operations
   if (request.type === 'ABORT_ALL_BROWSER_OPERATIONS') {
-    const tabId = sender.tab?.id;
+    const tabId = _sender.tab?.id;
     if (tabId !== undefined) {
       console.log(`🛑 ABORT_ALL_BROWSER_OPERATIONS received for tab ${tabId}`);
       setTabAbortFlag(tabId, true);
@@ -572,6 +572,24 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
   if (request.type === 'PAGE_LOADED') {
     console.log('Page loaded:', request.url);
     return false;
+  }
+
+  // Inject content script on demand
+  if (request.type === 'INJECT_CONTENT_SCRIPT') {
+    (async () => {
+      try {
+        const tabId = request.tabId;
+        if (tabId) {
+          await injectContentScript(tabId);
+          sendResponse({ success: true });
+        } else {
+          sendResponse({ success: false, error: 'No tab ID provided' });
+        }
+      } catch (error) {
+        sendResponse({ success: false, error: (error as Error).message });
+      }
+    })();
+    return true;
   }
 });
 
