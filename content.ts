@@ -419,52 +419,31 @@ async function dispatchClickSequence(element: HTMLElement, x: number, y: number)
     console.error('❌ Focus failed:', error);
   }
 
-  // STRATEGY: Use ONLY native clicks (no synthetic events)
-  // Synthetic events with isTrusted=false can confuse React and be blocked
+  // STRATEGY: Use simple native click - avoid over-clicking
+  // Previous logic was too aggressive (5x clicks + parent + all children = chaos)
   try {
-    console.log('3️⃣ NATIVE CLICK ONLY (generates trusted=true events)...');
+    console.log('3️⃣ NATIVE CLICK (single, targeted)...');
 
-    // Try multiple times with delays (React event handlers need time to attach)
-    for (let attempt = 1; attempt <= 5; attempt++) {
-      try {
-        console.log(`   Attempt ${attempt}/5...`);
-        element.click();
-        console.log(`   ✅ Native click ${attempt} executed (isTrusted: true)`);
+    // Single native click - this generates a trusted event
+    element.click();
+    console.log('   ✅ Native click executed (isTrusted: true)');
 
-        // Delay between attempts - give React time to process
-        if (attempt < 5) {
-          await new Promise(resolve => setTimeout(resolve, 150));
-        }
-      } catch (error) {
-        console.error(`   ❌ Native click ${attempt} failed:`, error);
-      }
+    // Wait for any async handlers
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+    // If the first click didn't seem to work (element still exists and is clickable),
+    // try ONE more time with a delay
+    const stillExists = document.body.contains(element);
+    const stillVisible = element.offsetParent !== null;
+    if (stillExists && stillVisible && element.tagName === 'BUTTON') {
+      console.log('4️⃣ Element still visible, trying one more click...');
+      await new Promise(resolve => setTimeout(resolve, 200));
+      element.click();
+      console.log('   ✅ Second native click executed');
     }
 
-    // Also try clicking parent/child elements with native click
-    const parent = element.parentElement;
-    if (parent && parent.tagName !== 'BODY' && parent.tagName !== 'HTML') {
-      console.log('5️⃣ Also trying native click on parent element...');
-      try {
-        parent.click();
-        console.log('   ✅ Parent native click executed');
-      } catch (error) {
-        console.error('   ❌ Parent click failed:', error);
-      }
-    }
-
-    // Try clicking all children
-    const clickableChildren = element.querySelectorAll('button, a, [role="button"]');
-    if (clickableChildren.length > 0) {
-      console.log(`6️⃣ Trying native click on ${clickableChildren.length} clickable children...`);
-      clickableChildren.forEach((child, i) => {
-        try {
-          (child as HTMLElement).click();
-          console.log(`   ✅ Child ${i+1} clicked`);
-        } catch (error) {
-          console.error(`   ❌ Child ${i+1} failed:`, error);
-        }
-      });
-    }
+    // NOTE: We intentionally do NOT click parent or child elements anymore
+    // This was causing multiple unrelated elements to be clicked (e.g., "Learn about priority levels" link)
 
     console.log('✅ All click attempts completed');
   } catch (error) {
@@ -898,10 +877,10 @@ async function executePageAction(
                     // Set the new value using native setter (works with React)
                     // Use the correct prototype based on element type
                     const isTextarea = element!.tagName === 'TEXTAREA';
-                    const prototype = isTextarea 
-                      ? window.HTMLTextAreaElement.prototype 
+                    const prototype = isTextarea
+                      ? window.HTMLTextAreaElement.prototype
                       : window.HTMLInputElement.prototype;
-                    
+
                     const nativeValueSetter = Object.getOwnPropertyDescriptor(
                       prototype,
                       'value'
@@ -1321,7 +1300,21 @@ async function executePageAction(
 
             focusedElement.dispatchEvent(keyupEvent);
 
-            // If it's an input field, try to submit the parent form
+            // Check if this is a combobox/dropdown (react-select, etc.)
+            // For these, we should ONLY dispatch keyboard events and let the component handle selection
+            // Do NOT try to click submit buttons - that causes unintended side effects
+            const isCombobox = focusedElement.getAttribute('role') === 'combobox' ||
+                              focusedElement.getAttribute('aria-haspopup') === 'listbox' ||
+                              focusedElement.getAttribute('aria-autocomplete') !== null;
+
+            if (isCombobox) {
+              console.log('   ⚡ Combobox/dropdown detected - letting component handle Enter');
+              // For comboboxes, the keyboard events we dispatched above should trigger selection
+              // We do NOT try to click buttons or submit forms
+              return { success: true, message: 'Pressed Enter key (combobox selection)' };
+            }
+
+            // For regular input fields (not comboboxes), try to submit the parent form
             if (focusedElement instanceof HTMLInputElement || focusedElement instanceof HTMLTextAreaElement) {
               const form = focusedElement.closest('form');
               if (form) {
@@ -1339,13 +1332,23 @@ async function executePageAction(
                 return { success: true, message: 'Pressed Enter (submitted form)' };
               }
 
-              // If no form, try to find and click a nearby search/submit button
-              const nearbyButton = document.querySelector('button[type="submit"], button[aria-label*="search" i], button[aria-label*="submit" i]') as HTMLElement;
-              if (nearbyButton) {
-                console.log('   ✓ Clicking nearby submit button');
-                nearbyButton.click();
-                return { success: true, message: 'Pressed Enter (clicked search button)' };
+              // If no form, check if this is a search input
+              const isSearchInput = focusedElement.type === 'search' ||
+                                   focusedElement.getAttribute('aria-label')?.toLowerCase().includes('search');
+
+              // Only try to find nearby submit buttons for search inputs, not for all inputs
+              if (isSearchInput) {
+                const parentContainer = focusedElement.closest('div, section, fieldset, [role="search"]');
+                if (parentContainer) {
+                  const nearbyButton = parentContainer.querySelector('button[type="submit"], button[aria-label*="search" i]') as HTMLElement;
+                  if (nearbyButton) {
+                    console.log('   ✓ Clicking nearby search button');
+                    nearbyButton.click();
+                    return { success: true, message: 'Pressed Enter (clicked search button)' };
+                  }
+                }
               }
+              // NOTE: For non-search inputs without forms, we just let the keyboard event propagate
             }
 
             return { success: true, message: 'Pressed Enter key' };
@@ -1500,7 +1503,7 @@ async function executePageAction(
               window.HTMLInputElement.prototype,
               'value'
             )?.set;
-            
+
             if (nativeInputValueSetter) {
               nativeInputValueSetter.call(activeEl, '');
             } else {
@@ -1910,7 +1913,7 @@ function showBrowserAutomationOverlay() {
     stopBtn.addEventListener('mouseout', () => {
       stopBtn.style.background = 'rgba(255, 255, 255, 0.2)';
     });
-    
+
     // Add click event listener
     stopBtn.addEventListener('click', () => {
       console.log('🛑 Stop button clicked');

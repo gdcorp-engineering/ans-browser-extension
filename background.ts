@@ -1,5 +1,81 @@
 // Background service worker for the extension
 
+/**
+ * Maximum size for the longest edge of screenshots.
+ * This ensures Claude won't resize the image further internally.
+ */
+const MAX_SCREENSHOT_LONG_EDGE = 1280;
+
+/**
+ * Resize a screenshot to ensure the longest edge is under MAX_SCREENSHOT_LONG_EDGE.
+ * Maintains aspect ratio. Returns original if already small enough.
+ */
+async function resizeScreenshot(
+  dataUrl: string
+): Promise<{ dataUrl: string; width: number; height: number; wasResized: boolean }> {
+  try {
+    // Extract base64 data from data URL
+    const base64Data = dataUrl.split(',')[1];
+
+    // Convert base64 to blob
+    const byteCharacters = atob(base64Data);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) {
+      byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
+    const blob = new Blob([byteArray], { type: 'image/png' });
+
+    // Create ImageBitmap to get dimensions
+    const imageBitmap = await createImageBitmap(blob);
+    const originalWidth = imageBitmap.width;
+    const originalHeight = imageBitmap.height;
+
+    // Check if resize is needed
+    const longestEdge = Math.max(originalWidth, originalHeight);
+    if (longestEdge <= MAX_SCREENSHOT_LONG_EDGE) {
+      console.log(`📐 Screenshot ${originalWidth}×${originalHeight} is under ${MAX_SCREENSHOT_LONG_EDGE}px, no resize needed`);
+      imageBitmap.close();
+      return { dataUrl, width: originalWidth, height: originalHeight, wasResized: false };
+    }
+
+    // Calculate scale to fit within limit
+    const scale = MAX_SCREENSHOT_LONG_EDGE / longestEdge;
+    const targetWidth = Math.round(originalWidth * scale);
+    const targetHeight = Math.round(originalHeight * scale);
+
+    console.log(`📐 Resizing screenshot from ${originalWidth}×${originalHeight} to ${targetWidth}×${targetHeight}`);
+
+    // Use OffscreenCanvas to resize
+    const canvas = new OffscreenCanvas(targetWidth, targetHeight);
+    const ctx = canvas.getContext('2d');
+
+    if (!ctx) {
+      console.warn('⚠️ Could not get canvas context, returning original');
+      imageBitmap.close();
+      return { dataUrl, width: originalWidth, height: originalHeight, wasResized: false };
+    }
+
+    // Draw resized image
+    ctx.drawImage(imageBitmap, 0, 0, targetWidth, targetHeight);
+    imageBitmap.close(); // Free memory
+
+    // Convert to blob then data URL
+    const resizedBlob = await canvas.convertToBlob({ type: 'image/png' });
+    const arrayBuffer = await resizedBlob.arrayBuffer();
+    const resizedBase64 = btoa(
+      new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
+    );
+    const resizedDataUrl = `data:image/png;base64,${resizedBase64}`;
+
+    console.log(`✅ Screenshot resized to ${targetWidth}×${targetHeight}`);
+    return { dataUrl: resizedDataUrl, width: targetWidth, height: targetHeight, wasResized: true };
+  } catch (error) {
+    console.error('❌ Failed to resize screenshot:', error);
+    return { dataUrl, width: 1280, height: 720, wasResized: false };
+  }
+}
+
 // Memory store for browser context
 interface BrowserMemory {
   recentPages: Array<{ url: string; title: string; timestamp: number; context?: any }>;
@@ -333,7 +409,7 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
 
   // Abort all browser operations
   if (request.type === 'ABORT_ALL_BROWSER_OPERATIONS') {
-    const tabId = sender.tab?.id;
+    const tabId = _sender.tab?.id;
     if (tabId !== undefined) {
       console.log(`🛑 ABORT_ALL_BROWSER_OPERATIONS received for tab ${tabId}`);
       setTabAbortFlag(tabId, true);
@@ -461,7 +537,7 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
         }
 
         // Capture the visible tab in the current window
-        const dataUrl = await chrome.tabs.captureVisibleTab(currentWindow.id, {
+        const originalDataUrl = await chrome.tabs.captureVisibleTab(currentWindow.id, {
           format: 'png',
           quality: 80
         });
@@ -471,6 +547,9 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
           type: 'GET_VIEWPORT_SIZE'
         }).catch(() => ({ width: 1280, height: 800 })); // Fallback dimensions
 
+        // Resize the screenshot BEFORE saving (so saved screenshot matches what Claude sees)
+        const resized = await resizeScreenshot(originalDataUrl);
+
         // Check if auto-save screenshots is enabled
         const settings = await chrome.storage.local.get(['atlasSettings']);
         if (settings.atlasSettings?.autoSaveScreenshots) {
@@ -479,24 +558,26 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
             const filename = `atlas-screenshot-${timestamp}.png`;
 
-            // Save screenshot to Downloads folder
+            // Save the RESIZED screenshot to Downloads folder (matches what Claude sees)
             await chrome.downloads.download({
-              url: dataUrl,
+              url: resized.dataUrl,
               filename: filename,
               saveAs: false // Auto-save without prompting
             });
 
-            console.log(`📸 Screenshot auto-saved: ${filename}`);
+            console.log(`📸 Screenshot auto-saved: ${filename} (${resized.width}×${resized.height}${resized.wasResized ? ' resized' : ''})`);
           } catch (downloadError) {
             console.error('❌ Failed to auto-save screenshot:', downloadError);
             // Don't fail the screenshot operation if download fails
           }
         }
 
+        // Send the resized screenshot along with image dimensions
         sendResponse({
           success: true,
-          screenshot: dataUrl,
-          viewport: viewport
+          screenshot: resized.dataUrl,
+          viewport: viewport,
+          imageSize: { width: resized.width, height: resized.height }
         });
       } catch (error) {
         console.error('❌ Screenshot capture error:', error);

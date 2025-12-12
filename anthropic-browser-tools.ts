@@ -1,90 +1,7 @@
 import type { Message } from './types';
 
-/**
- * Maximum size for the longest edge of screenshots sent to Claude.
- * This ensures Claude won't resize the image further internally.
- * Claude's limit is ~1568px, so 1280px gives us a safe margin.
- */
-const MAX_SCREENSHOT_LONG_EDGE = 1280;
-
-/**
- * Resize a base64 screenshot for Claude, maintaining aspect ratio.
- * Only resizes if the longest edge exceeds MAX_SCREENSHOT_LONG_EDGE.
- *
- * Why limit size?
- * - Claude automatically resizes large images (max ~1568px on longest edge)
- * - By keeping under 1280px, we KNOW Claude won't resize further
- * - We maintain aspect ratio to avoid distortion
- * - We can then calculate the scale factor to convert coordinates to viewport
- *
- * Returns: { base64: string, width: number, height: number }
- */
-async function resizeScreenshotForClaude(
-  base64Data: string
-): Promise<{ base64: string; width: number; height: number }> {
-  try {
-    // Convert base64 to blob
-    const byteCharacters = atob(base64Data);
-    const byteNumbers = new Array(byteCharacters.length);
-    for (let i = 0; i < byteCharacters.length; i++) {
-      byteNumbers[i] = byteCharacters.charCodeAt(i);
-    }
-    const byteArray = new Uint8Array(byteNumbers);
-    const blob = new Blob([byteArray], { type: 'image/png' });
-
-    // Create ImageBitmap from blob to get original dimensions
-    const imageBitmap = await createImageBitmap(blob);
-    const originalWidth = imageBitmap.width;
-    const originalHeight = imageBitmap.height;
-
-    // Calculate the longest edge
-    const longestEdge = Math.max(originalWidth, originalHeight);
-
-    // If already under the limit, return original
-    if (longestEdge <= MAX_SCREENSHOT_LONG_EDGE) {
-      console.log(`📐 Screenshot ${originalWidth}×${originalHeight} is under ${MAX_SCREENSHOT_LONG_EDGE}px limit, no resize needed`);
-      imageBitmap.close(); // Free memory
-      return { base64: base64Data, width: originalWidth, height: originalHeight };
-    }
-
-    // Calculate scale factor to fit longest edge within limit
-    const scale = MAX_SCREENSHOT_LONG_EDGE / longestEdge;
-    const targetWidth = Math.round(originalWidth * scale);
-    const targetHeight = Math.round(originalHeight * scale);
-
-    console.log(`📐 Resizing screenshot from ${originalWidth}×${originalHeight} to ${targetWidth}×${targetHeight} (scale: ${scale.toFixed(4)})`);
-
-    // Use OffscreenCanvas to resize (available in modern browsers)
-    const canvas = new OffscreenCanvas(targetWidth, targetHeight);
-    const ctx = canvas.getContext('2d');
-
-    if (!ctx) {
-      console.warn('⚠️ Could not get canvas context, returning original image');
-      imageBitmap.close(); // Free memory even on error path
-      return { base64: base64Data, width: originalWidth, height: originalHeight };
-    }
-
-    // Draw the image scaled to target dimensions (maintains aspect ratio)
-    ctx.drawImage(imageBitmap, 0, 0, targetWidth, targetHeight);
-
-    // Free the ImageBitmap memory immediately after drawing (before base64 conversion)
-    imageBitmap.close();
-
-    // Convert back to blob then base64
-    const resizedBlob = await canvas.convertToBlob({ type: 'image/png' });
-    const arrayBuffer = await resizedBlob.arrayBuffer();
-    const resizedBase64 = btoa(
-      new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
-    );
-
-    console.log(`✅ Screenshot resized successfully to ${targetWidth}×${targetHeight} (aspect ratio preserved)`);
-    return { base64: resizedBase64, width: targetWidth, height: targetHeight };
-  } catch (error) {
-    console.error('❌ Failed to resize screenshot:', error);
-    // Return original if resize fails - estimate dimensions based on common sizes
-    return { base64: base64Data, width: 1280, height: 720 };
-  }
-}
+// NOTE: Screenshot resizing is now done in background.ts before the image is sent here.
+// This ensures the saved screenshot matches what Claude sees.
 
 // Browser tool definitions for Anthropic API
 const BROWSER_TOOLS = [
@@ -554,7 +471,7 @@ export async function streamAnthropicWithBrowserTools(
   console.log('🔧 All tool names:', allTools.map((t: any) => t.name).join(', '));
   console.log('🔧 Starting with', conversationMessages.length, 'messages (limited from', messages.length, ')');
 
-  const MAX_TURNS = 20; // Prevent infinite loops
+  const MAX_TURNS = 50; // Prevent infinite loops
   let turnCount = 0;
 
   try {
@@ -1124,28 +1041,26 @@ Remember: When browser tools are disabled, always tell users to perform browser 
 
         // Handle screenshot results differently - include image data
         if (toolUse.name === 'screenshot' && result.success && result.screenshot) {
-          // Extract base64 data from data URL
-          const originalBase64 = result.screenshot.split(',')[1];
+          // Screenshot is already resized in background.ts
+          // Extract base64 data from data URL (already resized to max 1280px longest edge)
+          const base64Data = result.screenshot.split(',')[1];
           const viewport = result.viewport || { width: 1280, height: 800, devicePixelRatio: 1 };
-          const dpr = viewport.devicePixelRatio || 1;
-          console.log('📐 Viewport Info:', {
-            width: viewport.width,
-            height: viewport.height,
-            dpr: dpr,
-            hasViewport: !!result.viewport
+          const imageSize = result.imageSize || { width: 1280, height: 720 }; // From background.ts
+
+          console.log('📐 Screenshot Info:', {
+            imageWidth: imageSize.width,
+            imageHeight: imageSize.height,
+            viewportWidth: viewport.width,
+            viewportHeight: viewport.height
           });
 
-          // Resize screenshot to fixed size so we know exactly what Claude sees
-          // This is small enough that Claude won't resize it further
-          const resized = await resizeScreenshotForClaude(originalBase64);
-
           // Calculate scale factors from image to viewport
-          const scaleX = viewport.width / resized.width;
-          const scaleY = viewport.height / resized.height;
+          const scaleX = viewport.width / imageSize.width;
+          const scaleY = viewport.height / imageSize.height;
 
           // Instructions with conversion formula
           const coordinateInstructions = `Screenshot captured.
-📐 IMAGE SIZE: ${resized.width}×${resized.height}px
+📐 IMAGE SIZE: ${imageSize.width}×${imageSize.height}px
 📐 VIEWPORT SIZE: ${viewport.width}×${viewport.height}px
 
 ⚠️ COORDINATE CONVERSION REQUIRED:
@@ -1171,7 +1086,7 @@ Example: Element at image position (400, 300):
                 source: {
                   type: 'base64',
                   media_type: 'image/png',
-                  data: resized.base64,
+                  data: base64Data,
                 },
               },
             ],
