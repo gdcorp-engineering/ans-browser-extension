@@ -78,6 +78,8 @@ export default defineConfig({
     outDir,
     emptyOutDir: true,
     minify: false, // Don't minify to avoid single-line issues with Chrome
+    sourcemap: false, // Disable source maps to prevent CSP issues
+    target: 'es2020', // Use stable target to avoid eval usage
   },
   resolve: {
     alias: {

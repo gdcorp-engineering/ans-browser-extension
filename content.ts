@@ -468,7 +468,8 @@ async function executePageAction(
     switch (action) {
       case 'click':
         // DEBUG: Log all click parameters
-        console.log('🔧 CLICK ACTION DEBUG:', {
+        console.log('🔧 CLICK ACTION DEBUG - Start');
+        console.log('   📋 Parameters:', {
           selector,
           target,
           coordinates,
@@ -476,6 +477,11 @@ async function executePageAction(
           hasCoordinates: !!coordinates,
           hasSelector: !!selector,
           hasTarget: !!target
+        });
+        console.log('   🎯 Currently focused element:', {
+          tagName: document.activeElement?.tagName,
+          id: document.activeElement?.id,
+          className: document.activeElement?.className
         });
 
         // Support selector, text-based, and coordinate-based clicking
@@ -756,9 +762,96 @@ async function executePageAction(
 
       case 'fill':
         console.log('🔍 FILL ACTION CALLED:', { target, value, selector, hasValue: !!value });
+        console.log('🚀 CONTENT SCRIPT UPDATED - NEW FILL LOGIC ACTIVE');
         if (value) {
           const textToType = value; // Capture value to preserve type narrowing
           let element: HTMLElement | null = null;
+
+          console.log('🔍 FILL ACTION DEBUG - Start');
+          console.log('   📋 Parameters:', { target, value: textToType, hasTarget: !!target });
+          console.log('   🎯 Currently focused element:', {
+            tagName: document.activeElement?.tagName,
+            id: document.activeElement?.id,
+            className: document.activeElement?.className,
+            contentEditable: document.activeElement?.getAttribute('contenteditable'),
+            isTypeable: document.activeElement?.tagName === 'INPUT' ||
+                       document.activeElement?.tagName === 'TEXTAREA' ||
+                       document.activeElement?.getAttribute('contenteditable') === 'true'
+          });
+
+          // PROACTIVE APPROACH: If no target is specified, try to find the best editable element automatically
+          if (!target) {
+            console.log('🎯 No target specified - searching for best editable element...');
+
+            const bestEditableSelectors = [
+              // Confluence main content areas (highest priority - avoid headers)
+              '.ak-editor-content-area[contenteditable="true"]:not(h1):not(h2):not(h3):not(h4):not(h5):not(h6)',
+              '.ProseMirror[contenteditable="true"]:not(h1):not(h2):not(h3):not(h4):not(h5):not(h6)',
+              'div[role="textbox"][contenteditable="true"]:not(h1):not(h2):not(h3):not(h4):not(h5):not(h6)',
+
+              // Generic content editors (avoid headers)
+              '.editor[contenteditable="true"]:not(h1):not(h2):not(h3):not(h4):not(h5):not(h6)',
+              '.rich-text-editor[contenteditable="true"]:not(h1):not(h2):not(h3):not(h4):not(h5):not(h6)',
+              'div[role="textbox"]:not(h1):not(h2):not(h3):not(h4):not(h5):not(h6)',
+
+              // Main content containers
+              '[contenteditable="true"]:not(h1):not(h2):not(h3):not(h4):not(h5):not(h6):not([role="heading"])',
+
+              // Regular inputs as fallback
+              'textarea:not([readonly]):not([disabled])',
+              'input[type="text"]:not([readonly]):not([disabled])',
+
+              // Last resort - any contenteditable (including headers, but we'll handle appending)
+              '[contenteditable="true"]',
+            ];
+
+            for (const selector of bestEditableSelectors) {
+              const candidates = Array.from(document.querySelectorAll(selector)) as HTMLElement[];
+              const bestCandidate = candidates.find(el => {
+                const rect = el.getBoundingClientRect();
+                const isVisible = rect.width > 50 && rect.height > 20 && rect.top >= 0;
+
+                // Check if element contains only placeholder text
+                const text = el.textContent?.trim() || '';
+                const placeholderTexts = ['Type / to insert elements', 'Type something...', 'Start typing...'];
+                const isOnlyPlaceholder = placeholderTexts.some(placeholder =>
+                  text.toLowerCase() === placeholder.toLowerCase()
+                );
+
+                // Prefer elements without placeholder text, but don't exclude them entirely
+                return isVisible && !isOnlyPlaceholder;
+              }) || candidates.find(el => {
+                // Fallback: any visible element (even with placeholder)
+                const rect = el.getBoundingClientRect();
+                return rect.width > 50 && rect.height > 20 && rect.top >= 0;
+              });
+
+              if (bestCandidate) {
+                // Check if this is a heading element
+                const isHeading = bestCandidate.tagName.match(/^H[1-6]$/) ||
+                                 bestCandidate.getAttribute('role') === 'heading' ||
+                                 bestCandidate.classList.contains('heading') ||
+                                 bestCandidate.textContent?.trim().length < 100; // Short text likely to be heading
+
+                console.log(`   ✅ Found best editable element: ${selector}`);
+                console.log('   📋 Element details:', {
+                  tagName: bestCandidate.tagName,
+                  id: bestCandidate.id,
+                  className: bestCandidate.className,
+                  contentEditable: bestCandidate.getAttribute('contenteditable'),
+                  isHeading: isHeading,
+                  textContent: bestCandidate.textContent?.slice(0, 50) + '...'
+                });
+
+                if (isHeading) {
+                  console.log('   ⚠️ Selected element appears to be a heading - content will be appended');
+                }
+
+                element = bestCandidate;
+                break;
+              }
+            }
+          }
 
           console.log('🔍 fill action - target selector:', target);
 
@@ -767,8 +860,26 @@ async function executePageAction(
             element = document.querySelector(target) as HTMLElement;
             if (element) {
               console.log('✅ Found element by selector:', target);
+              console.log('   📋 Element details:', {
+                tagName: element.tagName,
+                id: element.id,
+                className: element.className,
+                contentEditable: element.getAttribute('contenteditable'),
+                type: (element as HTMLInputElement).type,
+                isTypeable: element.tagName === 'INPUT' ||
+                           element.tagName === 'TEXTAREA' ||
+                           element.getAttribute('contenteditable') === 'true'
+              });
             } else {
               console.log('❌ No element found with selector:', target);
+              console.log('   🔍 Available elements with similar selectors:');
+              // Try to find similar elements for debugging
+              const similarElements = Array.from(document.querySelectorAll('*')).filter(el =>
+                el.id?.includes(target?.replace(/[#.]/, '') || '') ||
+                el.className?.includes(target?.replace(/[#.]/, '') || '') ||
+                el.tagName?.toLowerCase().includes(target?.toLowerCase() || '')
+              ).slice(0, 5);
+              similarElements.forEach(el => console.log(`      - ${el.tagName}#${el.id}.${el.className}`));
             }
           }
 
@@ -776,34 +887,72 @@ async function executePageAction(
           if (!element) {
             element = document.activeElement as HTMLElement;
             console.log('🎯 Using currently focused element:', element?.tagName);
+            console.log('   📋 Focused element details:', {
+              tagName: element?.tagName,
+              id: element?.id,
+              className: element?.className,
+              contentEditable: element?.getAttribute('contenteditable'),
+              isTypeable: element?.tagName === 'INPUT' ||
+                         element?.tagName === 'TEXTAREA' ||
+                         element?.getAttribute('contenteditable') === 'true'
+            });
           }
 
           // If element is BODY (nothing focused), try to find a visible search/text input
           if (element && element.tagName === 'BODY') {
-            console.log('💡 Nothing focused, searching for visible input field...');
+            console.log('💡 Nothing focused (BODY element), searching for visible input field...');
+            console.log('   🔍 Looking for editable elements in DOM...');
 
-            // Try to find common search input selectors (prioritize main search over autocomplete)
-            const searchSelectors = [
+            // Try to find editable elements (prioritize content editors over search)
+            const editableSelectors = [
+              // Confluence-specific editor selectors
+              '[contenteditable="true"]', // Confluence rich text editor
+              '.ak-editor-content-area[contenteditable="true"]', // Atlassian editor
+              '.ProseMirror[contenteditable="true"]', // ProseMirror editor used by Confluence
+              '#tinymce', // TinyMCE editor (if used)
+              '.confluence-editor [contenteditable="true"]', // Confluence wrapper
+              '.content-body [contenteditable="true"]', // Content area
+
+              // Generic editor patterns
+              '.editor[contenteditable="true"]',
+              '.rich-text-editor[contenteditable="true"]',
+              '.wysiwyg[contenteditable="true"]',
+              'div[role="textbox"]', // ARIA textbox
+              'div[role="textbox"][contenteditable="true"]',
+
+              // Fallback to input fields
+              'textarea:not([type="hidden"]):not([role="combobox"])',
+              'input[type="text"]:not([type="hidden"]):not([role="combobox"])',
+              'input[type="search"]:not([role="combobox"])',
+
+              // Search inputs as last resort
               'input[type="search"][data-automation-id*="searchBox"]', // Workday main search
-              'input[type="search"]:not([role="combobox"])', // Search inputs that aren't autocomplete
-              'input[type="search"]',
               'input[name*="search" i]:not([role="combobox"])',
               'input[id*="search" i]:not([role="combobox"])',
               'input[placeholder*="search" i]:not([role="combobox"])',
               'input[aria-label*="search" i]:not([role="combobox"])',
               'input[type="text"][name="q"]', // Common search param
-              'input[type="text"]:not([type="hidden"]):not([role="combobox"])', // Any visible text input that's not autocomplete
             ];
 
-            for (const selector of searchSelectors) {
+            for (const selector of editableSelectors) {
               const inputs = Array.from(document.querySelectorAll(selector)) as HTMLElement[];
+              console.log(`   🔍 Trying selector "${selector}" - found ${inputs.length} elements`);
+
               // Find first visible input
               const visibleInput = inputs.find(input => {
                 const rect = input.getBoundingClientRect();
-                return rect.width > 0 && rect.height > 0 && rect.top >= 0;
+                const isVisible = rect.width > 0 && rect.height > 0 && rect.top >= 0;
+                console.log(`      - ${input.tagName}#${input.id}.${input.className} - ${rect.width}x${rect.height} - visible: ${isVisible}`);
+                return isVisible;
               });
 
               if (visibleInput) {
+                console.log(`   ✅ Found visible editable element with "${selector}":`, {
+                  tagName: visibleInput.tagName,
+                  id: visibleInput.id,
+                  className: visibleInput.className,
+                  contentEditable: visibleInput.getAttribute('contenteditable')
+                });
                 console.log(`✅ Found visible input with selector: ${selector}`);
                 element = visibleInput;
                 break;
@@ -956,8 +1105,68 @@ async function executePageAction(
 
 
                   } else if (element!.getAttribute('contenteditable') === 'true') {
-                    // For contenteditable elements, clear and set text
-                    element!.textContent = textToType;
+                    // For contenteditable elements, check if we should append or replace
+                    const existingText = element!.textContent?.trim() || '';
+
+                    // Common placeholder texts to ignore
+                    const placeholderTexts = [
+                      'Type / to insert elements',
+                      'Type something...',
+                      'Start typing...',
+                      'Click here to add content',
+                      'Add content here',
+                      'Enter text here'
+                    ];
+
+                    const isPlaceholder = placeholderTexts.some(placeholder =>
+                      existingText.toLowerCase().includes(placeholder.toLowerCase())
+                    );
+
+                    console.log('📝 Contenteditable element handling:', {
+                      existingText: existingText,
+                      textToType: textToType,
+                      isPlaceholder: isPlaceholder,
+                      shouldAppend: existingText.length > 0 && !isPlaceholder
+                    });
+
+                    if (existingText.length > 0 && !isPlaceholder) {
+                      // If there's existing real content (not placeholder), append new content
+                      console.log('   📝 Appending to existing content...');
+
+                      // Position cursor at the end
+                      const range = document.createRange();
+                      const sel = window.getSelection();
+
+                      // Move to the end of the element
+                      range.selectNodeContents(element!);
+                      range.collapse(false); // false = collapse to end
+                      sel?.removeAllRanges();
+                      sel?.addRange(range);
+
+                      // Add line breaks and new content
+                      const newContent = existingText + '\n\n' + textToType;
+                      element!.textContent = newContent;
+
+                      // Position cursor after the new text
+                      range.selectNodeContents(element!);
+                      range.collapse(false);
+                      sel?.removeAllRanges();
+                      sel?.addRange(range);
+
+                    } else {
+                      // If empty or placeholder, replace with new content
+                      console.log(isPlaceholder ?
+                        '   📝 Replacing placeholder text with new content...' :
+                        '   📝 Setting text in empty element...');
+
+                      // Clear the element completely first
+                      element!.textContent = '';
+                      element!.innerHTML = '';
+
+                      // Set new content
+                      element!.textContent = textToType;
+                    }
+
                     element!.dispatchEvent(new Event('input', { bubbles: true }));
                     element!.dispatchEvent(new Event('change', { bubbles: true }));
                   }
@@ -972,10 +1181,27 @@ async function executePageAction(
             });
           }
 
-          console.error('❌ Element not typeable:', element?.tagName, element);
+          console.error('❌ FILL FAILED - Element not typeable');
+          console.error('   📋 Element details:', {
+            tagName: element?.tagName,
+            id: element?.id,
+            className: element?.className,
+            contentEditable: element?.getAttribute('contenteditable'),
+            type: (element as HTMLInputElement)?.type
+          });
+          console.error('   🔍 Attempted text to type:', textToType);
+          console.error('   💡 Available editable elements on page:');
+
+          // Show available editable elements for debugging
+          const editableElements = Array.from(document.querySelectorAll('input, textarea, [contenteditable="true"]'));
+          editableElements.slice(0, 10).forEach((el, i) => {
+            const rect = el.getBoundingClientRect();
+            console.error(`      ${i+1}. ${el.tagName}#${el.id}.${el.className} - ${rect.width}x${rect.height} - visible: ${rect.width > 0 && rect.height > 0}`);
+          });
+
           return {
             success: false,
-            message: element ? `Element ${element.tagName} is not typeable` : `No focused element found. Try clicking on the input field first.`
+            message: element ? `Element ${element.tagName} is not typeable. Available editable elements: ${editableElements.length}` : `No focused element found. Try clicking on the input field first. Available editable elements: ${editableElements.length}`
           };
         }
         return { success: false, message: 'Value required for fill action' };
