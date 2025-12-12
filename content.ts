@@ -1133,25 +1133,38 @@ async function executePageAction(
                       // If there's existing real content (not placeholder), append new content
                       console.log('   📝 Appending to existing content...');
 
-                      // Position cursor at the end
+                      // For contenteditable elements, we need to properly insert content
+                      // at the end without losing existing formatting
+                      const selection = window.getSelection();
                       const range = document.createRange();
-                      const sel = window.getSelection();
 
-                      // Move to the end of the element
+                      // Move cursor to the very end of the element's content
                       range.selectNodeContents(element!);
-                      range.collapse(false); // false = collapse to end
-                      sel?.removeAllRanges();
-                      sel?.addRange(range);
+                      range.collapse(false); // Collapse to end
 
-                      // Add line breaks and new content
-                      const newContent = existingText + '\n\n' + textToType;
-                      element!.textContent = newContent;
+                      // Clear any existing selection and set our range
+                      selection?.removeAllRanges();
+                      selection?.addRange(range);
 
-                      // Position cursor after the new text
-                      range.selectNodeContents(element!);
-                      range.collapse(false);
-                      sel?.removeAllRanges();
-                      sel?.addRange(range);
+                      // Insert two line breaks (paragraph separation)
+                      const br1 = document.createElement('br');
+                      const br2 = document.createElement('br');
+                      range.insertNode(br2);
+                      range.insertNode(br1);
+
+                      // Move cursor after the line breaks
+                      range.setStartAfter(br2);
+                      range.collapse(true);
+
+                      // Insert the new text content
+                      const textNode = document.createTextNode(textToType);
+                      range.insertNode(textNode);
+
+                      // Move cursor to end of inserted text
+                      range.setStartAfter(textNode);
+                      range.collapse(true);
+                      selection?.removeAllRanges();
+                      selection?.addRange(range);
 
                     } else {
                       // If empty or placeholder, replace with new content
