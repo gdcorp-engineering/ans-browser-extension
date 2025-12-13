@@ -2,7 +2,7 @@
 import { z } from 'zod';
 
 export type ToolMode = 'tool-router';
-export type Provider = 'anthropic' | 'google';
+export type Provider = 'anthropic';
 
 export type ProtocolType = 'mcp' | 'a2a';
 
@@ -56,7 +56,6 @@ export interface Settings {
   apiKey: string;
   model: string;
   toolMode?: ToolMode;
-  composioApiKey?: string;
   enableScreenshots?: boolean;
   customBaseUrl?: string; // Custom provider URL
   customModelName?: string; // Custom model name when model is 'custom'
@@ -77,14 +76,6 @@ export interface Settings {
   chatHistoryLength?: number; // Pure text chat messages to keep (default: 20)
   pageContextHistoryLength?: number; // Tool results with screenshots/DOM to keep (default: 2)
   enableSeparateHistoryManagement?: boolean; // Enable separate chat vs page context management (default: false)
-}
-
-export interface ComposioSession {
-  sessionId: string;
-  chatSessionMcpUrl: string;
-  toolRouterMcpUrl: string;
-  expiresAt: number;
-  createdAt: number;
 }
 
 export interface ChatState {
@@ -244,58 +235,6 @@ export interface ViewportInfo {
 // ============================================
 // Zod Validation Schemas (for runtime validation)
 // ============================================
-
-/**
- * Validates Gemini API response structure
- * Ensures response has expected format before processing
- */
-export const GeminiPartSchema = z.union([
-  z.object({
-    text: z.string(),
-  }),
-  z.object({
-    functionCall: z.object({
-      name: z.string(),
-      args: z.record(z.any()).optional(),
-    }),
-  }),
-  z.object({
-    function_response: z.any(),
-  }),
-  z.object({
-    inline_data: z.object({
-      mime_type: z.string(),
-      data: z.string(),
-    }),
-  }),
-]);
-
-export const GeminiCandidateSchema = z.object({
-  content: z.object({
-    parts: z.array(GeminiPartSchema),
-  }).optional(),
-  finishReason: z.string().optional(),
-  safetyResponse: z.object({
-    requireConfirmation: z.boolean(),
-    message: z.string().optional(),
-  }).optional(),
-});
-
-export const GeminiResponseSchema = z.object({
-  candidates: z.array(GeminiCandidateSchema).optional(),
-  promptFeedback: z.object({
-    blockReason: z.string().optional(),
-  }).optional(),
-});
-
-/**
- * Validates Composio session response
- */
-export const ComposioSessionSchema = z.object({
-  session_id: z.string().min(1),
-  chat_session_mcp_url: z.string().url(),
-  tool_router_instance_mcp_url: z.string().url(),
-});
 
 /**
  * Validates page context from content script

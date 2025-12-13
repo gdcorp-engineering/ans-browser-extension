@@ -3,7 +3,6 @@ import { createRoot } from 'react-dom/client';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { Settings, MCPClient, Message, SiteInstruction, ServiceMapping, Provider, MCPServerConfig } from './types';
-import { GeminiResponseSchema } from './types';
 import { experimental_createMCPClient, stepCountIs } from 'ai';
 import { streamAnthropic } from './anthropic-service';
 import { streamAnthropicWithBrowserTools } from './anthropic-browser-tools';
@@ -49,9 +48,6 @@ const MODEL_QUICK_OPTIONS: Array<{ id: string; provider: Provider; name: string;
   { id: 'claude-3-5-sonnet-20241022', provider: 'anthropic', name: 'Claude 3.5 Sonnet', description: 'Most intelligent model' },
   { id: 'claude-3-5-haiku-20241022', provider: 'anthropic', name: 'Claude 3.5 Haiku', description: 'Fastest model' },
   { id: 'claude-3-opus-20240229', provider: 'anthropic', name: 'Claude 3 Opus', description: 'Previous generation' },
-  { id: 'gemini-2.5-computer-use-preview-10-2025', provider: 'google', name: 'Gemini 2.5 Computer Use', description: 'Browser automation model' },
-  { id: 'gemini-2.5-pro', provider: 'google', name: 'Gemini 2.5 Pro', description: 'General reasoning' },
-  { id: 'gemini-2.5-flash', provider: 'google', name: 'Gemini 2.5 Flash', description: 'Fast responses' },
 ];
 
 const BROWSER_TOOL_NAMES = new Set([
@@ -1566,10 +1562,10 @@ function ChatSidebar() {
         return;
       }
 
-      if (settings.provider !== 'google' && settings.provider !== 'anthropic') {
+      if (settings.provider !== 'anthropic') {
         const confirmed = window.confirm(
           '🌐 Browser Tools not supported for ' + settings.provider + '\n\n' +
-          'Browser Tools currently works with Google Gemini and Anthropic Claude.\n\n' +
+          'Browser Tools currently works with Anthropic Claude.\n\n' +
           'Would you like to open Settings to change your provider?'
         );
         if (confirmed) {
@@ -1692,475 +1688,8 @@ function ChatSidebar() {
     
     console.log('🧹 Cleared all MCP initialization promises and resources');
     
-    // Reinitialize Composio session if API key present
-    if (settings?.composioApiKey) {
-      try {
-        const { initializeComposioToolRouter } = await import('./tools');
-        // Use unique, persistent user ID
-        const toolRouterSession = await initializeComposioToolRouter(
-          settings.composioApiKey
-        );
-        
-        chrome.storage.local.set({ 
-          composioSessionId: toolRouterSession.sessionId,
-          composioChatMcpUrl: toolRouterSession.chatSessionMcpUrl,
-          composioToolRouterMcpUrl: toolRouterSession.toolRouterMcpUrl,
-        });
-        
-        console.log('New Composio session created');
-        console.log('Session ID:', toolRouterSession.sessionId);
-      } catch (error) {
-        console.error('Failed to create new Composio session:', error);
-      }
-    }
   };
 
-  const streamWithGeminiComputerUse = async (messages: Message[]) => {
-    try {
-      const apiKey = ensureApiKey();
-
-      // Add initial assistant message
-      const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: '',
-      };
-      setMessages(prev => [...prev, assistantMessage]);
-
-      // Prepare conversation history
-      const contents: any[] = [];
-
-      // Add message history
-      for (const msg of messages) {
-        if (msg.role === 'user') {
-          contents.push({
-            role: 'user',
-            parts: [{ text: msg.content }]
-          });
-        } else {
-          contents.push({
-            role: 'model',
-            parts: [{ text: msg.content }]
-          });
-        }
-      }
-
-      const initialContext = await getCachedPageContext(true);
-      const initialContextText = formatPageContextForPrompt(initialContext);
-      const initialContextPart = initialContextText ? { text: initialContextText } : null;
-
-      let initialScreenshotData: string | null = null;
-      if (settings?.enableScreenshots) {
-        const screenshotResp = await executeTool('screenshot', {});
-        if (screenshotResp?.screenshot) {
-          initialScreenshotData = screenshotResp.screenshot;
-        } else {
-          console.warn('Initial screenshot capture failed or returned empty data:', screenshotResp?.error);
-        }
-      }
-
-      if (initialContextPart || (settings?.enableScreenshots && initialScreenshotData)) {
-        const lastUserContent = contents[contents.length - 1];
-        const targetContent = lastUserContent && lastUserContent.role === 'user'
-          ? lastUserContent
-          : { role: 'user', parts: [] as any[] };
-
-        if (initialContextPart) {
-          targetContent.parts.push(initialContextPart);
-        }
-
-        if (settings?.enableScreenshots && initialScreenshotData) {
-          targetContent.parts.push({
-            inline_data: {
-              mime_type: 'image/png',
-              data: initialScreenshotData.split(',')[1]
-            }
-          });
-        }
-
-        if (targetContent !== lastUserContent) {
-          contents.push(targetContent);
-        }
-      }
-
-      let responseText = '';
-      const maxTurns = 30;
-
-      const screenshotInstruction = settings?.enableScreenshots
-        ? `Screenshots are enabled, but you must still read the latest [DOM CONTEXT] summary after each action before deciding what to do next. Only request screenshots when DOM data is insufficient.`
-        : `Screenshots are currently unavailable. Instead, you will be given fresh [DOM CONTEXT] summaries after each action. Always read that context to understand selectors, labels, and element positions before choosing your next action.`;
-
-      const systemInstruction = `You are a browser automation assistant with ONLY browser control capabilities.
-
-CRITICAL:
-- ${screenshotInstruction}
-- You can ONLY use the computer_use tool functions listed below. DO NOT invent other functions.
-
-AVAILABLE ACTIONS (computer_use tool only):
-- click / click_at: Click at coordinates (only when no selector is available)
-- type_text_at: Type text (optionally with press_enter)
-- scroll / scroll_down / scroll_up: Scroll the page
-- navigate: Navigate to a URL
-- wait / wait_5_seconds: Wait for page load
-
-GUIDELINES:
-1. DOM CONTEXT FIRST: Use the latest [DOM CONTEXT] text to pick selectors, ARIA labels, or coordinates derived from bounding boxes. Only request another action once you've checked this data.
-2. NAVIGATION: Use 'navigate' to change pages (e.g., navigate({url: "https://www.reddit.com"})).
-3. INTERACTION: Prefer selector-based logic inferred from the DOM context. Only fall back to rough coordinates if no selector details exist.
-4. NO HALLUCINATING: Do NOT call functions beyond the list above.
-5. EFFICIENCY: Complete tasks in as few steps as possible while relying on DOM context rather than screenshots.`;
-
-      for (let turn = 0; turn < maxTurns; turn++) {
-        if (abortControllerRef.current?.signal.aborted) {
-          setMessages(prev => {
-            const updated = [...prev];
-            const lastMsg = updated[updated.length - 1];
-            if (lastMsg && lastMsg.role === 'assistant') {
-              lastMsg.content += '\n\n🛑 **Stopped by user**';
-            }
-            return updated;
-          });
-          return; // Exit the agent loop
-        }
-
-        console.log(`\n--- Turn ${turn + 1}/${maxTurns} ---`);
-
-        const requestBody = {
-          contents,
-          tools: [{
-            computer_use: {
-              environment: 'ENVIRONMENT_BROWSER'
-            }
-          }],
-          systemInstruction: {
-            parts: [{ text: systemInstruction }]
-          },
-          generationConfig: {
-            temperature: 1.0,
-          },
-          safetySettings: [
-            {
-              category: 'HARM_CATEGORY_HARASSMENT',
-              threshold: 'BLOCK_NONE'
-            },
-            {
-              category: 'HARM_CATEGORY_HATE_SPEECH',
-              threshold: 'BLOCK_NONE'
-            },
-            {
-              category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
-              threshold: 'BLOCK_NONE'
-            },
-            {
-              category: 'HARM_CATEGORY_DANGEROUS_CONTENT',
-              threshold: 'BLOCK_NONE'
-            }
-          ]
-        };
-        
-        // Create abort controller with timeout
-        const abortController = new AbortController();
-        const timeoutId = setTimeout(() => abortController.abort(), 60000); // 60 second timeout
-        
-        // Always use computer-use model for browser tools
-        const computerUseModel = 'gemini-2.5-computer-use-preview-10-2025';
-
-        const baseUrl = settings?.customBaseUrl || 'https://generativelanguage.googleapis.com';
-        const isCustomProvider = !!settings?.customBaseUrl;
-
-        // For custom providers, use Authorization header; for Google, use query param
-        const url = isCustomProvider
-          ? `${baseUrl}/v1beta/models/${computerUseModel}:generateContent`
-          : `${baseUrl}/v1beta/models/${computerUseModel}:generateContent?key=${apiKey}`;
-
-        const headers: Record<string, string> = {
-          'Content-Type': 'application/json',
-        };
-
-        if (isCustomProvider) {
-          headers['Authorization'] = `Bearer ${apiKey}`;
-        }
-
-        let response;
-        try {
-          response = await fetch(url, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify(requestBody),
-            signal: abortController.signal,
-          });
-        } finally {
-          clearTimeout(timeoutId);
-        }
-        
-        if (!response.ok) {
-          let errorDetails;
-          try {
-            errorDetails = await response.json();
-            console.error('❌ Gemini API Error Response:', JSON.stringify(errorDetails, null, 2));
-          } catch (e) {
-            console.error('❌ Failed to parse error response:', e);
-            errorDetails = { statusText: response.statusText };
-          }
-
-          const errorMessage = errorDetails?.error?.message || `API request failed with status ${response.status}: ${response.statusText}`;
-          console.error('❌ Full error details:', errorDetails);
-
-          throw new Error(errorMessage);
-        }
-        
-        const data = await response.json();
-
-        // Validate response structure with Zod
-        let validatedData;
-        try {
-          validatedData = GeminiResponseSchema.parse(data);
-        } catch (validationError) {
-          console.error('❌ Gemini API response failed validation:', validationError);
-          throw new Error(`Invalid Gemini API response format: ${(validationError as any).message}`);
-        }
-
-        // Check for safety blocks and prompt feedback
-        if (validatedData.promptFeedback?.blockReason) {
-          const blockReason = validatedData.promptFeedback.blockReason;
-          console.error('🚫 Request blocked by safety filter:', blockReason);
-
-          // Show detailed error to user
-          setMessages(prev => {
-            const updated = [...prev];
-            const lastMsg = updated[updated.length - 1];
-            if (lastMsg && lastMsg.role === 'assistant') {
-              lastMsg.content = `⚠️ **Safety Filter Blocked Request**\n\nReason: ${blockReason}\n\nThis request was blocked by Gemini's safety filters. Try:\n- Using a different webpage\n- Simplifying your request\n- Avoiding sensitive actions\n\nFull response:\n\`\`\`json\n${JSON.stringify(validatedData, null, 2)}\n\`\`\``;
-            }
-            return updated;
-          });
-          return; // Exit the loop
-        }
-
-        const candidate = validatedData.candidates?.[0];
-
-        if (!candidate) {
-          console.error('❌ No candidate in response. Full response:', JSON.stringify(data, null, 2));
-          throw new Error(`No candidate in Gemini response. Finish reason: ${data.candidates?.[0]?.finishReason || 'unknown'}. Full response: ${JSON.stringify(data)}`);
-        }
-
-        // Check if candidate has safety response requiring confirmation
-        const safetyResponse = candidate.safetyResponse;
-        if (safetyResponse?.requireConfirmation) {
-          // Show confirmation dialog to user
-          const confirmMessage = safetyResponse.message || 'This action requires confirmation. Do you want to proceed?';
-          const userConfirmed = window.confirm(`🔒 Human Confirmation Required\n\n${confirmMessage}\n\nProceed with this action?`);
-
-          if (!userConfirmed) {
-            setMessages(prev => {
-              const updated = [...prev];
-              const lastMsg = updated[updated.length - 1];
-              if (lastMsg && lastMsg.role === 'assistant') {
-                lastMsg.content += '\n\n❌ Action cancelled by user.';
-              }
-              return updated;
-            });
-            return; // Exit the loop
-          }
-
-          // Add confirmation to conversation
-          contents.push({
-            role: 'user',
-            parts: [{ text: 'CONFIRMED: User approved this action. Please proceed.' }]
-          });
-
-          // Continue to next iteration to re-run with confirmation
-          continue;
-        }
-
-        // Add model response to conversation
-        contents.push(candidate.content);
-
-        // Check if there are function calls
-        const parts = candidate.content?.parts || [];
-        const hasFunctionCalls = parts.some((p: any) => 'functionCall' in p && p.functionCall);
-
-        if (!hasFunctionCalls) {
-          // No more actions - task complete
-          for (const part of parts) {
-            if ('text' in part && typeof part.text === 'string') {
-              responseText += part.text;
-            }
-          }
-          break;
-        }
-
-        // Execute function calls
-        const functionResponses: any[] = [];
-        const contextSummaries: Array<string | null> = [];
-        const screenshotAttachments: Array<string | null> = [];
-
-        for (const part of parts) {
-          if ('text' in part && typeof part.text === 'string') {
-            responseText += part.text + '\n';
-            // Update message with current text
-            setMessages(prev => {
-              const updated = [...prev];
-              const lastMsg = updated[updated.length - 1];
-              if (lastMsg && lastMsg.role === 'assistant') {
-                lastMsg.content = responseText;
-              }
-              return updated;
-            });
-          } else if ('functionCall' in part && part.functionCall) {
-            // Check if user clicked stop button
-            if (abortControllerRef.current?.signal.aborted) {
-              setMessages(prev => {
-                const updated = [...prev];
-                const lastMsg = updated[updated.length - 1];
-                if (lastMsg && lastMsg.role === 'assistant') {
-                  lastMsg.content = responseText + '\n\n🛑 **Stopped by user**';
-                }
-                return updated;
-              });
-              return; // Exit the agent loop
-            }
-
-            const funcName = part.functionCall.name;
-            const funcArgs = part.functionCall.args || {};
-
-            responseText += `\n[Executing: ${funcName}]\n`;
-
-            // Update message with current progress
-            setMessages(prev => {
-              const updated = [...prev];
-              const lastMsg = updated[updated.length - 1];
-              if (lastMsg && lastMsg.role === 'assistant') {
-                lastMsg.content = responseText;
-              }
-              return updated;
-            });
-
-            // Show overlay before ANY browser action (ensures overlay is always visible)
-            console.log(`🔵 Showing overlay for browser action: ${funcName}`);
-            await showBrowserAutomationOverlay();
-
-            // Execute the browser action
-            const result = await executeBrowserAction(funcName, funcArgs);
-
-            // Wait after action for any changes to settle
-            await new Promise(resolve => setTimeout(resolve, 500));
-
-            // Re-show overlay after action (in case page navigation removed it)
-            await showBrowserAutomationOverlay();
-
-            // Capture screenshot if enabled
-            let screenshotData: string | null = null;
-            if (settings?.enableScreenshots) {
-              const shotResponse = await executeTool('screenshot', {});
-              if (shotResponse?.screenshot) {
-                screenshotData = shotResponse.screenshot;
-              } else {
-                console.warn('Screenshot capture after action failed or returned empty data:', shotResponse?.error);
-              }
-            }
-
-            // Get current page URL and viewport dimensions (required by Gemini)
-            let currentUrl = '';
-            let viewportInfo = '';
-            let latestContext: any = null;
-            try {
-              const pageInfo = await getCachedPageContext(true);
-              if (pageInfo) {
-                latestContext = pageInfo;
-                currentUrl = pageInfo?.url || '';
-
-                // Include viewport dimensions to help Gemini understand coordinate space
-                if (pageInfo?.viewport) {
-                  viewportInfo = ` Viewport: ${pageInfo.viewport.width}x${pageInfo.viewport.height}`;
-                }
-              }
-            } catch (error) {
-              console.warn('Failed to get page URL:', error);
-            }
-
-            // Build function response with URL and viewport info (required by Gemini)
-            const functionResponse: any = {
-              name: funcName,
-              response: {
-                ...result,
-                url: currentUrl,  // Gemini requires this
-                viewport_info: viewportInfo,
-                success: result.success !== false,
-                page_context: latestContext
-              }
-            };
-            
-            functionResponses.push(functionResponse);
-
-            const contextSummary = formatPageContextForPrompt(latestContext, {
-              contentLimit: 400,
-              elementLimit: 8
-            });
-            contextSummaries.push(contextSummary || null);
-            screenshotAttachments.push(screenshotData);
-            
-            // Update UI
-            setMessages(prev => {
-              const updated = [...prev];
-              const lastMsg = updated[updated.length - 1];
-              if (lastMsg && lastMsg.role === 'assistant') {
-                lastMsg.content = responseText;
-              }
-              return updated;
-            });
-          }
-        }
-        
-        // Add function responses back to conversation (include refreshed DOM context)
-        if (functionResponses.length > 0) {
-          const userParts: any[] = [];
-
-          functionResponses.forEach((fr, idx) => {
-            userParts.push({ function_response: fr });
-
-            const summary = contextSummaries[idx];
-            if (summary) {
-              userParts.push({ text: summary });
-            }
-
-            const screenshotData = screenshotAttachments[idx];
-            if (settings?.enableScreenshots && screenshotData) {
-              userParts.push({
-                inline_data: {
-                  mime_type: 'image/png',
-                  data: screenshotData.split(',')[1]
-                }
-              });
-            }
-          });
-          
-          contents.push({
-            role: 'user',
-            parts: userParts
-          });
-        }
-      }
-      
-      // Final update
-      setMessages(prev => {
-        const updated = [...prev];
-        const lastMsg = updated[updated.length - 1];
-        if (lastMsg && lastMsg.role === 'assistant') {
-          lastMsg.content = responseText || 'Task completed';
-        }
-        return updated;
-      });
-      
-    } catch (error: any) {
-      console.error('❌ Error with Gemini Computer Use:');
-      console.error('Error name:', error?.name);
-      console.error('Error message:', error?.message);
-      console.error('Error stack:', error?.stack);
-      console.error('Full error object:', error);
-      throw error;
-    }
-  };
 
   const requiresUserConfirmation = async (functionName: string, args: any): Promise<boolean> => {
     let pageContext: any = {};
@@ -3002,9 +2531,7 @@ GUIDELINES:
         }
 
         // Route to provider-specific browser tools
-        if (settings.provider === 'google') {
-          await streamWithGeminiComputerUse(newMessages);
-        } else if (settings.provider === 'anthropic') {
+        if (settings.provider === 'anthropic') {
           const assistantMessage: Message = {
             id: (Date.now() + 1).toString(),
             role: 'assistant',
@@ -3471,17 +2998,8 @@ GUIDELINES:
         } else {
           throw new Error(`Browser Tools not supported for ${settings.provider}`);
         }
-      } else if (settings.composioApiKey) {
-        if (isComposioSessionExpired()) {
-          console.warn('Composio session expired, reinitializing...');
-          await loadSettings(true);
-        }
-
-        const isComputerUseModel = settings.model === 'gemini-2.5-computer-use-preview-10-2025';
-        if (isComputerUseModel && settings.provider === 'google') {
-          setSettings({ ...settings, model: 'gemini-2.5-pro' });
-          console.warn('Switching to gemini-2.5-pro (incompatible with MCP)');
-        }
+      } else if (false) {
+        // Composio support removed
 
         if (mcpClientRef.current && mcpToolsRef.current) {
           await streamWithAISDKAndMCP(newMessages, mcpToolsRef.current);
@@ -3490,7 +3008,7 @@ GUIDELINES:
           if (mcpClientRef.current && mcpToolsRef.current) {
             await streamWithAISDKAndMCP(newMessages, mcpToolsRef.current);
           } else {
-            await streamGoogle(newMessages, abortControllerRef.current.signal);
+            await streamGoogle(newMessages, abortControllerRef.current?.signal || new AbortController().signal);
           }
         } else {
           mcpInitPromiseRef.current = (async () => {
@@ -3532,7 +3050,7 @@ GUIDELINES:
           if (mcpClientRef.current && mcpToolsRef.current) {
             await streamWithAISDKAndMCP(newMessages, mcpToolsRef.current);
           } else {
-            await streamGoogle(newMessages, abortControllerRef.current.signal);
+            await streamGoogle(newMessages, abortControllerRef.current?.signal || new AbortController().signal);
           }
         }
       } else {
@@ -4147,9 +3665,7 @@ GUIDELINES:
             {(settings?.provider
               ? settings.provider.charAt(0).toUpperCase() + settings.provider.slice(1)
               : 'Unknown')} · {browserToolsEnabled
-                ? (settings?.provider === 'google'
-                  ? `${getModelDisplayName('gemini-2.5-computer-use-preview-10-2025')} (Browser Tools)`
-                  : `${getModelDisplayName(settings?.model)} (Browser Tools)`)
+                ? `${getModelDisplayName(settings?.model)} (Browser Tools)`
                 : (settings?.model === 'custom' && settings?.customModelName
                   ? String(settings.customModelName || '')
                   : getModelDisplayName(settings?.model))}
@@ -4167,9 +3683,9 @@ GUIDELINES:
             >
               <span className="toolbar-label">Model</span>
               <span className="toolbar-value">
-                {browserToolsEnabled && settings?.provider !== 'google'
+                {browserToolsEnabled
                   ? `${getModelDisplayName(settings?.model)}*`
-                  : getModelDisplayName(browserToolsEnabled ? 'gemini-2.5-computer-use-preview-10-2025' : settings?.model)}
+                  : getModelDisplayName(settings?.model)}
               </span>
               <span className="toolbar-caret">▾</span>
             </button>

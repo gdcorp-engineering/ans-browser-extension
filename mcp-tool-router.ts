@@ -92,7 +92,7 @@ export function formatToolsForOpenAI(tools: Record<string, any>): any[] {
  */
 export function formatToolsForProvider(
   tools: Record<string, any>,
-  provider: 'google' | 'anthropic' | 'openai'
+  provider: 'anthropic' | 'openai'
 ): any[] {
   switch (provider) {
     case 'anthropic':
@@ -231,7 +231,7 @@ export function isMCPTool(toolName: string, mcpToolNames: Set<string>): boolean 
 export function mergeToolDefinitions(
   mcpTools: Record<string, any>,
   browserTools: any[],
-  provider: 'google' | 'anthropic' | 'openai'
+  provider: 'anthropic' | 'openai'
 ): any[] {
   const formattedMCPTools = formatToolsForProvider(mcpTools, provider);
   return [...browserTools, ...formattedMCPTools];
