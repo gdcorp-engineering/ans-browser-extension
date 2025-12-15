@@ -68,8 +68,6 @@ export interface Settings {
   serviceMappings?: ServiceMapping[]; // Site-specific service mappings (MCP/A2A)
 
   // Conversation History Settings
-  conversationHistoryLength?: number; // Number of messages to keep in initial history (default: 10)
-  conversationLoopHistoryLength?: number; // Max messages during tool execution loops (default: 15)
   enableConversationPersistence?: boolean; // Save conversations to chrome.storage (default: true)
   enableSmartSummarization?: boolean; // Automatically summarize old messages (default: true)
 

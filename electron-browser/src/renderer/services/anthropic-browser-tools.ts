@@ -217,30 +217,10 @@ export async function streamAnthropicWithBrowserTools(
 
   const baseUrl = customBaseUrl || 'https://api.anthropic.com';
 
-  const MAX_HISTORY_MESSAGES = settings?.conversationHistoryLength || 10;
-
   console.log(`🚀 streamAnthropicWithBrowserTools called with ${messages.length} messages`);
 
-  let conversationMessages: Message[] = [];
-  if (messages.length > MAX_HISTORY_MESSAGES) {
-    console.log(`✂️ Trimming messages from ${messages.length} to ${MAX_HISTORY_MESSAGES}`);
-    let trimmed = messages.slice(-MAX_HISTORY_MESSAGES);
-
-    const firstMsg = trimmed[0];
-    if (firstMsg?.role === 'user' && Array.isArray(firstMsg.content)) {
-      const hasToolResult = (firstMsg.content as any[]).some((item: any) => item.type === 'tool_result');
-      if (hasToolResult) {
-        const firstMsgIndex = messages.length - MAX_HISTORY_MESSAGES;
-        if (firstMsgIndex > 0) {
-          trimmed = messages.slice(-(MAX_HISTORY_MESSAGES + 1));
-          console.log(`📎 Preserved tool_use/tool_result pair during initial trim`);
-        }
-      }
-    }
-    conversationMessages = trimmed;
-  } else {
-    conversationMessages = [...messages];
-  }
+  // Keep all messages - no trimming
+  let conversationMessages: Message[] = [...messages];
 
   if (settings?.enableSmartSummarization !== false && conversationMessages.length > 8) {
     console.log('🤖 Smart summarization enabled, checking if summarization needed...');
@@ -693,25 +673,8 @@ Step 4. Output the final click coordinates as: (viewport_x, viewport_y).`;
         content: toolResults,
       } as any);
 
-      const MAX_LOOP_MESSAGES = settings?.conversationLoopHistoryLength || 15;
-      if (conversationMessages.length > MAX_LOOP_MESSAGES) {
-        console.log(`⚠️  Trimming conversation from ${conversationMessages.length} to ${MAX_LOOP_MESSAGES} messages`);
-        let trimmedMessages = conversationMessages.slice(-MAX_LOOP_MESSAGES);
-
-        const firstMsg = trimmedMessages[0];
-        if (firstMsg?.role === 'user' && Array.isArray(firstMsg.content)) {
-          const hasToolResult = (firstMsg.content as any[]).some((item: any) => item.type === 'tool_result');
-          if (hasToolResult) {
-            const firstMsgIndex = conversationMessages.length - MAX_LOOP_MESSAGES;
-            if (firstMsgIndex > 0) {
-              trimmedMessages = conversationMessages.slice(-(MAX_LOOP_MESSAGES + 1));
-              console.log(`   ↳ Included previous assistant message to preserve tool_use/tool_result pair`);
-            }
-          }
-        }
-
-        conversationMessages = trimmedMessages;
-      }
+      // No message trimming - keep all messages for full context
+      console.log(`📝 Total messages in loop: ${conversationMessages.length}`);
     }
     
     if (turnCount >= MAX_TURNS) {

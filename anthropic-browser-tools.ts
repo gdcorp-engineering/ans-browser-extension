@@ -248,7 +248,7 @@ function prepareMessagesWithSeparateHistory(
   // NOTE: We no longer trim chat history here - only page context is stripped
   // The agent needs full conversation history to maintain context
   // Message count trimming happens separately via Loop Message History setting
-  
+
   console.log(`   Final message count: ${processedMessages.length} (page context stripped, all messages kept)`);
   return processedMessages;
 }
@@ -377,55 +377,28 @@ export async function streamAnthropicWithBrowserTools(
   // Always use GoCode endpoint - no direct Anthropic API access
   const baseUrl = customBaseUrl || 'https://caas-gocode-prod.caas-prod.prod.onkatana.net';
 
-  // Keep only the most recent messages to avoid context length issues
-  // Page context can be large, and tool use adds more messages during the loop
-  // User can configure how much history to keep in settings
-  const MAX_HISTORY_MESSAGES = settings?.conversationHistoryLength || 10; // Default: 10 messages
-  const CHAT_HISTORY_LENGTH = settings?.chatHistoryLength || 20; // Default: 20 chat messages
+  // Page context stripping: compress old DOM/screenshot data while keeping all messages
   const PAGE_CONTEXT_HISTORY_LENGTH = settings?.pageContextHistoryLength || 2; // Default: 2 page contexts
-  const ENABLE_SEPARATE_HISTORY = settings?.enableSeparateHistoryManagement !== false; // Default: true
+  const ENABLE_PAGE_CONTEXT_STRIPPING = settings?.enableSeparateHistoryManagement !== false; // Default: true
 
   console.log(`🚀 streamAnthropicWithBrowserTools called with ${messages.length} messages`);
   console.log(`🚀 Browser tools enabled: ${browserToolsEnabled}`);
   console.log(`🚀 Additional tools count: ${additionalTools?.length || 0}`);
-  console.log(`🚀 Separate history management: ${ENABLE_SEPARATE_HISTORY}`);
+  console.log(`🚀 Page context stripping enabled: ${ENABLE_PAGE_CONTEXT_STRIPPING}`);
 
+  // Keep ALL messages but strip large page context from old ones
   let conversationMessages: Message[] = [];
-
-  // Use separate history management if enabled (separates chat from page context)
-  if (ENABLE_SEPARATE_HISTORY) {
-    console.log(`📚 Using separate history: chat=${CHAT_HISTORY_LENGTH}, pageContext=${PAGE_CONTEXT_HISTORY_LENGTH}`);
+  if (ENABLE_PAGE_CONTEXT_STRIPPING) {
+    console.log(`📚 Stripping old page context, keeping last ${PAGE_CONTEXT_HISTORY_LENGTH} with full content`);
     conversationMessages = prepareMessagesWithSeparateHistory(
       messages,
-      CHAT_HISTORY_LENGTH,
+      0,  // Unused parameter (kept for backwards compatibility)
       PAGE_CONTEXT_HISTORY_LENGTH
     );
   } else {
-    // Fallback to legacy trimming behavior
-    console.log(`🚀 Using legacy trimming: MAX_HISTORY_MESSAGES=${MAX_HISTORY_MESSAGES}`);
-
-    // Smart trimming to preserve tool_use/tool_result pairs
-    if (messages.length > MAX_HISTORY_MESSAGES) {
-      console.log(`✂️ Trimming messages from ${messages.length} to ${MAX_HISTORY_MESSAGES}`);
-      let trimmed = messages.slice(-MAX_HISTORY_MESSAGES);
-
-      // Check if first message is a user message with tool_result
-      const firstMsg = trimmed[0];
-      if (firstMsg?.role === 'user' && Array.isArray(firstMsg.content)) {
-        const hasToolResult = (firstMsg.content as any[]).some((item: any) => item.type === 'tool_result');
-        if (hasToolResult) {
-          // Include one more message to get the assistant's tool_use
-          const firstMsgIndex = messages.length - MAX_HISTORY_MESSAGES;
-          if (firstMsgIndex > 0) {
-            trimmed = messages.slice(-(MAX_HISTORY_MESSAGES + 1));
-            console.log(`📎 Preserved tool_use/tool_result pair during initial trim`);
-          }
-        }
-      }
-      conversationMessages = trimmed;
-    } else {
-      conversationMessages = [...messages];
-    }
+    // No stripping - keep all messages with full content
+    console.log(`📚 Page context stripping disabled - keeping all messages with full content`);
+    conversationMessages = [...messages];
   }
 
   // Smart summarization: If enabled and we have many messages, summarize old ones
@@ -1361,47 +1334,15 @@ Example: Element at image position (400, 300):
     console.log(`📝 Added tool results to conversation. Total messages: ${conversationMessages.length}`);
     console.log(`📝 Tool results:`, JSON.stringify(toolResults, null, 2));
 
-    // Trim conversation to prevent context overflow during the loop
-    // Keep only the most recent messages to avoid hitting limits
-    // User can configure max loop history in settings
-    const MAX_LOOP_MESSAGES = settings?.conversationLoopHistoryLength || 15; // Default: 15 messages (increased from 4)
-    if (conversationMessages.length > MAX_LOOP_MESSAGES) {
-      console.log(`⚠️  Trimming conversation from ${conversationMessages.length} to ${MAX_LOOP_MESSAGES} messages`);
-      console.log(`⚠️  Turn: ${turnCount}, Before trim message roles:`, conversationMessages.map(m => m.role));
-
-      // Smart trimming: Don't break tool_use/tool_result pairs
-      // If the first message after trimming is a user message with tool_result,
-      // we need to also include the previous assistant message with tool_use
-      let trimmedMessages = conversationMessages.slice(-MAX_LOOP_MESSAGES);
-
-      // Check if first message is a user message with tool_result content
-      const firstMsg = trimmedMessages[0];
-      if (firstMsg?.role === 'user' && Array.isArray(firstMsg.content)) {
-        const hasToolResult = (firstMsg.content as any[]).some((item: any) => item.type === 'tool_result');
-        if (hasToolResult) {
-          // Find the index in original array and include one more message before it
-          const firstMsgIndex = conversationMessages.length - MAX_LOOP_MESSAGES;
-          if (firstMsgIndex > 0) {
-            // Include the previous assistant message too
-            trimmedMessages = conversationMessages.slice(-(MAX_LOOP_MESSAGES + 1));
-            console.log(`   ↳ Included previous assistant message to preserve tool_use/tool_result pair`);
-          }
-        }
-      }
-
-      conversationMessages = trimmedMessages;
-    }
-
-    // Also strip old page context during the loop (not just at the start)
-    // This ensures we don't accumulate multiple full page contexts
-    if (ENABLE_SEPARATE_HISTORY) {
-      const beforeStrip = conversationMessages.length;
+    // Strip old page context during the loop to prevent token accumulation
+    // We keep ALL messages but compress large DOM/screenshot data from older ones
+    if (ENABLE_PAGE_CONTEXT_STRIPPING) {
       conversationMessages = prepareMessagesWithSeparateHistory(
         conversationMessages,
-        CHAT_HISTORY_LENGTH,
+        0,  // Unused parameter
         PAGE_CONTEXT_HISTORY_LENGTH
       );
-      console.log(`📚 Loop: Stripped page context (${beforeStrip} → ${conversationMessages.length} messages)`);
+      console.log(`📚 Loop: Page context stripped, keeping ${conversationMessages.length} messages`);
     }
 
     // CRITICAL: After adding tool results, we MUST continue the loop to let the AI process them
