@@ -440,6 +440,19 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
         }
 
         if (tabId) {
+          // CRITICAL: Focus the browser window before executing actions
+          // This ensures dropdowns and modals render properly (they often check document.hasFocus())
+          const tab = tabs[0];
+          if (tab?.windowId) {
+            try {
+              await chrome.windows.update(tab.windowId, { focused: true });
+              // Small delay to let OS focus propagate
+              await new Promise(resolve => setTimeout(resolve, 50));
+            } catch (focusError) {
+              console.warn('Could not focus window:', focusError);
+            }
+          }
+          
           await ensureContentScript(tabId);
           const response = await chrome.tabs.sendMessage(tabId, {
             type: 'EXECUTE_ACTION',

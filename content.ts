@@ -338,6 +338,24 @@ function extractPageContext(): PageContext {
 // Helper function to dispatch complete, realistic click event sequence
 async function dispatchClickSequence(element: HTMLElement, x: number, y: number): Promise<void> {
   console.log('🖱️  Starting NATIVE-ONLY click sequence...');
+  
+  // CRITICAL: Ensure the main page has focus before clicking
+  // Many websites (Jira, Slack, etc.) check document.hasFocus() before rendering dropdowns
+  // When the sidepanel is active, the main page loses focus and dropdowns won't render
+  try {
+    window.focus();
+    // Also blur any active element that might be stealing focus
+    if (document.activeElement && document.activeElement !== document.body) {
+      (document.activeElement as HTMLElement).blur?.();
+    }
+    document.body.focus();
+    // Dispatch a focusin event to notify the page that it has focus
+    document.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+    console.log('✅ Window focus established');
+  } catch (focusError) {
+    console.warn('⚠️ Could not focus window:', focusError);
+  }
+  
   console.log('🎯 Target element:', {
     tag: element.tagName,
     id: element.id,
