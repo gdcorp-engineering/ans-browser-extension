@@ -1054,27 +1054,6 @@ function SettingsPage() {
             {settings.enableSeparateHistoryManagement !== false && (
               <>
                 <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500' }}>
-                  Chat History Length (default: 20)
-                </label>
-                <input
-                  type="number"
-                  min="5"
-                  max="50"
-                  value={settings.chatHistoryLength || 20}
-                  onChange={(e) => setSettings({ ...settings, chatHistoryLength: parseInt(e.target.value) || 20 })}
-                  style={{
-                    width: '100%',
-                    padding: '8px',
-                    marginBottom: '5px',
-                    border: '1px solid #ddd',
-                    borderRadius: '4px'
-                  }}
-                />
-                <p className="help-text" style={{ marginBottom: '15px' }}>
-                  💬 Number of pure text chat messages to keep. These are your questions and assistant responses (no screenshots/DOM).
-                </p>
-
-                <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500' }}>
                   Page Context History (default: 2)
                 </label>
                 <input
