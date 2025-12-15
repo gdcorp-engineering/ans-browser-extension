@@ -23,6 +23,8 @@ export interface Settings {
   composioApiKey?: string;
   model: string;
   customBaseUrl?: string;
+  conversationHistoryLength?: number;
+  conversationLoopHistoryLength?: number;
   enableSmartSummarization?: boolean;
 }
 
@@ -64,5 +66,7 @@ export const SettingsSchema = z.object({
   composioApiKey: z.string().optional(),
   model: z.string(),
   customBaseUrl: z.string().optional(),
+  conversationHistoryLength: z.number().optional(),
+  conversationLoopHistoryLength: z.number().optional(),
   enableSmartSummarization: z.boolean().optional(),
 });
