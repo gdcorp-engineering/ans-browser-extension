@@ -116,7 +116,7 @@ function hasPageContext(content: any): boolean {
   return content.some((item: any) => {
     // Check for images (screenshots) at top level
     if (item.type === 'image') return true;
-    
+
     // Check for tool_result blocks
     if (item.type === 'tool_result') {
       // Case 1: tool_result.content is an array (e.g., screenshots with [{text}, {image}])
@@ -162,7 +162,7 @@ function summarizePageContextPreservingStructure(content: any): any {
       };
     } else if (item.type === 'tool_result') {
       // CRITICAL: Preserve the tool_result structure, only summarize the content
-      
+
       // Case 1: tool_result.content is an array (e.g., screenshots with [{text}, {image}])
       if (Array.isArray(item.content)) {
         // Check if this contains images (screenshots)
@@ -170,8 +170,8 @@ function summarizePageContextPreservingStructure(content: any): any {
         if (hasImage) {
           // Strip images, keep text but summarize
           const textItems = item.content.filter((c: any) => c.type === 'text');
-          const textSummary = textItems.length > 0 
-            ? textItems[0].text?.substring(0, 100) + '...' 
+          const textSummary = textItems.length > 0
+            ? textItems[0].text?.substring(0, 100) + '...'
             : '';
           return {
             ...item,
@@ -181,7 +181,7 @@ function summarizePageContextPreservingStructure(content: any): any {
         // No images, keep as-is
         return item;
       }
-      
+
       // Case 2: tool_result.content is a string (e.g., getPageContext JSON)
       let summarizedContent = '[Tool result]';
       try {
@@ -222,13 +222,11 @@ function summarizePageContextPreservingStructure(content: any): any {
  * while keeping ALL messages for full conversation context.
  *
  * @param messages - Full message history
- * @param _chatHistoryLength - UNUSED (kept for backwards compatibility)
  * @param pageContextHistoryLength - Number of page context messages to keep full content (default: 2)
  * @returns Messages with old page context stripped but all messages preserved
  */
 function prepareMessagesWithSeparateHistory(
   messages: Message[],
-  _chatHistoryLength: number = 20,  // Unused - we keep all messages
   pageContextHistoryLength: number = 2
 ): Message[] {
   console.log(`📚 Preparing messages: stripping old page context, keeping all ${messages.length} messages`);
@@ -424,7 +422,6 @@ export async function streamAnthropicWithBrowserTools(
     console.log(`📚 Stripping old page context, keeping last ${PAGE_CONTEXT_HISTORY_LENGTH} with full content`);
     conversationMessages = prepareMessagesWithSeparateHistory(
       messages,
-      0,  // Unused parameter (kept for backwards compatibility)
       PAGE_CONTEXT_HISTORY_LENGTH
     );
   } else {
@@ -1371,7 +1368,6 @@ Example: Element at image position (400, 300):
     if (ENABLE_PAGE_CONTEXT_STRIPPING) {
       conversationMessages = prepareMessagesWithSeparateHistory(
         conversationMessages,
-        0,  // Unused parameter
         PAGE_CONTEXT_HISTORY_LENGTH
       );
       console.log(`📚 Loop: Page context stripped, keeping ${conversationMessages.length} messages`);
