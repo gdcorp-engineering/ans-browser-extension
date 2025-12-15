@@ -172,35 +172,35 @@ function summarizePageContextPreservingStructure(content: any): any {
           return item;
         }
       }
-      
+
       // Return the tool_result with summarized content
       return {
         ...item,
         content: summarizedContent
       };
     }
-    
+
     // Keep other items as-is
     return item;
   });
 }
 
 /**
- * Prepare messages for API by separating chat history from page context
- * Keeps longer chat history but only recent page context (screenshots, DOM)
+ * Prepare messages for API by stripping old page context (screenshots, large DOM data)
+ * while keeping ALL messages for full conversation context.
  *
  * @param messages - Full message history
- * @param chatHistoryLength - Number of pure chat messages to keep (default: 20)
- * @param pageContextHistoryLength - Number of page context messages to keep (default: 2)
- * @returns Optimized messages with full chat history but trimmed page context
+ * @param _chatHistoryLength - UNUSED (kept for backwards compatibility)
+ * @param pageContextHistoryLength - Number of page context messages to keep full content (default: 2)
+ * @returns Messages with old page context stripped but all messages preserved
  */
 function prepareMessagesWithSeparateHistory(
   messages: Message[],
-  chatHistoryLength: number = 20,
+  _chatHistoryLength: number = 20,  // Unused - we keep all messages
   pageContextHistoryLength: number = 2
 ): Message[] {
-  console.log(`📚 Preparing messages with separate history management`);
-  console.log(`   Chat history: ${chatHistoryLength}, Page context: ${pageContextHistoryLength}`);
+  console.log(`📚 Preparing messages: stripping old page context, keeping all ${messages.length} messages`);
+  console.log(`   Page context to keep with full content: ${pageContextHistoryLength}`);
   console.log(`   Input messages: ${messages.length}`);
 
   // Track which messages have page context
@@ -245,30 +245,11 @@ function prepareMessagesWithSeparateHistory(
     }
   }
 
-  // Now apply chat history limit to pure chat messages
-  // We want to keep the last N messages, but we've already processed page context
-  if (processedMessages.length > chatHistoryLength) {
-    // Smart trim: preserve tool_use/tool_result pairs
-    let trimmed = processedMessages.slice(-chatHistoryLength);
-
-    // Check if first message is a user message with tool_result
-    const firstMsg = trimmed[0];
-    if (firstMsg?.role === 'user' && Array.isArray(firstMsg.content)) {
-      const hasToolResult = (firstMsg.content as any[]).some((item: any) => item.type === 'tool_result');
-      if (hasToolResult) {
-        // Include one more message to get the assistant's tool_use
-        const firstMsgIndex = processedMessages.length - chatHistoryLength;
-        if (firstMsgIndex > 0) {
-          trimmed = processedMessages.slice(-(chatHistoryLength + 1));
-        }
-      }
-    }
-
-    console.log(`   Final message count: ${trimmed.length} (from ${processedMessages.length})`);
-    return trimmed;
-  }
-
-  console.log(`   Final message count: ${processedMessages.length}`);
+  // NOTE: We no longer trim chat history here - only page context is stripped
+  // The agent needs full conversation history to maintain context
+  // Message count trimming happens separately via Loop Message History setting
+  
+  console.log(`   Final message count: ${processedMessages.length} (page context stripped, all messages kept)`);
   return processedMessages;
 }
 
