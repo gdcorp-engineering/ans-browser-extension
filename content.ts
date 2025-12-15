@@ -419,33 +419,54 @@ async function dispatchClickSequence(element: HTMLElement, x: number, y: number)
     console.error('❌ Focus failed:', error);
   }
 
-  // STRATEGY: Use simple native click - avoid over-clicking
-  // Previous logic was too aggressive (5x clicks + parent + all children = chaos)
+  // STRATEGY: Use simple native click - NO retry for dropdowns/toggles
+  // Previous logic was too aggressive and would close dropdowns by double-clicking
   try {
     console.log('3️⃣ NATIVE CLICK (single, targeted)...');
+
+    // Check if this might be a dropdown/toggle button BEFORE clicking
+    const isDropdownTrigger = element.hasAttribute('aria-haspopup') ||
+                              element.hasAttribute('aria-expanded') ||
+                              element.getAttribute('role') === 'combobox' ||
+                              element.getAttribute('data-testid')?.includes('dropdown') ||
+                              element.classList.contains('dropdown') ||
+                              element.closest('[aria-haspopup], [aria-expanded], .dropdown');
+    
+    if (isDropdownTrigger) {
+      console.log('   🔽 Detected dropdown/toggle trigger - will NOT retry click');
+    }
 
     // Single native click - this generates a trusted event
     element.click();
     console.log('   ✅ Native click executed (isTrusted: true)');
 
-    // Wait for any async handlers
-    await new Promise(resolve => setTimeout(resolve, 100));
+    // Wait for any async handlers (e.g., dropdown animation)
+    await new Promise(resolve => setTimeout(resolve, 150));
 
-    // If the first click didn't seem to work (element still exists and is clickable),
-    // try ONE more time with a delay
-    const stillExists = document.body.contains(element);
-    const stillVisible = element.offsetParent !== null;
-    if (stillExists && stillVisible && element.tagName === 'BUTTON') {
-      console.log('4️⃣ Element still visible, trying one more click...');
-      await new Promise(resolve => setTimeout(resolve, 200));
-      element.click();
-      console.log('   ✅ Second native click executed');
+    // IMPORTANT: Do NOT retry click on dropdown/toggle elements!
+    // For dropdowns, clicking twice would open then immediately close them.
+    // Only retry for non-toggle elements like submit buttons that might need it.
+    if (!isDropdownTrigger) {
+      const stillExists = document.body.contains(element);
+      const stillVisible = element.offsetParent !== null;
+      // Only retry for form submit buttons, not generic buttons
+      const isSubmitButton = element.tagName === 'BUTTON' && 
+                             ((element as HTMLButtonElement).type === 'submit' ||
+                              element.textContent?.toLowerCase().includes('submit') ||
+                              element.textContent?.toLowerCase().includes('save'));
+      
+      if (stillExists && stillVisible && isSubmitButton) {
+        console.log('4️⃣ Submit button still visible, trying one more click...');
+        await new Promise(resolve => setTimeout(resolve, 200));
+        element.click();
+        console.log('   ✅ Second native click executed');
+      }
     }
 
     // NOTE: We intentionally do NOT click parent or child elements anymore
     // This was causing multiple unrelated elements to be clicked (e.g., "Learn about priority levels" link)
 
-    console.log('✅ All click attempts completed');
+    console.log('✅ Click sequence completed');
   } catch (error) {
     console.error('❌ Error dispatching events:', error);
   }
