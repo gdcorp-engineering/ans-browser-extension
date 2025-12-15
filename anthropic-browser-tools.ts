@@ -1390,6 +1390,18 @@ Example: Element at image position (400, 300):
       conversationMessages = trimmedMessages;
     }
 
+    // Also strip old page context during the loop (not just at the start)
+    // This ensures we don't accumulate multiple full page contexts
+    if (ENABLE_SEPARATE_HISTORY) {
+      const beforeStrip = conversationMessages.length;
+      conversationMessages = prepareMessagesWithSeparateHistory(
+        conversationMessages,
+        CHAT_HISTORY_LENGTH,
+        PAGE_CONTEXT_HISTORY_LENGTH
+      );
+      console.log(`📚 Loop: Stripped page context (${beforeStrip} → ${conversationMessages.length} messages)`);
+    }
+
     // CRITICAL: After adding tool results, we MUST continue the loop to let the AI process them
     // The stop_reason from the current response (which requested tools) doesn't matter here
     // because we've already executed the tools and added results to the conversation
