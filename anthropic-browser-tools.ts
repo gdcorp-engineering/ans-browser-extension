@@ -114,20 +114,31 @@ const BROWSER_TOOLS = [
 function hasPageContext(content: any): boolean {
   if (!Array.isArray(content)) return false;
   return content.some((item: any) => {
-    // Check for images (screenshots)
+    // Check for images (screenshots) at top level
     if (item.type === 'image') return true;
-    // Check for tool_result with large content (DOM context from getPageContext)
-    if (item.type === 'tool_result' && typeof item.content === 'string') {
-      // Page context typically has URLs, textContent, links arrays
-      try {
-        const parsed = JSON.parse(item.content);
-        // If it has url, textContent, or links - it's likely page context
-        if (parsed.url || parsed.textContent || parsed.links || parsed.interactiveElements) {
+    
+    // Check for tool_result blocks
+    if (item.type === 'tool_result') {
+      // Case 1: tool_result.content is an array (e.g., screenshots with [{text}, {image}])
+      if (Array.isArray(item.content)) {
+        // Check if any item in the content array is an image
+        if (item.content.some((c: any) => c.type === 'image')) {
           return true;
         }
-      } catch {
-        // Not JSON, check if it's a large text block
-        return item.content.length > 2000;
+      }
+      // Case 2: tool_result.content is a string (e.g., getPageContext JSON)
+      else if (typeof item.content === 'string') {
+        // Page context typically has URLs, textContent, links arrays
+        try {
+          const parsed = JSON.parse(item.content);
+          // If it has url, textContent, or links - it's likely page context
+          if (parsed.url || parsed.textContent || parsed.links || parsed.interactiveElements) {
+            return true;
+          }
+        } catch {
+          // Not JSON, check if it's a large text block
+          return item.content.length > 2000;
+        }
       }
     }
     return false;
@@ -151,6 +162,27 @@ function summarizePageContextPreservingStructure(content: any): any {
       };
     } else if (item.type === 'tool_result') {
       // CRITICAL: Preserve the tool_result structure, only summarize the content
+      
+      // Case 1: tool_result.content is an array (e.g., screenshots with [{text}, {image}])
+      if (Array.isArray(item.content)) {
+        // Check if this contains images (screenshots)
+        const hasImage = item.content.some((c: any) => c.type === 'image');
+        if (hasImage) {
+          // Strip images, keep text but summarize
+          const textItems = item.content.filter((c: any) => c.type === 'text');
+          const textSummary = textItems.length > 0 
+            ? textItems[0].text?.substring(0, 100) + '...' 
+            : '';
+          return {
+            ...item,
+            content: `[Screenshot stripped]${textSummary ? ' ' + textSummary : ''}`
+          };
+        }
+        // No images, keep as-is
+        return item;
+      }
+      
+      // Case 2: tool_result.content is a string (e.g., getPageContext JSON)
       let summarizedContent = '[Tool result]';
       try {
         const parsed = JSON.parse(item.content);
