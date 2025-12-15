@@ -67,15 +67,12 @@ export interface Settings {
   serviceMappings?: ServiceMapping[]; // Site-specific service mappings (MCP/A2A)
 
   // Conversation History Settings
-  conversationHistoryLength?: number; // Number of messages to keep in initial history (default: 10)
-  conversationLoopHistoryLength?: number; // Max messages during tool execution loops (default: 15)
   enableConversationPersistence?: boolean; // Save conversations to chrome.storage (default: true)
   enableSmartSummarization?: boolean; // Automatically summarize old messages (default: true)
 
-  // Separate History Settings (Chat vs Page Context)
-  chatHistoryLength?: number; // Pure text chat messages to keep (default: 20)
-  pageContextHistoryLength?: number; // Tool results with screenshots/DOM to keep (default: 2)
-  enableSeparateHistoryManagement?: boolean; // Enable separate chat vs page context management (default: false)
+  // Page Context History Settings
+  pageContextHistoryLength?: number; // Number of recent page contexts to keep full content (default: 2)
+  enableSeparateHistoryManagement?: boolean; // Enable page context stripping for older messages (default: true)
 }
 
 export interface ChatState {
