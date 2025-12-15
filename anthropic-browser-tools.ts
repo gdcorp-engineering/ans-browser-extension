@@ -135,33 +135,54 @@ function hasPageContext(content: any): boolean {
 }
 
 /**
- * Create a summary of stripped page context for older messages
+ * Create a summarized version of message content that preserves tool_result structure
+ * This is critical because Anthropic API requires tool_use/tool_result pairs to remain intact
  */
-function summarizePageContext(content: any): string {
+function summarizePageContextPreservingStructure(content: any): any {
   if (!Array.isArray(content)) return '[Previous action]';
 
-  const summaries: string[] = [];
-
-  for (const item of content) {
+  // Process each item in the content array, preserving structure
+  return content.map((item: any) => {
     if (item.type === 'image') {
-      summaries.push('[Screenshot taken]');
+      // Remove image data but keep a placeholder
+      return {
+        type: 'text',
+        text: '[Screenshot removed to save tokens]'
+      };
     } else if (item.type === 'tool_result') {
+      // CRITICAL: Preserve the tool_result structure, only summarize the content
+      let summarizedContent = '[Tool result]';
       try {
         const parsed = JSON.parse(item.content);
         if (parsed.url) {
-          summaries.push(`[Page context: ${parsed.url}]`);
+          // This is page context from getPageContext
+          summarizedContent = `[Page context stripped - URL: ${parsed.url}]`;
         } else if (parsed.success !== undefined) {
-          summaries.push(`[Action: ${parsed.success ? 'succeeded' : 'failed'}]`);
+          // This is a simple action result - keep as-is (it's small)
+          return item;
         } else {
-          summaries.push('[Tool result]');
+          summarizedContent = '[Tool result stripped]';
         }
       } catch {
-        summaries.push('[Tool result]');
+        // Not JSON, check if it's large
+        if (typeof item.content === 'string' && item.content.length > 500) {
+          summarizedContent = `[Large result stripped - ${item.content.length} chars]`;
+        } else {
+          // Small content, keep as-is
+          return item;
+        }
       }
+      
+      // Return the tool_result with summarized content
+      return {
+        ...item,
+        content: summarizedContent
+      };
     }
-  }
-
-  return summaries.length > 0 ? summaries.join(' ') : '[Previous action]';
+    
+    // Keep other items as-is
+    return item;
+  });
 }
 
 /**
@@ -211,13 +232,13 @@ function prepareMessagesWithSeparateHistory(
 
     if (pageContextToStrip.includes(i)) {
       // This message has page context we want to strip
-      // Replace the content with a summary
-      const summary = summarizePageContext(msg.content);
+      // Summarize content but PRESERVE tool_result structure for API compatibility
+      const summarizedContent = summarizePageContextPreservingStructure(msg.content);
       processedMessages.push({
         ...msg,
-        content: summary,
+        content: summarizedContent,
       });
-      console.log(`   Stripped message ${i}: ${summary}`);
+      console.log(`   Stripped message ${i} (preserved tool_result structure)`);
     } else {
       // Keep message as-is
       processedMessages.push(msg);
