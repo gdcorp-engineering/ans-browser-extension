@@ -556,7 +556,7 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
           try {
             // Generate filename with timestamp
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-            const filename = `atlas-screenshot-${timestamp}.png`;
+            const filename = `screenshot-${timestamp}.png`;
 
             // Save the RESIZED screenshot to Downloads folder (matches what Claude sees)
             await chrome.downloads.download({
