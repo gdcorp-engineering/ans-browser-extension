@@ -975,48 +975,6 @@ function SettingsPage() {
             💾 Automatically save conversations to local storage. When enabled, your chat history persists across sessions and browser restarts.
           </p>
 
-          <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500' }}>
-            Initial Message History (default: 10)
-          </label>
-          <input
-            type="number"
-            min="1"
-            max="50"
-            value={settings.conversationHistoryLength || 10}
-            onChange={(e) => setSettings({ ...settings, conversationHistoryLength: parseInt(e.target.value) || 10 })}
-            style={{
-              width: '100%',
-              padding: '8px',
-              marginBottom: '5px',
-              border: '1px solid #ddd',
-              borderRadius: '4px'
-            }}
-          />
-          <p className="help-text" style={{ marginBottom: '15px' }}>
-            📊 Number of previous messages to include when starting a new request. Higher values provide more context but use more tokens.
-          </p>
-
-          <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500' }}>
-            Loop Message History (default: 15)
-          </label>
-          <input
-            type="number"
-            min="4"
-            max="50"
-            value={settings.conversationLoopHistoryLength || 15}
-            onChange={(e) => setSettings({ ...settings, conversationLoopHistoryLength: parseInt(e.target.value) || 15 })}
-            style={{
-              width: '100%',
-              padding: '8px',
-              marginBottom: '5px',
-              border: '1px solid #ddd',
-              borderRadius: '4px'
-            }}
-          />
-          <p className="help-text" style={{ marginBottom: '15px' }}>
-            🔄 Maximum messages kept during browser automation tool loops. Prevents context overflow during multi-step operations.
-          </p>
-
           <label style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <input
               type="checkbox"
@@ -1053,27 +1011,6 @@ function SettingsPage() {
 
             {settings.enableSeparateHistoryManagement !== false && (
               <>
-                <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500' }}>
-                  Chat History Length (default: 20)
-                </label>
-                <input
-                  type="number"
-                  min="5"
-                  max="50"
-                  value={settings.chatHistoryLength || 20}
-                  onChange={(e) => setSettings({ ...settings, chatHistoryLength: parseInt(e.target.value) || 20 })}
-                  style={{
-                    width: '100%',
-                    padding: '8px',
-                    marginBottom: '5px',
-                    border: '1px solid #ddd',
-                    borderRadius: '4px'
-                  }}
-                />
-                <p className="help-text" style={{ marginBottom: '15px' }}>
-                  💬 Number of pure text chat messages to keep. These are your questions and assistant responses (no screenshots/DOM).
-                </p>
-
                 <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500' }}>
                   Page Context History (default: 2)
                 </label>
