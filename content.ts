@@ -454,6 +454,24 @@ async function dispatchClickSequence(element: HTMLElement, x: number, y: number)
       console.log('   🔽 Detected dropdown/toggle trigger - will NOT retry click');
     }
 
+    // Check if this is a link that would open in a new tab
+    // Override to open in same tab so the agent can continue working
+    const linkElement = element.tagName === 'A' ? element as HTMLAnchorElement : element.closest('a') as HTMLAnchorElement;
+    if (linkElement && linkElement.href) {
+      const opensInNewTab = linkElement.target === '_blank' || 
+                            linkElement.getAttribute('rel')?.includes('noopener');
+      
+      if (opensInNewTab) {
+        console.log('   🔗 Link would open in new tab - overriding to same tab');
+        console.log('   📍 URL:', linkElement.href);
+        
+        // Navigate in the same tab instead of opening a new one
+        window.location.href = linkElement.href;
+        console.log('   ✅ Navigated in same tab');
+        return; // Don't proceed with normal click
+      }
+    }
+
     // Single native click - this generates a trusted event
     element.click();
     console.log('   ✅ Native click executed (isTrusted: true)');
