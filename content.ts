@@ -499,12 +499,37 @@ async function executePageAction(
         if (!element && target) {
           console.log(`🔍 Searching for element by text: "${target}"`);
 
-          // Search through common clickable elements
+          // Search through common clickable elements (prioritized by specificity)
           const clickableSelectors = [
+            // High priority: Form submit buttons and primary actions
+            'button[type="submit"]',
+            'input[type="submit"]',
+
+            // Modal and dialog buttons (often more specific)
+            '[role="dialog"] button',
+            '.modal button',
+            '.dialog button',
+            '[data-testid*="publish"] button',
+            '[data-testid*="submit"] button',
+
+            // Primary/CTA buttons (common class patterns)
+            'button.primary',
+            'button.btn-primary',
+            'button[class*="primary"]',
+            'button[class*="cta"]',
+
+            // Confluence-specific selectors
+            'button[data-test-id*="publish"]',
+            'button[aria-label*="publish"]',
+            '#publish-modal-form button',
+            '[data-testid="publish-button"]',
+            '[data-testid="publish-modal"] button',
+            '.publish-modal button',
+
+            // General buttons (lower priority)
             'button',
             'a',
             'input[type="button"]',
-            'input[type="submit"]',
             '[role="button"]',
             '[role="tab"]',
             '[role="link"]',
@@ -515,17 +540,35 @@ async function executePageAction(
 
           for (const sel of clickableSelectors) {
             const elements = Array.from(document.querySelectorAll(sel));
-            element = elements.find(el => {
+            const matchingElements = elements.filter(el => {
               const text = el.textContent?.trim().toLowerCase() || '';
               const value = (el as HTMLInputElement).value?.toLowerCase() || '';
               const targetLower = target.toLowerCase();
               return text.includes(targetLower) || value.includes(targetLower);
-            }) as Element | undefined || null;
+            });
 
-            if (element) {
-              console.log(`✅ Found element by text in ${sel}: "${target}"`);
-              console.log(`   Element text: "${element.textContent?.trim()}"`);
-              console.log(`   Element bounds:`, element.getBoundingClientRect());
+            if (matchingElements.length > 0) {
+              // If multiple matches, prefer the most specific/visible one
+              element = matchingElements.find(el => {
+                const rect = (el as HTMLElement).getBoundingClientRect();
+                const isVisible = rect.width > 0 && rect.height > 0 &&
+                                 rect.top >= 0 && rect.left >= 0;
+
+                // Prefer buttons in modals/dialogs (higher z-index, overlay context)
+                const isInModal = el.closest('[role="dialog"], .modal, .dialog, [data-testid*="modal"]');
+
+                // Prefer exact text matches over partial matches
+                const text = el.textContent?.trim().toLowerCase() || '';
+                const targetLower = target.toLowerCase();
+                const isExactMatch = text === targetLower;
+
+                return isVisible && (isInModal || isExactMatch);
+              }) || matchingElements[0]; // Fallback to first match
+
+              console.log(`✅ Found ${matchingElements.length} matching elements for "${target}" in ${sel}`);
+              console.log(`   Selected: "${element.textContent?.trim()}"`);
+              console.log(`   Element bounds:`, (element as HTMLElement).getBoundingClientRect());
+              console.log(`   Is in modal:`, !!element.closest('[role="dialog"], .modal, .dialog'));
               break;
             }
           }
@@ -593,6 +636,10 @@ async function executePageAction(
 
           // Visual feedback
           highlightElement(element, coordinates || { x: clickX, y: clickY });
+
+          // Track recently clicked element for better type targeting
+          recentlyClickedElement = element as HTMLElement;
+          recentlyClickedTimestamp = Date.now();
 
           return {
             success: true,
@@ -741,6 +788,9 @@ async function executePageAction(
             // Visual feedback
             highlightElement(element, coordinates);
 
+            // Track recently clicked element for better type targeting
+            recentlyClickedElement = element as HTMLElement;
+            recentlyClickedTimestamp = Date.now();
 
             return {
               success: true,
@@ -783,7 +833,37 @@ async function executePageAction(
           if (!target) {
             console.log('🎯 No target specified - searching for best editable element...');
 
-            const bestEditableSelectors = [
+            // PRIORITY: Check if recently clicked element is editable and suitable for typing
+            const recentClickWindow = 10000; // 10 seconds
+            if (recentlyClickedElement &&
+                recentlyClickedTimestamp &&
+                (Date.now() - recentlyClickedTimestamp) < recentClickWindow) {
+
+              const isEditable = recentlyClickedElement.tagName === 'INPUT' ||
+                               recentlyClickedElement.tagName === 'TEXTAREA' ||
+                               recentlyClickedElement.getAttribute('contenteditable') === 'true';
+
+              if (isEditable) {
+                // Check if the element is still visible and in the DOM
+                const rect = recentlyClickedElement.getBoundingClientRect();
+                const isVisible = rect.width > 0 && rect.height > 0 &&
+                                document.body.contains(recentlyClickedElement);
+
+                if (isVisible) {
+                  console.log('✅ Using recently clicked editable element:', {
+                    tagName: recentlyClickedElement.tagName,
+                    className: recentlyClickedElement.className,
+                    contentEditable: recentlyClickedElement.getAttribute('contenteditable'),
+                    clickedAgo: Date.now() - recentlyClickedTimestamp
+                  });
+                  element = recentlyClickedElement;
+                }
+              }
+            }
+
+            // If no recently clicked element found, fall back to selector-based search
+            if (!element) {
+              const bestEditableSelectors = [
               // Confluence main content areas (highest priority - avoid headers)
               '.ak-editor-content-area[contenteditable="true"]:not(h1):not(h2):not(h3):not(h4):not(h5):not(h6)',
               '.ProseMirror[contenteditable="true"]:not(h1):not(h2):not(h3):not(h4):not(h5):not(h6)',
@@ -851,6 +931,7 @@ async function executePageAction(
                 break;
               }
             }
+            } // End of "if (!element)" selector fallback
           }
 
           console.log('🔍 fill action - target selector:', target);
@@ -1133,36 +1214,28 @@ async function executePageAction(
                       // If there's existing real content (not placeholder), append new content
                       console.log('   📝 Appending to existing content...');
 
-                      // For contenteditable elements, we need to properly insert content
-                      // at the end without losing existing formatting
+                      // Use innerHTML approach to avoid whitespace issues with DOM manipulation
+                      // Escape the text content to prevent XSS while preserving formatting
+                      const currentHTML = element!.innerHTML;
+                      const escapedText = textToType
+                        .replace(/&/g, '&amp;')
+                        .replace(/</g, '&lt;')
+                        .replace(/>/g, '&gt;')
+                        .replace(/"/g, '&quot;')
+                        .replace(/'/g, '&#39;');
+
+                      // Add new paragraph with single line break (no extra spacing)
+                      // (reusing currentHTML and escapedText variables from above)
+                      const newContent = currentHTML + '<br>' + escapedText;
+
+                      // Set the new HTML content
+                      element!.innerHTML = newContent;
+
+                      // Position cursor at end
                       const selection = window.getSelection();
                       const range = document.createRange();
-
-                      // Move cursor to the very end of the element's content
                       range.selectNodeContents(element!);
-                      range.collapse(false); // Collapse to end
-
-                      // Clear any existing selection and set our range
-                      selection?.removeAllRanges();
-                      selection?.addRange(range);
-
-                      // Insert two line breaks (paragraph separation)
-                      const br1 = document.createElement('br');
-                      const br2 = document.createElement('br');
-                      range.insertNode(br2);
-                      range.insertNode(br1);
-
-                      // Move cursor after the line breaks
-                      range.setStartAfter(br2);
-                      range.collapse(true);
-
-                      // Insert the new text content
-                      const textNode = document.createTextNode(textToType);
-                      range.insertNode(textNode);
-
-                      // Move cursor to end of inserted text
-                      range.setStartAfter(textNode);
-                      range.collapse(true);
+                      range.collapse(false);
                       selection?.removeAllRanges();
                       selection?.addRange(range);
 
@@ -1184,11 +1257,45 @@ async function executePageAction(
                     element!.dispatchEvent(new Event('change', { bubbles: true }));
                   }
 
-                  resolve({
-                    success: true,
-                    message: `Typed "${textToType}" into ${element!.tagName}`,
-                    element: element!.tagName
-                  });
+                  // Verify that the content was actually added
+                  setTimeout(() => {
+                    try {
+                      const finalContent = element!.textContent || element!.innerText || '';
+                      const finalHTML = element!.innerHTML || '';
+
+                      // Check if content was added (look in both text content and HTML)
+                      const contentWasAdded = finalContent.includes(textToType) || finalHTML.includes(textToType);
+
+                      console.log('🔍 Content verification:', {
+                        textToType: textToType,
+                        finalTextContent: finalContent.substring(0, 200) + (finalContent.length > 200 ? '...' : ''),
+                        finalHTML: finalHTML.substring(0, 200) + (finalHTML.length > 200 ? '...' : ''),
+                        contentWasAdded: contentWasAdded
+                      });
+
+                      if (contentWasAdded) {
+                        resolve({
+                          success: true,
+                          message: `Successfully typed "${textToType}" into ${element!.tagName}`,
+                          element: element!.tagName,
+                          finalContent: finalContent.length > 100 ? finalContent.substring(0, 100) + '...' : finalContent
+                        });
+                      } else {
+                        resolve({
+                          success: false,
+                          message: `Failed to add content "${textToType}" to ${element!.tagName}. Content verification failed. Current content: "${finalContent.substring(0, 50)}${finalContent.length > 50 ? '...' : ''}"`,
+                          element: element!.tagName
+                        });
+                      }
+                    } catch (verificationError) {
+                      console.error('❌ Error during content verification:', verificationError);
+                      resolve({
+                        success: false,
+                        message: `Content verification error: ${verificationError}`,
+                        element: element!.tagName
+                      });
+                    }
+                  }, 100); // Small delay to let content settle
                 }
               }, 300); // 300ms delay after focus to ensure it's established
             });
@@ -2040,6 +2147,10 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
 let automationOverlay: HTMLDivElement | null = null;
 let automationButton: HTMLDivElement | null = null;
 let isUserAborted = false; // Track if user manually aborted
+
+// Track recently clicked elements for better type targeting
+let recentlyClickedElement: HTMLElement | null = null;
+let recentlyClickedTimestamp = 0;
 
 function showBrowserAutomationOverlay() {
   // Don't show overlay if user has aborted

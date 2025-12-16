@@ -101,6 +101,40 @@ Steps:
 Output: Confirmed change with updated field value`
   },
   {
+    id: 'confluence-instructions',
+    domainPattern: '*.atlassian.net/wiki/*',
+    enabled: true,
+    instructions: `CONFLUENCE-SPECIFIC TECHNICAL INSTRUCTIONS:
+
+CRITICAL BUTTON TARGETING:
+- When clicking "Publish" button, prioritize modal/dialog buttons over toolbar buttons
+- Search order: button[type="submit"] → modal buttons → general buttons by text
+- NEVER use coordinates for common buttons - always prefer DOM selectors
+
+PAGE CREATION WORKFLOW:
+- Use keyboard shortcut 'c' to create new page (more reliable than Create button)
+- Click title field: "Give this page a title"
+- Type EXACT title as user specified - never use template defaults
+- IMPORTANT: For "create page titled X" requests, ONLY set the title - do NOT add content
+- Only add content to the content area if user specifically requests content to be added
+- NEVER publish automatically - always ask user for confirmation before clicking Publish
+- After creating title/content, ask: "The page is ready. Would you like me to publish it?"
+
+CONTENT FORMATTING FIXES:
+- For new paragraphs: use single <br> element (not double <br><br>)
+- Insert clean text nodes to avoid leading spaces on new lines
+- When appending content: position cursor at end, add one line break, then new text
+- Never use innerHTML concatenation that introduces whitespace artifacts
+
+TECHNICAL GOTCHAS:
+- Modal "Publish" button may not be found by standard text search due to dynamic loading
+- Use these specific selectors as fallback:
+  * #publish-modal-form button[type="submit"]
+  * [role="dialog"] button[contains(text(), "Publish")]
+  * .modal button[type="submit"]
+- Content insertion: avoid DOM Range API complexities, use textContent for clean results`
+  },
+  {
     id: 'default-workday',
     domainPattern: '*.myworkday.com',
     enabled: true,
