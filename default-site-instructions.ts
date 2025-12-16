@@ -117,8 +117,11 @@ PAGE CREATION WORKFLOW:
 - Type EXACT title as user specified - never use template defaults
 - IMPORTANT: For "create page titled X" requests, ONLY set the title - do NOT add content
 - Only add content to the content area if user specifically requests content to be added
-- NEVER publish automatically - always ask user for confirmation before clicking Publish
-- After creating title/content, ask: "The page is ready. Would you like me to publish it?"
+- CRITICAL: NEVER publish automatically - this is forbidden
+- ALWAYS ask user for explicit confirmation before any publish action
+- After creating title/content, say: "I've created the page with the title '[title]'. Would you like me to publish it now?"
+- Wait for user response before any publish clicks
+- If user says no to publishing, leave the page as draft
 
 CONTENT FORMATTING FIXES:
 - For new paragraphs: use single <br> element (not double <br><br>)

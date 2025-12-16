@@ -19,7 +19,7 @@ export const DEFAULT_SITE_PROFILES: SiteProfile[] = [
         'New paragraphs should be cleanly formatted without extra leading spaces',
         'Content should be added to existing pages without replacing or corrupting existing content',
         'Page editing should preserve existing formatting and structure',
-        'Publishing should save changes reliably without errors'
+        'Publishing should only happen when user explicitly requests it and should save changes reliably without errors'
       ],
       commonElements: [
         'Page title fields (often placeholder "Give this page a title")',
