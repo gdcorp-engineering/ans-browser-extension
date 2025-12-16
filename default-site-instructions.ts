@@ -128,10 +128,13 @@ CONTENT FORMATTING FIXES:
 
 TECHNICAL GOTCHAS:
 - Modal "Publish" button may not be found by standard text search due to dynamic loading
-- Use these specific selectors as fallback:
-  * #publish-modal-form button[type="submit"]
-  * [role="dialog"] button[contains(text(), "Publish")]
-  * .modal button[type="submit"]
+- If clickElement({text: "Publish"}) fails, try these specific selectors in order:
+  1. clickElement({selector: "button[type='submit']"}) - Most reliable for forms
+  2. clickElement({selector: "#publish-modal-form button"}) - Confluence publish modal
+  3. clickElement({selector: "[role='dialog'] button[type='submit']"}) - Modal submit buttons
+  4. clickElement({selector: "button[data-testid*='publish']"}) - Confluence data attributes
+  5. clickElement({selector: ".modal button[type='submit']"}) - Generic modal submit
+- Always try text-based clicking first, then fall back to selectors if it fails
 - Content insertion: avoid DOM Range API complexities, use textContent for clean results`
   },
   {

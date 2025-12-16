@@ -518,14 +518,6 @@ async function executePageAction(
             'button[class*="primary"]',
             'button[class*="cta"]',
 
-            // Confluence-specific selectors
-            'button[data-test-id*="publish"]',
-            'button[aria-label*="publish"]',
-            '#publish-modal-form button',
-            '[data-testid="publish-button"]',
-            '[data-testid="publish-modal"] button',
-            '.publish-modal button',
-
             // General buttons (lower priority)
             'button',
             'a',
