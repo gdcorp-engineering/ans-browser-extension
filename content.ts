@@ -1214,22 +1214,15 @@ async function executePageAction(
                       // If there's existing real content (not placeholder), append new content
                       console.log('   📝 Appending to existing content...');
 
-                      // Use innerHTML approach to avoid whitespace issues with DOM manipulation
-                      // Escape the text content to prevent XSS while preserving formatting
-                      const currentHTML = element!.innerHTML;
-                      const escapedText = textToType
-                        .replace(/&/g, '&amp;')
-                        .replace(/</g, '&lt;')
-                        .replace(/>/g, '&gt;')
-                        .replace(/"/g, '&quot;')
-                        .replace(/'/g, '&#39;');
+                      // Add new paragraph using DOM API for security (prevents XSS)
+                      // No need to escape text - createTextNode() handles this automatically
+                      // Create line break element
+                      const br = document.createElement('br');
+                      element!.appendChild(br);
 
-                      // Add new paragraph with single line break (no extra spacing)
-                      // (reusing currentHTML and escapedText variables from above)
-                      const newContent = currentHTML + '<br>' + escapedText;
-
-                      // Set the new HTML content
-                      element!.innerHTML = newContent;
+                      // Create text node (automatically safe from XSS)
+                      const textNode = document.createTextNode(textToType);
+                      element!.appendChild(textNode);
 
                       // Position cursor at end
                       const selection = window.getSelection();
