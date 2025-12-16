@@ -40,9 +40,11 @@ jobs:
           BUILD_ENV: ${{ github.event.inputs.environment }}
 
       - name: Create distribution package
+        env:
+          BUILD_ENV: ${{ github.event.inputs.environment }}
         run: |
           # Determine the artifacts subdirectory based on environment
-          case "${{ github.event.inputs.environment }}" in
+          case "$BUILD_ENV" in
             dev)
               ARTIFACTS_DIR="artifacts/Dev"
               ;;
@@ -67,11 +69,11 @@ jobs:
 
           # Create ZIP file for easy distribution
           cd "$ARTIFACTS_DIR"
-          zip -r "../../dist/extension-${{ github.event.inputs.environment }}.zip" .
+          zip -r "../../dist/extension-${BUILD_ENV}.zip" .
           cd ../..
 
           # Copy unzipped files as well
-          cp -r "$ARTIFACTS_DIR" "dist/extension-${{ github.event.inputs.environment }}"
+          cp -r "$ARTIFACTS_DIR" "dist/extension-${BUILD_ENV}"
 
           echo "✅ Created distribution package"
           ls -lh dist/
@@ -91,38 +93,44 @@ jobs:
           retention-days: 90
 
       - name: Build summary
+        env:
+          BUILD_ENV: ${{ github.event.inputs.environment }}
+          BUILD_NUMBER: ${{ github.run_number }}
+          VERSION: "1.2.3"
         run: |
-          echo "### 🎉 Build completed successfully!" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Environment:** \`${{ github.event.inputs.environment }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Version:** \`1.2.3\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Build Number:** \`#${{ github.run_number }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "---" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📦 Download Artifacts" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Two artifact types are available:" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "1. **ZIP Package** - \`extension-${{ github.event.inputs.environment }}-v${{ github.run_number }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "   - Ready to distribute, single file download" >> $GITHUB_STEP_SUMMARY
-          echo "   - Extract and load in Chrome via \`chrome://extensions/\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "2. **Unzipped Extension** - \`extension-${{ github.event.inputs.environment }}-unzipped-v${{ github.run_number }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "   - Direct folder structure" >> $GITHUB_STEP_SUMMARY
-          echo "   - Load directly in Chrome as unpacked extension" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "---" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📋 Installation Instructions" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "1. Download the artifact from the **Artifacts** section above" >> $GITHUB_STEP_SUMMARY
-          echo "2. Extract the ZIP file (if using ZIP package)" >> $GITHUB_STEP_SUMMARY
-          echo "3. Open Chrome and go to \`chrome://extensions/\`" >> $GITHUB_STEP_SUMMARY
-          echo "4. Enable **Developer mode** (top right)" >> $GITHUB_STEP_SUMMARY
-          echo "5. Click **Load unpacked**" >> $GITHUB_STEP_SUMMARY
-          echo "6. Select the extracted extension folder" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "---" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Retention:** Artifacts are kept for 90 days" >> $GITHUB_STEP_SUMMARY
+          : "${GITHUB_STEP_SUMMARY:?GITHUB_STEP_SUMMARY is not set}"
+
+          echo "### 🎉 Build completed successfully!" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Environment:** \`${BUILD_ENV}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Version:** \`${VERSION}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Build Number:** \`#${BUILD_NUMBER}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "---" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### 📦 Download Artifacts" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Two artifact types are available:" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "1. **ZIP Package** - \`extension-${BUILD_ENV}-v${BUILD_NUMBER}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "   - Ready to distribute, single file download" >> "$GITHUB_STEP_SUMMARY"
+          echo "   - Extract and load in Chrome via \`chrome://extensions/\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "2. **Unzipped Extension** - \`extension-${BUILD_ENV}-unzipped-v${BUILD_NUMBER}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "   - Direct folder structure" >> "$GITHUB_STEP_SUMMARY"
+          echo "   - Load directly in Chrome as unpacked extension" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "---" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### 📋 Installation Instructions" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "1. Download the artifact from the **Artifacts** section above" >> "$GITHUB_STEP_SUMMARY"
+          echo "2. Extract the ZIP file (if using ZIP package)" >> "$GITHUB_STEP_SUMMARY"
+          echo "3. Open Chrome and go to \`chrome://extensions/\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "4. Enable **Developer mode** (top right)" >> "$GITHUB_STEP_SUMMARY"
+          echo "5. Click **Load unpacked**" >> "$GITHUB_STEP_SUMMARY"
+          echo "6. Select the extracted extension folder" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "---" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Retention:** Artifacts are kept for 90 days" >> "$GITHUB_STEP_SUMMARY"
