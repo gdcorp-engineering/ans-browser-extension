@@ -24,7 +24,7 @@ function highlightElement(element: Element, coordinates: { x: number; y: number 
 
   // Create magic wand with sparkle trail
   const wand = document.createElement('div');
-  wand.innerHTML = '✨';
+  wand.textContent = '✨';
   wand.style.cssText = `
     position: fixed;
     left: ${coordinates.x}px;
@@ -1214,28 +1214,28 @@ async function executePageAction(
                       // If there's existing real content (not placeholder), append new content
                       console.log('   📝 Appending to existing content...');
 
-                      // Use innerHTML approach to avoid whitespace issues with DOM manipulation
-                      // Escape the text content to prevent XSS while preserving formatting
-                      const currentHTML = element!.innerHTML;
-                      const escapedText = textToType
-                        .replace(/&/g, '&amp;')
-                        .replace(/</g, '&lt;')
-                        .replace(/>/g, '&gt;')
-                        .replace(/"/g, '&quot;')
-                        .replace(/'/g, '&#39;');
-
-                      // Add new paragraph with single line break (no extra spacing)
-                      // (reusing currentHTML and escapedText variables from above)
-                      const newContent = currentHTML + '<br>' + escapedText;
-
-                      // Set the new HTML content
-                      element!.innerHTML = newContent;
-
-                      // Position cursor at end
+                      // Use DOM manipulation instead of innerHTML to prevent XSS
+                      // Get current selection to preserve cursor position
                       const selection = window.getSelection();
                       const range = document.createRange();
+                      
+                      // Move to end of element
                       range.selectNodeContents(element!);
                       range.collapse(false);
+                      
+                      // Insert line break and text using DOM methods (XSS-safe)
+                      const br = document.createElement('br');
+                      range.insertNode(br);
+                      range.setStartAfter(br);
+                      range.collapse(true);
+                      
+                      // Insert text node (automatically escapes HTML)
+                      const textNode = document.createTextNode(textToType);
+                      range.insertNode(textNode);
+                      
+                      // Position cursor at end
+                      range.setStartAfter(textNode);
+                      range.collapse(true);
                       selection?.removeAllRanges();
                       selection?.addRange(range);
 
@@ -1245,9 +1245,8 @@ async function executePageAction(
                         '   📝 Replacing placeholder text with new content...' :
                         '   📝 Setting text in empty element...');
 
-                      // Clear the element completely first
+                      // Clear the element completely first (textContent clears all content safely)
                       element!.textContent = '';
-                      element!.innerHTML = '';
 
                       // Set new content
                       element!.textContent = textToType;
@@ -1261,15 +1260,13 @@ async function executePageAction(
                   setTimeout(() => {
                     try {
                       const finalContent = element!.textContent || element!.innerText || '';
-                      const finalHTML = element!.innerHTML || '';
 
-                      // Check if content was added (look in both text content and HTML)
-                      const contentWasAdded = finalContent.includes(textToType) || finalHTML.includes(textToType);
+                      // Check if content was added (using textContent only, which is XSS-safe)
+                      const contentWasAdded = finalContent.includes(textToType);
 
                       console.log('🔍 Content verification:', {
                         textToType: textToType,
                         finalTextContent: finalContent.substring(0, 200) + (finalContent.length > 200 ? '...' : ''),
-                        finalHTML: finalHTML.substring(0, 200) + (finalHTML.length > 200 ? '...' : ''),
                         contentWasAdded: contentWasAdded
                       });
 
@@ -2179,49 +2176,60 @@ function showBrowserAutomationOverlay() {
   console.log('🔵 Showing browser automation indicator');
 
   // Create small floating indicator badge (no interference with clicks)
+  // Use DOM manipulation instead of innerHTML to prevent XSS
   automationOverlay = document.createElement('div');
   automationOverlay.id = 'atlas-automation-indicator';
-  automationOverlay.innerHTML = `
-    <div style="
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      background: linear-gradient(135deg, rgba(0, 122, 255, 0.95) 0%, rgba(0, 81, 213, 0.95) 100%);
-      backdrop-filter: blur(10px);
-      color: white;
-      padding: 10px 16px;
-      border-radius: 24px;
-      font-size: 13px;
-      font-weight: 600;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      box-shadow: 0 4px 16px rgba(0, 122, 255, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.1);
-      animation: atlasIndicatorSlideIn 0.3s ease-out;
-    ">
-      <div style="
-        width: 8px;
-        height: 8px;
-        background: #00ff88;
-        border-radius: 50%;
-        box-shadow: 0 0 8px #00ff88;
-        animation: atlasIndicatorPulse 2s ease-in-out infinite;
-      "></div>
-      <span>AI Automation Active</span>
-      <button id="atlas-abort-btn" style="
-        background: rgba(255, 255, 255, 0.2);
-        border: 1px solid rgba(255, 255, 255, 0.3);
-        color: white;
-        padding: 4px 12px;
-        border-radius: 12px;
-        font-size: 11px;
-        font-weight: 600;
-        cursor: pointer;
-        transition: all 0.2s ease;
-        pointer-events: auto;
-      ">
-        Stop
-      </button>
-    </div>
+  
+  const indicatorContainer = document.createElement('div');
+  indicatorContainer.style.cssText = `
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: linear-gradient(135deg, rgba(0, 122, 255, 0.95) 0%, rgba(0, 81, 213, 0.95) 100%);
+    backdrop-filter: blur(10px);
+    color: white;
+    padding: 10px 16px;
+    border-radius: 24px;
+    font-size: 13px;
+    font-weight: 600;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    box-shadow: 0 4px 16px rgba(0, 122, 255, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.1);
+    animation: atlasIndicatorSlideIn 0.3s ease-out;
   `;
+  
+  const statusDot = document.createElement('div');
+  statusDot.style.cssText = `
+    width: 8px;
+    height: 8px;
+    background: #00ff88;
+    border-radius: 50%;
+    box-shadow: 0 0 8px #00ff88;
+    animation: atlasIndicatorPulse 2s ease-in-out infinite;
+  `;
+  
+  const statusText = document.createElement('span');
+  statusText.textContent = 'AI Automation Active';
+  
+  const abortButton = document.createElement('button');
+  abortButton.id = 'atlas-abort-btn';
+  abortButton.textContent = 'Stop';
+  abortButton.style.cssText = `
+    background: rgba(255, 255, 255, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    color: white;
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    pointer-events: auto;
+  `;
+  
+  indicatorContainer.appendChild(statusDot);
+  indicatorContainer.appendChild(statusText);
+  indicatorContainer.appendChild(abortButton);
+  automationOverlay.appendChild(indicatorContainer);
   automationOverlay.style.cssText = `
     position: fixed;
     top: 20px;
