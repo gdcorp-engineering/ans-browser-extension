@@ -570,25 +570,48 @@ function ChatSidebar() {
     try {
       const urlObj = new URL(url);
       const hostname = urlObj.hostname;
+      const fullUrl = urlObj.href;
 
-      // Find matching site instructions
+      // First pass: Check path-based patterns (more specific) - these take priority
       for (const instruction of settings.siteInstructions) {
         if (!instruction.enabled) continue;
 
         const pattern = instruction.domainPattern;
 
-        // Convert wildcard pattern to regex
-        // *.atlassian.net -> ^.*\.atlassian\.net$
-        // confluence.company.com -> ^confluence\.company\.com$
-        const regexPattern = pattern
-          .replace(/\./g, '\\.')  // Escape dots
-          .replace(/\*/g, '.*');   // Convert * to .*
+        // Only check URL path patterns (like *.atlassian.net/wiki/*)
+        if (pattern.includes('/')) {
+          const regexPattern = pattern
+            .replace(/\./g, '\\.')  // Escape dots
+            .replace(/\*/g, '.*')   // Convert * to .*
+            .replace(/\//g, '\\/'); // Escape slashes
 
-        const regex = new RegExp(`^${regexPattern}$`, 'i');
+          const regex = new RegExp(`^https?://${regexPattern}`, 'i');
 
-        if (regex.test(hostname)) {
-          console.log(`📍 Matched site instructions for ${hostname}: ${pattern}`);
-          return instruction.instructions;
+          if (regex.test(fullUrl)) {
+            console.log(`📍 Matched specific site instructions for ${fullUrl}: ${pattern}`);
+            return instruction.instructions;
+          }
+        }
+      }
+
+      // Second pass: Check hostname-only patterns (less specific) - fallback
+      for (const instruction of settings.siteInstructions) {
+        if (!instruction.enabled) continue;
+
+        const pattern = instruction.domainPattern;
+
+        // Only check hostname-only patterns (like *.atlassian.net)
+        if (!pattern.includes('/')) {
+          const regexPattern = pattern
+            .replace(/\./g, '\\.')  // Escape dots
+            .replace(/\*/g, '.*');   // Convert * to .*
+
+          const regex = new RegExp(`^${regexPattern}$`, 'i');
+
+          if (regex.test(hostname)) {
+            console.log(`📍 Matched general site instructions for ${hostname}: ${pattern}`);
+            return instruction.instructions;
+          }
         }
       }
     } catch (error) {
@@ -672,22 +695,46 @@ ${Object.entries(profile.context.terminology).map(([term, def]) => `• **${term
     try {
       const urlObj = new URL(url);
       const hostname = urlObj.hostname;
+      const fullUrl = urlObj.href;
 
-      // Find matching site instructions
+      // First pass: Check path-based patterns (more specific) - these take priority
       for (const instruction of settings.siteInstructions) {
         if (!instruction.enabled) continue;
 
         const pattern = instruction.domainPattern;
 
-        // Convert wildcard pattern to regex
-        const regexPattern = pattern
-          .replace(/\./g, '\\.')  // Escape dots
-          .replace(/\*/g, '.*');   // Convert * to .*
+        // Only check URL path patterns (like *.atlassian.net/wiki/*)
+        if (pattern.includes('/')) {
+          const regexPattern = pattern
+            .replace(/\./g, '\\.')  // Escape dots
+            .replace(/\*/g, '.*')   // Convert * to .*
+            .replace(/\//g, '\\/'); // Escape slashes
 
-        const regex = new RegExp(`^${regexPattern}$`, 'i');
+          const regex = new RegExp(`^https?://${regexPattern}`, 'i');
 
-        if (regex.test(hostname)) {
-          return instruction;
+          if (regex.test(fullUrl)) {
+            return instruction;
+          }
+        }
+      }
+
+      // Second pass: Check hostname-only patterns (less specific) - fallback
+      for (const instruction of settings.siteInstructions) {
+        if (!instruction.enabled) continue;
+
+        const pattern = instruction.domainPattern;
+
+        // Only check hostname-only patterns (like *.atlassian.net)
+        if (!pattern.includes('/')) {
+          const regexPattern = pattern
+            .replace(/\./g, '\\.')  // Escape dots
+            .replace(/\*/g, '.*');   // Convert * to .*
+
+          const regex = new RegExp(`^${regexPattern}$`, 'i');
+
+          if (regex.test(hostname)) {
+            return instruction;
+          }
         }
       }
     } catch (error) {
