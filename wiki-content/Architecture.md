@@ -104,9 +104,10 @@ BROWSER_TOOLS = [
 6. Repeat if needed (max 10 turns)
 
 **Context Management**:
-- Keeps last 2 user messages (MAX_HISTORY_MESSAGES)
-- During tool loop: keeps last 6 messages (MAX_LOOP_MESSAGES)
-- Prevents context overflow with large page contexts
+- Keeps ALL messages for full conversation context
+- Old page context (DOM/screenshots) is compressed to summaries
+- Only last 2 page contexts retain full content (configurable)
+- Prevents token bloat while maintaining conversation history
 
 #### AI SDK Integration
 
