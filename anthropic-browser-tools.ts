@@ -375,6 +375,33 @@ export async function streamAnthropicWithBrowserTools(
   // Always use GoCode endpoint - no direct Anthropic API access
   const baseUrl = customBaseUrl || 'https://caas-gocode-prod.caas-prod.prod.onkatana.net';
 
+  // Bedrock (via LiteLLM/GoCode) is strict about tool_use.input being a JSON object.
+  // Some model adapters can return tool_use.input as a JSON string; normalize it.
+  const coerceToolUseInputToObject = (input: any): Record<string, any> => {
+    if (input && typeof input === 'object' && !Array.isArray(input)) {
+      return input;
+    }
+
+    if (typeof input === 'string') {
+      try {
+        const parsed = JSON.parse(input);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          return parsed;
+        }
+        return { value: parsed };
+      } catch {
+        return { raw: input };
+      }
+    }
+
+    if (input === undefined || input === null) {
+      return {};
+    }
+
+    // number/boolean/array etc.
+    return { value: input };
+  };
+
   // Keep only the most recent messages to avoid context length issues
   // Page context can be large, and tool use adds more messages during the loop
   // User can configure how much history to keep in settings
@@ -896,14 +923,40 @@ CRITICAL: TOOL CALLING FORMAT
 
 Remember: When browser tools are disabled, always tell users to perform browser actions manually.`;
 
+    const normalizedOutgoingMessages = validMessages.map(m => {
+      if (!Array.isArray((m as any).content)) {
+        return { role: (m as any).role, content: (m as any).content };
+      }
+
+      const normalizedContent = (m as any).content.map((item: any) => {
+        if (item?.type === 'tool_use') {
+          return {
+            ...item,
+            input: coerceToolUseInputToObject(item.input),
+          };
+        }
+        // Some upstream adapters use Bedrock-style tool entries:
+        // { toolUse: { ... , input: <maybe string> } }
+        if (item?.toolUse && typeof item.toolUse === 'object') {
+          return {
+            ...item,
+            toolUse: {
+              ...item.toolUse,
+              input: coerceToolUseInputToObject(item.toolUse.input),
+            },
+          };
+        }
+        return item;
+      });
+
+      return { role: (m as any).role, content: normalizedContent };
+    });
+
     const requestBody = {
       model,
       max_tokens: 4096,
       tools: allTools,
-      messages: validMessages.map(m => ({
-        role: m.role,
-        content: m.content,
-      })),
+      messages: normalizedOutgoingMessages,
       system: systemPrompt,
     };
 
@@ -1120,6 +1173,11 @@ Remember: When browser tools are disabled, always tell users to perform browser 
         onTextChunk('\n\n⚠️ Execution cancelled by user.');
         wasAborted = true;
         break;
+      }
+
+      // Normalize tool_use.input to an object (required by Bedrock tool use validation)
+      if (toolUse && toolUse.type === 'tool_use') {
+        toolUse.input = coerceToolUseInputToObject(toolUse.input);
       }
 
       console.log(`🔧 Executing tool: ${toolUse.name}`, toolUse.input);

@@ -19,6 +19,9 @@ const PROVIDER_MODELS: Record<Provider, Array<{ id: string; name: string; descri
     { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', description: 'Most intelligent model' },
     { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku', description: 'Fastest model' },
     { id: 'claude-3-opus-20240229', name: 'Claude 3 Opus', description: 'Previous generation' },
+    // GoCode-supported OSS models
+    { id: 'gpt-oss-20b', name: 'GPT-OSS 20B', description: 'Open-source model (via GoCode)' },
+    { id: 'gpt-oss-120b', name: 'GPT-OSS 120B', description: 'Larger open-source model (via GoCode)' },
   ],
   google: [
     { id: 'gemini-2.5-computer-use-preview-10-2025', name: 'Gemini 2.5 Computer Use Preview', description: 'Browser automation model' },

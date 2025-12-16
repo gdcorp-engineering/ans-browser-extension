@@ -25,6 +25,9 @@ const MODEL_DISPLAY_NAMES: Record<string, string> = {
   'claude-3-5-sonnet-20241022': 'Claude 3.5 Sonnet',
   'claude-3-5-haiku-20241022': 'Claude 3.5 Haiku',
   'claude-3-opus-20240229': 'Claude 3 Opus',
+  // GoCode-supported OSS models
+  'gpt-oss-20b': 'GPT-OSS 20B',
+  'gpt-oss-120b': 'GPT-OSS 120B',
   // OpenAI Models
   'gpt-4o': 'GPT-4o',
   'gpt-4o-mini': 'GPT-4o Mini',
@@ -48,6 +51,8 @@ const MODEL_QUICK_OPTIONS: Array<{ id: string; provider: Provider; name: string;
   { id: 'claude-3-5-sonnet-20241022', provider: 'anthropic', name: 'Claude 3.5 Sonnet', description: 'Most intelligent model' },
   { id: 'claude-3-5-haiku-20241022', provider: 'anthropic', name: 'Claude 3.5 Haiku', description: 'Fastest model' },
   { id: 'claude-3-opus-20240229', provider: 'anthropic', name: 'Claude 3 Opus', description: 'Previous generation' },
+  { id: 'gpt-oss-20b', provider: 'anthropic', name: 'GPT-OSS 20B', description: 'Open-source model (via GoCode)' },
+  { id: 'gpt-oss-120b', provider: 'anthropic', name: 'GPT-OSS 120B', description: 'Larger open-source model (via GoCode)' },
 ];
 
 const BROWSER_TOOL_NAMES = new Set([
