@@ -1,10 +1,16 @@
 /**
  * Test script to verify A2A agent connection
  * Run with: node test-a2a-connection.mjs
+ * 
+ * For local testing with HTTP, set environment variable:
+ *   A2A_BASE_URL=http://localhost:8080 node test-a2a-connection.mjs
  */
 
-const AGENT_CARD_URL = 'http://localhost:8080/.well-known/agent-card.json';
-const INVOKE_URL = 'http://localhost:8080/invoke';
+// Use HTTPS by default, allow HTTP override for local dev via env var
+// nosemgrep: typescript.react.security.react-insecure-request.react-insecure-request
+const BASE_URL = process.env.A2A_BASE_URL || 'https://localhost:8080';
+const AGENT_CARD_URL = `${BASE_URL}/.well-known/agent-card.json`;
+const INVOKE_URL = `${BASE_URL}/invoke`;
 
 async function testAgentCard() {
   console.log('🧪 Testing A2A Agent Connection\n');
