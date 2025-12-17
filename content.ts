@@ -490,6 +490,58 @@ async function dispatchClickSequence(element: HTMLElement, x: number, y: number)
   }
 }
 
+/**
+ * Ensure the page has focus before executing any action.
+ * Many websites check document.hasFocus() before processing interactions.
+ * Uses multiple strategies to establish focus.
+ */
+async function ensurePageFocus(): Promise<void> {
+  console.log('🎯 Ensuring page focus...');
+  
+  try {
+    // Strategy 1: Focus the window
+    window.focus();
+    
+    // Strategy 2: Blur any element that might be stealing focus (like iframes)
+    if (document.activeElement && document.activeElement !== document.body) {
+      (document.activeElement as HTMLElement).blur?.();
+    }
+    
+    // Strategy 3: Focus the document body
+    document.body.focus();
+    
+    // Strategy 4: Click on the body to establish focus (some sites need this)
+    // Use a synthetic mousedown/mouseup at 0,0 to trigger focus without side effects
+    const focusEvent = new MouseEvent('mousedown', {
+      bubbles: true,
+      cancelable: true,
+      view: window,
+      clientX: 0,
+      clientY: 0
+    });
+    document.body.dispatchEvent(focusEvent);
+    document.body.dispatchEvent(new MouseEvent('mouseup', {
+      bubbles: true,
+      cancelable: true,
+      view: window,
+      clientX: 0,
+      clientY: 0
+    }));
+    
+    // Strategy 5: Dispatch focus events to notify the page
+    document.dispatchEvent(new FocusEvent('focus', { bubbles: false }));
+    window.dispatchEvent(new FocusEvent('focus', { bubbles: false }));
+    document.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+    
+    // Small delay to let focus propagate
+    await new Promise(resolve => setTimeout(resolve, 50));
+    
+    console.log('✅ Page focus established, document.hasFocus():', document.hasFocus());
+  } catch (error) {
+    console.warn('⚠️ Error establishing focus:', error);
+  }
+}
+
 // Execute actions on the page
 async function executePageAction(
   action: string,
@@ -503,6 +555,9 @@ async function executePageAction(
   keys?: string[],
   destination?: { x: number; y: number }
 ): Promise<any> {
+  // CRITICAL: Ensure page has focus before ANY action
+  await ensurePageFocus();
+  
   try {
     switch (action) {
       case 'click':
