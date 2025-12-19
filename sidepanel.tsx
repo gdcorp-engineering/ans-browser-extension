@@ -11,6 +11,7 @@ import { getA2AService, resetA2AService, A2AService } from './a2a-service';
 import { getToolDescription } from './mcp-tool-router';
 import { findAgentForCurrentSite, agentNameToDomain } from './site-detector';
 import { DEFAULT_SITE_INSTRUCTIONS } from './default-site-instructions';
+import { DEFAULT_SITE_PROFILES } from './default-site-profiles';
 import { matchesUrlPattern } from './utils';
 
 // Model ID to display name mapping
@@ -569,25 +570,48 @@ function ChatSidebar() {
     try {
       const urlObj = new URL(url);
       const hostname = urlObj.hostname;
+      const fullUrl = urlObj.href;
 
-      // Find matching site instructions
+      // First pass: Check path-based patterns (more specific) - these take priority
       for (const instruction of settings.siteInstructions) {
         if (!instruction.enabled) continue;
 
         const pattern = instruction.domainPattern;
 
-        // Convert wildcard pattern to regex
-        // *.atlassian.net -> ^.*\.atlassian\.net$
-        // confluence.company.com -> ^confluence\.company\.com$
-        const regexPattern = pattern
-          .replace(/\./g, '\\.')  // Escape dots
-          .replace(/\*/g, '.*');   // Convert * to .*
+        // Only check URL path patterns (like *.atlassian.net/wiki/*)
+        if (pattern.includes('/')) {
+          const regexPattern = pattern
+            .replace(/\./g, '\\.')  // Escape dots
+            .replace(/\*/g, '.*')   // Convert * to .*
+            .replace(/\//g, '\\/'); // Escape slashes
 
-        const regex = new RegExp(`^${regexPattern}$`, 'i');
+          const regex = new RegExp(`^https?://${regexPattern}`, 'i');
 
-        if (regex.test(hostname)) {
-          console.log(`📍 Matched site instructions for ${hostname}: ${pattern}`);
-          return instruction.instructions;
+          if (regex.test(fullUrl)) {
+            console.log(`📍 Matched specific site instructions for ${fullUrl}: ${pattern}`);
+            return instruction.instructions;
+          }
+        }
+      }
+
+      // Second pass: Check hostname-only patterns (less specific) - fallback
+      for (const instruction of settings.siteInstructions) {
+        if (!instruction.enabled) continue;
+
+        const pattern = instruction.domainPattern;
+
+        // Only check hostname-only patterns (like *.atlassian.net)
+        if (!pattern.includes('/')) {
+          const regexPattern = pattern
+            .replace(/\./g, '\\.')  // Escape dots
+            .replace(/\*/g, '.*');   // Convert * to .*
+
+          const regex = new RegExp(`^${regexPattern}$`, 'i');
+
+          if (regex.test(hostname)) {
+            console.log(`📍 Matched general site instructions for ${hostname}: ${pattern}`);
+            return instruction.instructions;
+          }
         }
       }
     } catch (error) {
@@ -597,6 +621,73 @@ function ChatSidebar() {
     return null;
   };
 
+  // Helper function to get matching site profile for AI context
+  const getMatchingSiteProfile = (url: string | null): string | null => {
+    if (!url || !settings?.siteProfiles) return null;
+
+    try {
+      const urlObj = new URL(url);
+      const hostname = urlObj.hostname;
+      const fullUrl = urlObj.href;
+
+      // Find matching site profile
+      for (const profile of settings.siteProfiles) {
+        if (!profile.enabled) continue;
+
+        const pattern = profile.domainPattern;
+
+        // Handle URL path patterns (like *.atlassian.net/wiki/*)
+        if (pattern.includes('/')) {
+          const regexPattern = pattern
+            .replace(/\./g, '\\.')  // Escape dots
+            .replace(/\*/g, '.*')   // Convert * to .*
+            .replace(/\//g, '\\/'); // Escape slashes
+
+          const regex = new RegExp(`^https?://${regexPattern}`, 'i');
+
+          if (regex.test(fullUrl)) {
+            console.log(`🌐 Matched site profile for ${fullUrl}: ${pattern}`);
+            return formatSiteProfile(profile);
+          }
+        } else {
+          // Handle hostname-only patterns (like *.atlassian.net)
+          const regexPattern = pattern
+            .replace(/\./g, '\\.')  // Escape dots
+            .replace(/\*/g, '.*');   // Convert * to .*
+
+          const regex = new RegExp(`^${regexPattern}$`, 'i');
+
+          if (regex.test(hostname)) {
+            console.log(`🌐 Matched site profile for ${hostname}: ${pattern}`);
+            return formatSiteProfile(profile);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error matching site profile:', error);
+    }
+
+    return null;
+  };
+
+  // Helper function to format site profile for AI
+  const formatSiteProfile = (profile: any): string => {
+    return `**${profile.name}**: ${profile.description}
+
+**Platform**: ${profile.context.platform}
+
+**Primary Use**: ${profile.context.primaryUse}
+
+**User Expectations**:
+${profile.context.userExpectations.map((exp: string) => `• ${exp}`).join('\n')}
+
+**Common Elements**:
+${profile.context.commonElements.map((elem: string) => `• ${elem}`).join('\n')}
+
+**Key Terminology**:
+${Object.entries(profile.context.terminology).map(([term, def]) => `• **${term}**: ${def}`).join('\n')}`;
+  };
+
   // Helper function to get the matching site instruction object (for editing)
   const getMatchingSiteInstructionObject = (url: string | null): SiteInstruction | null => {
     if (!url || !settings?.siteInstructions) return null;
@@ -604,22 +695,46 @@ function ChatSidebar() {
     try {
       const urlObj = new URL(url);
       const hostname = urlObj.hostname;
+      const fullUrl = urlObj.href;
 
-      // Find matching site instructions
+      // First pass: Check path-based patterns (more specific) - these take priority
       for (const instruction of settings.siteInstructions) {
         if (!instruction.enabled) continue;
 
         const pattern = instruction.domainPattern;
 
-        // Convert wildcard pattern to regex
-        const regexPattern = pattern
-          .replace(/\./g, '\\.')  // Escape dots
-          .replace(/\*/g, '.*');   // Convert * to .*
+        // Only check URL path patterns (like *.atlassian.net/wiki/*)
+        if (pattern.includes('/')) {
+          const regexPattern = pattern
+            .replace(/\./g, '\\.')  // Escape dots
+            .replace(/\*/g, '.*')   // Convert * to .*
+            .replace(/\//g, '\\/'); // Escape slashes
 
-        const regex = new RegExp(`^${regexPattern}$`, 'i');
+          const regex = new RegExp(`^https?://${regexPattern}`, 'i');
 
-        if (regex.test(hostname)) {
-          return instruction;
+          if (regex.test(fullUrl)) {
+            return instruction;
+          }
+        }
+      }
+
+      // Second pass: Check hostname-only patterns (less specific) - fallback
+      for (const instruction of settings.siteInstructions) {
+        if (!instruction.enabled) continue;
+
+        const pattern = instruction.domainPattern;
+
+        // Only check hostname-only patterns (like *.atlassian.net)
+        if (!pattern.includes('/')) {
+          const regexPattern = pattern
+            .replace(/\./g, '\\.')  // Escape dots
+            .replace(/\*/g, '.*');   // Convert * to .*
+
+          const regex = new RegExp(`^${regexPattern}$`, 'i');
+
+          if (regex.test(hostname)) {
+            return instruction;
+          }
         }
       }
     } catch (error) {
@@ -984,9 +1099,21 @@ function ChatSidebar() {
 
         const mergedInstructions = [...defaultsToAdd, ...userInstructions];
 
+        // Merge default site profiles with user's custom ones
+        const userProfiles = loadedSettings.siteProfiles || [];
+        const userProfileIds = new Set(userProfiles.map((p: any) => p.id));
+
+        // Add default profiles that don't already exist
+        const defaultProfilesToAdd = DEFAULT_SITE_PROFILES.filter(
+          (defaultProfile) => !userProfileIds.has(defaultProfile.id)
+        );
+
+        const mergedProfiles = [...defaultProfilesToAdd, ...userProfiles];
+
         const mergedSettings = {
           ...loadedSettings,
-          siteInstructions: mergedInstructions
+          siteInstructions: mergedInstructions,
+          siteProfiles: mergedProfiles
         };
 
         setSettings(mergedSettings);
@@ -2986,6 +3113,7 @@ function ChatSidebar() {
             mcpTools,
             currentTabUrl || undefined,
             matchedInstructions || undefined,
+            getMatchingSiteProfile(currentTabUrl) || undefined, // Pass matched site profile
             settings, // Pass settings for conversation history and summarization
             (toolName: string, isMcpTool: boolean) => {
               // Show typing indicator when MCP tool starts executing
@@ -3411,6 +3539,7 @@ function ChatSidebar() {
               mcpTools,  // Pass MCP tools
               currentTabUrl || undefined,
               matchedInstructions || undefined,
+              getMatchingSiteProfile(currentTabUrl) || undefined, // Pass matched site profile
               settings, // Pass settings for conversation history and summarization
               (toolName: string, isMcpTool: boolean) => {
                 // Show typing indicator when MCP tool starts executing

@@ -40,6 +40,21 @@ export interface SiteInstruction {
   enabled: boolean;
 }
 
+export interface SiteProfile {
+  id: string;
+  domainPattern: string; // e.g., "*.atlassian.net/wiki/*" or "confluence.company.com"
+  name: string; // Display name like "Confluence"
+  description: string; // Brief description of what this platform is
+  context: {
+    platform: string; // What kind of platform this is
+    primaryUse: string; // What users primarily do here
+    userExpectations: string[]; // What users expect when they make requests
+    commonElements: string[]; // UI elements users interact with
+    terminology: Record<string, string>; // Platform-specific terms and meanings
+  };
+  enabled: boolean;
+}
+
 export interface ServiceMapping {
   id: string;
   urlPattern: string;        // e.g., "*.jira.atlassian.net" or "jira.atlassian.net"
@@ -63,6 +78,7 @@ export interface Settings {
   mcpServers?: MCPServerConfig[]; // List of MCP servers to connect to
   ansApiToken?: string; // ANS API authentication token (optional)
   siteInstructions?: SiteInstruction[]; // Site-specific custom instructions
+  siteProfiles?: SiteProfile[]; // Site context profiles for AI understanding
   autoSaveScreenshots?: boolean; // Automatically save screenshots to Downloads folder
   serviceMappings?: ServiceMapping[]; // Site-specific service mappings (MCP/A2A)
 

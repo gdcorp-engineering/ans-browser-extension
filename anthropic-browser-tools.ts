@@ -395,6 +395,7 @@ export async function streamAnthropicWithBrowserTools(
   additionalTools?: any[], // Custom MCP tools
   currentUrl?: string, // Current page URL for matching site instructions
   siteInstructions?: string, // Matched site-specific instructions
+  siteProfile?: string, // Matched site profile for AI context
   settings?: any, // User settings for conversation history and summarization
   onToolStart?: (toolName: string, isMcpTool: boolean) => void, // Callback when tool execution starts
   browserToolsEnabled: boolean = true // Whether browser tools are enabled
@@ -543,6 +544,15 @@ IMPORTANT:
 - When an MCP tool matches the task, use it DIRECTLY - no browser automation needed
 - Browser tools handle navigation, clicking, typing, scrolling, screenshots - use these only when MCP tools don't match
 - READ TOOL DESCRIPTIONS - they tell you exactly what each tool does and what parameters it needs
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+` : '';
+
+    const siteProfileSection = siteProfile ? `
+🌐 SITE CONTEXT:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Current URL: ${currentUrl}
+
+${siteProfile}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ` : '';
 
@@ -830,6 +840,7 @@ KEY PRINCIPLE:
    - When MCP tool matches → Use MCP tool directly (no browser automation needed)
 
 ${mcpPrioritySection}
+${siteProfileSection}
 ${siteInstructionsSection}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

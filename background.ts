@@ -7,6 +7,34 @@
 const MAX_SCREENSHOT_LONG_EDGE = 1280;
 
 /**
+ * Focus the browser window and tab before executing actions.
+ * Many websites require document.hasFocus() to be true for interactions to work.
+ * @param tabId - The tab ID to focus
+ * @returns Promise that resolves after focus is established
+ */
+async function focusTabAndWindow(tabId: number): Promise<void> {
+  try {
+    // Get the tab to find its window
+    const tab = await chrome.tabs.get(tabId);
+
+    // Focus the window first
+    if (tab.windowId) {
+      await chrome.windows.update(tab.windowId, { focused: true });
+    }
+
+    // Make sure the tab is active
+    await chrome.tabs.update(tabId, { active: true });
+
+    // Small delay to let OS focus propagate
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    console.log(`✅ Focused window ${tab.windowId} and tab ${tabId}`);
+  } catch (error) {
+    console.warn('⚠️ Could not focus tab/window:', error);
+  }
+}
+
+/**
  * Resize a screenshot to ensure the longest edge is under MAX_SCREENSHOT_LONG_EDGE.
  * Maintains aspect ratio. Returns original if already small enough.
  */
@@ -394,6 +422,8 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
       try {
         const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
         if (tabs[0]?.id) {
+          // Focus the tab before getting page context to ensure accurate DOM state
+          await focusTabAndWindow(tabs[0].id);
           await ensureContentScript(tabs[0].id);
           const response = await chrome.tabs.sendMessage(tabs[0].id, { type: 'GET_PAGE_CONTEXT' });
           sendResponse(response); // Return response directly, not wrapped
@@ -442,17 +472,8 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
         if (tabId) {
           // CRITICAL: Focus the browser window before executing actions
           // This ensures dropdowns and modals render properly (they often check document.hasFocus())
-          const tab = tabs[0];
-          if (tab?.windowId) {
-            try {
-              await chrome.windows.update(tab.windowId, { focused: true });
-              // Small delay to let OS focus propagate
-              await new Promise(resolve => setTimeout(resolve, 50));
-            } catch (focusError) {
-              console.warn('Could not focus window:', focusError);
-            }
-          }
-          
+          await focusTabAndWindow(tabId);
+
           await ensureContentScript(tabId);
           const response = await chrome.tabs.sendMessage(tabId, {
             type: 'EXECUTE_ACTION',
@@ -547,6 +568,11 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
         // Ensure windowId is defined
         if (currentWindow.id === undefined) {
           throw new Error('Window ID is undefined');
+        }
+
+        // Focus the tab before taking screenshot to ensure accurate capture
+        if (activeTab.id) {
+          await focusTabAndWindow(activeTab.id);
         }
 
         // Capture the visible tab in the current window

@@ -101,6 +101,46 @@ Steps:
 Output: Confirmed change with updated field value`
   },
   {
+    id: 'confluence-instructions',
+    domainPattern: '*.atlassian.net/wiki/*',
+    enabled: true,
+    instructions: `CONFLUENCE-SPECIFIC TECHNICAL INSTRUCTIONS:
+
+CRITICAL BUTTON TARGETING:
+- When clicking "Publish" button, prioritize modal/dialog buttons over toolbar buttons
+- Search order: button[type="submit"] → modal buttons → general buttons by text
+- NEVER use coordinates for common buttons - always prefer DOM selectors
+
+PAGE CREATION WORKFLOW:
+- Use keyboard shortcut 'c' to create new page (more reliable than Create button)
+- Click title field: "Give this page a title"
+- Type EXACT title as user specified - never use template defaults
+- IMPORTANT: For "create page titled X" requests, ONLY set the title - do NOT add content
+- Only add content to the content area if user specifically requests content to be added
+- CRITICAL: NEVER publish automatically - this is forbidden
+- ALWAYS ask user for explicit confirmation before any publish action
+- After creating title/content, say: "I've created the page with the title '[title]'. Would you like me to publish it now?"
+- Wait for user response before any publish clicks
+- If user says no to publishing, leave the page as draft
+
+CONTENT FORMATTING FIXES:
+- For new paragraphs: use single <br> element (not double <br><br>)
+- Insert clean text nodes to avoid leading spaces on new lines
+- When appending content: position cursor at end, add one line break, then new text
+- Never use innerHTML concatenation that introduces whitespace artifacts
+
+TECHNICAL GOTCHAS:
+- Modal "Publish" button may not be found by standard text search due to dynamic loading
+- If clickElement({text: "Publish"}) fails, try these specific selectors in order:
+  1. clickElement({selector: "button[type='submit']"}) - Most reliable for forms
+  2. clickElement({selector: "#publish-modal-form button"}) - Confluence publish modal
+  3. clickElement({selector: "[role='dialog'] button[type='submit']"}) - Modal submit buttons
+  4. clickElement({selector: "button[data-testid*='publish']"}) - Confluence data attributes
+  5. clickElement({selector: ".modal button[type='submit']"}) - Generic modal submit
+- Always try text-based clicking first, then fall back to selectors if it fails
+- Content insertion: avoid DOM Range API complexities, use textContent for clean results`
+  },
+  {
     id: 'default-workday',
     domainPattern: '*.myworkday.com',
     enabled: true,
