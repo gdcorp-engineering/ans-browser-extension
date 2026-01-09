@@ -3,146 +3,18 @@
 ## System Architecture Diagram
 
 ```mermaid
-graph TB
-    subgraph "Chrome Extension Components"
-        SP[Sidepanel<br/>sidepanel.tsx<br/>React UI]
-        BG[Background Script<br/>background.ts<br/>Service Worker]
-        CS[Content Script<br/>content.ts<br/>DOM Interaction]
-    end
-
-    subgraph "Internal APIs & Communication"
-        direction TB
-        CR[Chrome Runtime API<br/>chrome.runtime.sendMessage]
-        CT[Chrome Tabs API<br/>chrome.tabs.sendMessage]
-        CS_API[Chrome Scripting API<br/>chrome.scripting.executeScript]
-        ST[Chrome Storage API<br/>chrome.storage.local]
-        SP_API[Chrome SidePanel API<br/>chrome.sidePanel]
-    end
-
-    subgraph "AI Provider Services"
-        direction TB
-        AS[Anthropic Service<br/>anthropic-service.ts]
-        ABS[Anthropic Browser Tools<br/>anthropic-browser-tools.ts]
-        GS[Gemini Service<br/>streamWithGeminiComputerUse]
-    end
-
-    subgraph "Tool Integration Services"
-        direction TB
-        MCP[MCP Service<br/>mcp-service.ts<br/>Model Context Protocol]
-        A2A[A2A Service<br/>a2a-service.ts<br/>Agent-to-Agent]
-        TR[Tool Router<br/>mcp-tool-router.ts]
-    end
-
-    subgraph "External APIs - 3rd Party"
-        direction TB
-        GOC[GoCode API<br/>caas-gocode-prod<br/>GoDaddy Internal]
-        CLAUDE[Claude API<br/>via GoCode Proxy<br/>Anthropic Models]
-        GEMINI[Gemini API<br/>generativelanguage.googleapis.com<br/>Google AI]
-        COMP[Composio API<br/>backend.composio.dev<br/>Tool Router]
-        ANS[ANS API<br/>api.ote-godaddy.com<br/>GoDaddy Agent System]
-        MCP_SERVERS[MCP Servers<br/>Custom/ANS Agents<br/>JSON-RPC over HTTP]
-        A2A_AGENTS[A2A Agents<br/>GoDaddy Agents<br/>HTTP POST]
-    end
-
-    subgraph "Browser APIs"
-        direction TB
-        DOM[DOM Manipulation<br/>Click, Type, Scroll]
-        PAGE[Page Context<br/>Extract HTML/Text]
-        SCR[Screen Capture<br/>Screenshot API]
-    end
-
-    %% User Interactions
-    USER[User] -->|Chat Input| SP
-    USER -->|Extension Icon Click| BG
-
-    %% Sidepanel to Background Communication
-    SP -->|GET_TAB_INFO<br/>EXECUTE_ACTION<br/>TAKE_SCREENSHOT<br/>NAVIGATE| CR
-    CR -->|Response| SP
-    SP -->|Settings Storage| ST
-    ST -->|Load Settings| SP
-
-    %% Background to Content Script Communication
-    BG -->|EXECUTE_ACTION<br/>GET_PAGE_CONTEXT<br/>PING| CT
-    CT -->|Tool Results| BG
-    BG -->|Inject Script| CS_API
-    CS_API -->|content.js| CS
-
-    %% Content Script to DOM
-    CS -->|Execute Actions| DOM
-    DOM -->|Page Context| CS
-    CS -->|Screenshot| SCR
-    CS -->|Results| CT
-
-    %% Sidepanel AI Service Calls
-    SP -->|Stream Messages| AS
-    SP -->|Browser Tools Enabled| ABS
-    SP -->|Gemini Computer Use| GS
-
-    %% Anthropic Service Flow
-    AS -->|POST /v1/messages| GOC
-    ABS -->|POST /v1/messages<br/>with Tools| GOC
-    GOC -->|Proxy Request| CLAUDE
-    CLAUDE -->|Stream Response| GOC
-    GOC -->|Stream Response| AS
-    GOC -->|Stream Response| ABS
-
-    %% Gemini Service Flow
-    GS -->|POST /v1beta/models/:model:generateContent| GEMINI
-    GEMINI -->|Stream Response| GS
-
-    %% Tool Integration Flow
-    SP -->|Initialize| MCP
-    SP -->|Initialize| A2A
-    SP -->|Format Tools| TR
-    TR -->|Format for Anthropic| ABS
-
-    %% MCP Service Flow
-    MCP -->|JSON-RPC 2.0<br/>tools/list<br/>tools/call| MCP_SERVERS
-    MCP_SERVERS -->|Tool Results| MCP
-    MCP -->|Tools Available| TR
-
-    %% A2A Service Flow
-    A2A -->|HTTP POST<br/>Task Execution| A2A_AGENTS
-    A2A_AGENTS -->|Task Results| A2A
-    A2A -->|Tools Available| TR
-
-    %% Composio Integration
-    SP -->|Initialize Session| COMP
-    COMP -->|MCP URL| MCP
-    COMP -->|Session ID| SP
-
-    %% ANS Integration
-    SP -->|Fetch Agents| ANS
-    ANS -->|Agent Configs| SP
-    SP -->|Register Agents| MCP
-    SP -->|Register Agents| A2A
-
-    %% Browser Tools Execution Flow
-    ABS -->|Tool Calls| SP
-    SP -->|Execute Tool| CR
-    CR -->|Forward to BG| BG
-    BG -->|Forward to CS| CT
-    CT -->|Execute| CS
-    CS -->|DOM Actions| DOM
-    DOM -->|Results| CS
-    CS -->|Results| CT
-    CT -->|Results| BG
-    BG -->|Results| CR
-    CR -->|Results| SP
-    SP -->|Tool Results| ABS
-
-    %% Styling
+graph LR
+    USER[User] -->|Interact| EXT[Chrome Extension]
+    
+    EXT <-->|AI Requests<br/>Proxy| GOCODE[GoCode API<br/>Claude Proxy]
+    
+    EXT <-->|Fetch Agents<br/>Register Tools| ANS[ANS Service<br/>Agent System]
+    
     classDef extension fill:#4A90E2,stroke:#2E5C8A,stroke-width:2px,color:#fff
-    classDef internal fill:#7B68EE,stroke:#5A4FCF,stroke-width:2px,color:#fff
     classDef service fill:#50C878,stroke:#3A9B5E,stroke-width:2px,color:#fff
-    classDef external fill:#FF6B6B,stroke:#CC5555,stroke-width:2px,color:#fff
-    classDef browser fill:#FFA500,stroke:#CC8500,stroke-width:2px,color:#fff
-
-    class SP,BG,CS extension
-    class CR,CT,CS_API,ST,SP_API internal
-    class AS,ABS,GS,MCP,A2A,TR service
-    class GOC,CLAUDE,GEMINI,COMP,ANS,MCP_SERVERS,A2A_AGENTS external
-    class DOM,PAGE,SCR browser
+    
+    class USER,EXT extension
+    class GOCODE,ANS service
 ```
 
 ## Component Details
@@ -155,13 +27,12 @@ graph TB
   - User input handling
   - Message display and management
   - Settings management
-  - AI provider selection (Anthropic/Gemini)
+  - AI provider selection (Anthropic)
   - Tool orchestration
   - Overlay management (in sidepanel)
 - **Key Functions**:
   - `handleSubmit()` - Processes user messages
   - `streamAnthropicWithBrowserTools()` - Calls Anthropic with browser tools
-  - `streamWithGeminiComputerUse()` - Calls Gemini Computer Use API
   - `executeTool()` - Executes browser automation tools
   - `showBrowserAutomationOverlay()` - Shows automation overlay
 
@@ -235,12 +106,6 @@ graph TB
   - Abort signal handling
 - **Tools**: navigate, clickElement, click, type, scroll, getPageContext, screenshot, pressKey
 
-#### Gemini Service (`streamWithGeminiComputerUse`)
-- **Endpoint**: Google Generative AI API (`https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent`)
-- **Purpose**: Browser automation using Gemini 2.5 Computer Use
-- **Models**: `gemini-2.5-computer-use-preview-10-2025`
-- **Features**: Native browser automation via Gemini's computer use capabilities
-
 ### 4. Tool Integration Services
 
 #### MCP Service (`mcp-service.ts`)
@@ -283,15 +148,6 @@ graph TB
 - **Provider**: Anthropic
 - **Models**: Claude Sonnet 4.5, Claude 3.5 Sonnet, Claude 3.5 Haiku, Claude 3 Opus
 - **Access**: Only through GoCode proxy (no direct access)
-
-#### Gemini API
-- **URL**: `https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent`
-- **Provider**: Google
-- **Models**: 
-  - `gemini-2.5-computer-use-preview-10-2025` (Browser automation)
-  - `gemini-2.5-pro` (General reasoning)
-  - `gemini-2.5-flash` (Fast responses)
-- **Authentication**: API key in query parameter or Authorization header
 
 #### Composio API
 - **URL**: `https://backend.composio.dev/api/v3/labs/tool_router/session`
@@ -355,25 +211,7 @@ Tool results added to conversation
 Loop continues until task complete or max turns
 ```
 
-### 2. Gemini Computer Use Flow
-
-```
-User Input → Sidepanel
-  ↓
-streamWithGeminiComputerUse()
-  ↓
-POST to Gemini API (/v1beta/models/{model}:generateContent)
-  ↓
-Gemini returns function calls
-  ↓
-Sidepanel → executeTool() (same as above)
-  ↓
-Results → Gemini API (next turn)
-  ↓
-Loop continues until task complete
-```
-
-### 3. MCP Tool Execution Flow
+### 2. MCP Tool Execution Flow
 
 ```
 User Input → Sidepanel
@@ -397,7 +235,7 @@ Results → MCP Service → Sidepanel
 Tool results added to conversation
 ```
 
-### 4. A2A Agent Execution Flow
+### 3. A2A Agent Execution Flow
 
 ```
 User Input → Sidepanel
@@ -433,7 +271,7 @@ Results → A2A Service → Sidepanel
 
 ### 3. Multi-Provider Support
 - **Pattern**: Provider abstraction
-- **Providers**: Anthropic (via GoCode), Gemini, Composio
+- **Providers**: Anthropic (via GoCode)
 - **Selection**: User-configurable in settings
 
 ### 4. Tab-Based State Management
