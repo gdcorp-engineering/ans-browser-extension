@@ -284,14 +284,6 @@ Results → A2A Service → Sidepanel
 - **Implementation**: `AbortController` and `AbortSignal`
 - **Usage**: User cancellation, tab switching, error recovery
 
-## Security Considerations
-
-1. **Content Script Isolation**: Content scripts run in isolated world, cannot access page JavaScript
-2. **Message Validation**: All messages validated before processing
-3. **API Key Storage**: Stored in `chrome.storage.local` (encrypted by Chrome)
-4. **VPN Requirement**: GoCode API requires GoDaddy VPN connection
-5. **CSP Compliance**: Content scripts respect page Content Security Policy
-
 ## Performance Optimizations
 
 1. **Lazy Loading**: MCP/A2A services initialized on demand
