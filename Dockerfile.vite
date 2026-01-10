@@ -1,0 +1,134 @@
+# Multi-stage build for serving the browser extension installer
+FROM node:20-alpine AS builder
+
+# Set working directory
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install dependencies
+RUN npm ci
+
+# Copy all source files
+COPY . .
+
+# Build the extension (creates artifacts/Dev)
+ARG BUILD_ENV=dev
+ENV BUILD_ENV=${BUILD_ENV}
+RUN BUILD_ENV=${BUILD_ENV} npm run build
+
+# Install zip utility for creating ZIP file
+RUN apk add --no-cache zip
+
+# Create deployment structure
+RUN mkdir -p /app/deploy/downloads && \
+    if [ -f "artifacts/Dev/INSTALL_INSTRUCTIONS.html" ]; then \
+        cp artifacts/Dev/INSTALL_INSTRUCTIONS.html deploy/index.html && \
+        echo "✓ Copied INSTALL_INSTRUCTIONS.html to index.html"; \
+    elif [ -f "deploy/index.html" ]; then \
+        echo "✓ Using existing deploy/index.html"; \
+    else \
+        echo "Creating index.html from deploy/index.html if available"; \
+        if [ -f "deploy/index.html" ]; then \
+            echo "✓ Using deploy/index.html"; \
+        else \
+            echo "Warning: No installer HTML found, creating basic placeholder"; \
+            echo '<!DOCTYPE html><html><head><title>Extension Installer</title></head><body><h1>ANS Browser Extension</h1><p>Download the extension ZIP file from the downloads folder.</p></body></html>' > deploy/index.html; \
+        fi; \
+    fi && \
+    cd artifacts/Dev && \
+    zip -r /app/deploy/downloads/ans-extension-dev-latest.zip . -x "*.DS_Store" "*.git*" && \
+    echo "✓ Created ZIP file" && \
+    cd /app && \
+    ls -la deploy/
+
+# Production stage - serve static files with nginx
+FROM nginx:alpine
+
+# Install wget for health check verification during startup
+RUN apk add --no-cache wget
+
+# Copy the deploy directory to nginx html directory
+COPY --from=builder /app/deploy /usr/share/nginx/html
+
+# Remove default nginx config and create our custom one
+# Note: ECS/ALB handles HTTPS termination, so nginx listens on HTTP
+RUN rm -f /etc/nginx/conf.d/default.conf /etc/nginx/conf.d/default.conf.bak 2>/dev/null || true
+
+# Create nginx configuration file
+RUN cat > /etc/nginx/conf.d/default.conf << 'EOF'
+server {
+    listen 0.0.0.0:8443;
+    server_name _;
+    root /usr/share/nginx/html;
+    index index.html;
+    
+    # Health check endpoint - must return 200 for ALB health checks
+    # ALB health checks are simple - just need 200 OK response
+    # Using exact match (=) for fastest response, minimal processing
+    # No headers, no logging, just return 200
+    location = /health {
+        access_log off;
+        return 200 "OK";
+    }
+    
+    # Root location - no cache for index.html to ensure latest version
+    location = /index.html {
+        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+        add_header Pragma "no-cache" always;
+        add_header Expires "0" always;
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-XSS-Protection "1; mode=block" always;
+        try_files $uri /index.html;
+    }
+    
+    # Root location
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+    
+    # Downloads location - allow caching for ZIP files
+    location /downloads/ {
+        alias /usr/share/nginx/html/downloads/;
+        add_header Cache-Control "public, max-age=3600" always;
+    }
+    
+    # Security headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    
+    # Minimal logging to reduce Fluent Bit processing
+    # Health check endpoint doesn't need logging
+    access_log off;
+    error_log /var/log/nginx/error.log error;
+}
+EOF
+
+# Verify nginx configuration and files
+RUN nginx -t && \
+    echo "=== Nginx configuration is valid ==="
+
+# Expose port 8443 (as specified in workflow)
+EXPOSE 8443
+
+# Create a startup script to ensure nginx starts correctly
+# This script ensures nginx is ready and responding before health checks begin
+RUN echo '#!/bin/sh' > /docker-entrypoint.sh && \
+    echo 'set -e' >> /docker-entrypoint.sh && \
+    echo 'echo "=== Container startup ==="' >> /docker-entrypoint.sh && \
+    echo 'echo "Checking files..."' >> /docker-entrypoint.sh && \
+    echo 'ls -la /usr/share/nginx/html/' >> /docker-entrypoint.sh && \
+    echo 'test -f /usr/share/nginx/html/index.html && echo "✓ index.html exists" || (echo "✗ index.html missing" && exit 1)' >> /docker-entrypoint.sh && \
+    echo 'test -d /usr/share/nginx/html/downloads && echo "✓ downloads directory exists" || (echo "✗ downloads directory missing" && exit 1)' >> /docker-entrypoint.sh && \
+    echo 'echo "Testing nginx config..."' >> /docker-entrypoint.sh && \
+    echo 'nginx -t || (echo "✗ Nginx config test failed" && exit 1)' >> /docker-entrypoint.sh && \
+    echo 'echo "Starting nginx..."' >> /docker-entrypoint.sh && \
+    echo 'exec nginx -g "daemon off;"' >> /docker-entrypoint.sh && \
+    chmod +x /docker-entrypoint.sh
+
+# Start nginx
+CMD ["/docker-entrypoint.sh"]
+
